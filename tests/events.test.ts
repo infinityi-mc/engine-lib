@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { defineAgent, defineTool } from "../src/agent/index";
 import type { AgentHooks } from "../src/agent/index";
+import { CancelledError } from "../src/errors";
 import { runAgent } from "../src/execution/index";
 import type { RunEvent } from "../src/execution/index";
 import {
@@ -111,6 +112,24 @@ describe("createEventHub", () => {
     const hub = createEventHub({ subscribers: [undefined, (e) => void seen.push(e.type)] });
     await hub.emit({ type: "run.start", agent: "a" });
     expect(seen).toEqual(["run.start"]);
+  });
+
+  it("preserves isolation even when onSubscriberError itself throws", async () => {
+    const seen: string[] = [];
+    const hub = createEventHub({
+      subscribers: [
+        () => {
+          throw new Error("boom");
+        },
+        (e) => void seen.push(e.type),
+      ],
+      onSubscriberError: () => {
+        throw new Error("reporter boom");
+      },
+    });
+    // emit must neither reject nor skip the healthy subscriber.
+    await hub.emit({ type: "token", delta: "x" });
+    expect(seen).toEqual(["token"]);
   });
 });
 
@@ -410,6 +429,27 @@ describe("runAgent — telemetry bridge", () => {
     expect(run?.ended).toBe(true);
     expect(
       metrics.find((m) => m.name === "agent.runs" && m.attributes?.["agent.outcome"] === "error"),
+    ).toBeDefined();
+  });
+
+  it("ends the run span and rejects `completed` when a stream is abandoned early", async () => {
+    const { telemetry, spans, metrics } = recordingTelemetry();
+    const handle = runAgent(toolThenAnswer(), { input: "go", stream: true, telemetry });
+
+    // Consume a single event, then break without draining the iterator.
+    for await (const _ of handle) {
+      void _;
+      break;
+    }
+
+    const run = spans.find((sp) => sp.name === "agent.run");
+    expect(run?.ended).toBe(true);
+    expect(run?.status?.code).toBe("error");
+    await expect(handle.completed).rejects.toBeInstanceOf(CancelledError);
+    expect(
+      metrics.find(
+        (m) => m.name === "agent.runs" && m.attributes?.["agent.outcome"] === "incomplete",
+      ),
     ).toBeDefined();
   });
 });

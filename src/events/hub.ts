@@ -26,7 +26,14 @@ export function createEventHub(opts: EventHubOptions = {}): EventHub {
         try {
           await subscribers[i]!(event);
         } catch (error) {
-          onSubscriberError?.(error, event, i);
+          // The error reporter must never break isolation: a throwing
+          // `onSubscriberError` (or logger) cannot abort the run nor starve the
+          // remaining subscribers.
+          try {
+            onSubscriberError?.(error, event, i);
+          } catch {
+            // Swallow — there is nowhere safe left to surface this.
+          }
         }
       }
     },

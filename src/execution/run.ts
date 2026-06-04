@@ -376,6 +376,10 @@ function makeHandle(
   const startedAt = Date.now();
 
   async function* iterate(): AsyncGenerator<RunEvent> {
+    // Tracks whether the run reached a terminal state (finished or errored).
+    // The `finally` uses it to close out the span and settle `completed` when a
+    // consumer abandons the stream early (its `return()` skips both branches).
+    let settled = false;
     try {
       let next = await gen.next();
       while (!next.done) {
@@ -385,7 +389,7 @@ function makeHandle(
       }
       span.setAttributes(runResultAttrs(next.value));
       span.ok();
-      span.end();
+      settled = true;
       tel.recordRun(
         { "agent.name": agentName, "agent.outcome": "ok" },
         Date.now() - startedAt,
@@ -394,7 +398,7 @@ function makeHandle(
       resolveCompleted(next.value);
     } catch (err) {
       span.fail(err instanceof Error ? err.message : String(err));
-      span.end();
+      settled = true;
       tel.recordRun(
         { "agent.name": agentName, "agent.outcome": "error" },
         Date.now() - startedAt,
@@ -402,6 +406,22 @@ function makeHandle(
       );
       rejectCompleted(err);
       throw err;
+    } finally {
+      if (!settled) {
+        // Consumer broke out of the iteration early. Propagate the cancellation
+        // into the underlying generator, mark the run span cancelled, and settle
+        // `completed` so neither the span nor the promise is left dangling.
+        const cancelled = new CancelledError("run stream abandoned before completion");
+        await gen.return(undefined as never).catch(() => {});
+        span.fail(cancelled.message);
+        tel.recordRun(
+          { "agent.name": agentName, "agent.outcome": "incomplete" },
+          Date.now() - startedAt,
+          emptyUsage(),
+        );
+        rejectCompleted(cancelled);
+      }
+      span.end();
     }
   }
 
