@@ -85,6 +85,14 @@ describe("createSession", () => {
     ]);
   });
 
+  it("clear concurrent with first access leaves no stale seed", async () => {
+    const session = createSession({ id: "race-clear", messages: [user("seed")] });
+    // messages() kicks off seeding; clear() runs concurrently.
+    await Promise.all([session.messages(), session.clear()]);
+    // The in-flight seed must not survive the clear.
+    expect(await session.messages()).toHaveLength(0);
+  });
+
   it("append persists and clear wipes (and prevents re-seeding)", async () => {
     const session = createSession({ id: "s", messages: [user("seed")] });
     await session.append([user("more")]);

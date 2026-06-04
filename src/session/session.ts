@@ -71,7 +71,14 @@ export function createSession(opts: CreateSessionOptions = {}): Session {
       await store.append(id, messages);
     },
     async clear(): Promise<void> {
-      seedPromise = Promise.resolve(); // a cleared session must not be re-seeded
+      // Let an in-flight seed write finish first so it can't `append` *after* we
+      // delete (leaving stale seed data), then mark seeding done so it never
+      // runs again — a cleared session must not be re-seeded.
+      const inflight = seedPromise;
+      seedPromise = Promise.resolve();
+      if (inflight !== undefined) {
+        await inflight.catch(() => {}); // ignore a seed failure during clear
+      }
       await store.delete(id);
     },
   };
