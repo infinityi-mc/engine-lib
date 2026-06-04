@@ -1,12 +1,23 @@
 import { describe, expect, it } from "bun:test";
 
 import { defineAgent, defineTool } from "../src/agent/index";
-import { CancelledError, MaxStepsExceededError } from "../src/errors";
+import { staticContext } from "../src/context/index";
+import { AgentError, CancelledError, ContextWindowError, MaxStepsExceededError } from "../src/errors";
 import { runAgent } from "../src/execution/index";
 import type { RunEvent } from "../src/execution/index";
+import { assistant, user } from "../src/messages/index";
+import type { Message } from "../src/messages/types";
 import type { CompletionResult, ToolCall, Usage } from "../src/providers/types";
 import { s } from "../src/schema/index";
+import { createSession } from "../src/session/index";
 import { mockProvider } from "../src/testing/index";
+
+function textOf(message: Message): string {
+  return message.content
+    .filter((p): p is { type: "text"; text: string } => p.type === "text")
+    .map((p) => p.text)
+    .join("");
+}
 
 // --- result fixtures -------------------------------------------------------
 
@@ -317,5 +328,154 @@ describe("runAgent — streaming", () => {
     await runAgent(agent, { input: "go", onEvent: (e) => seen.push(e.type) });
     expect(seen[0]).toBe("run.start");
     expect(seen.at(-1)).toBe("run.finish");
+  });
+});
+
+describe("runAgent — sessions & context (Phase 5)", () => {
+  it("reads session history before the run and persists only new messages after", async () => {
+    const session = createSession({ id: "s1", messages: [user("prior question")] });
+    let seenRequest: Message[] = [];
+    const agent = defineAgent({
+      name: "a",
+      provider: mockProvider({
+        result: () => textResult("answer"),
+        onRequest: (req) => {
+          seenRequest = [...req.messages];
+        },
+      }),
+    });
+
+    const result = await runAgent(agent, { input: "new question", session });
+
+    // The provider saw prior history + new input.
+    expect(seenRequest.map((m) => textOf(m))).toEqual(["prior question", "new question"]);
+    // The session now holds prior + new input + assistant answer (no system/context dupes).
+    const persisted = await session.messages();
+    expect(persisted.map((m) => `${m.role}:${textOf(m)}`)).toEqual([
+      "user:prior question",
+      "user:new question",
+      "assistant:answer",
+    ]);
+    expect(result.output).toBe("answer");
+  });
+
+  it("does not persist system or injected-context messages to the session", async () => {
+    const session = createSession({ id: "s2" });
+    const agent = defineAgent({
+      name: "a",
+      instructions: "be terse",
+      provider: scriptedProvider([textResult("ok")]),
+    });
+    await runAgent(agent, { input: "hi", session, context: [staticContext("secret fact")] });
+    const persisted = await session.messages();
+    expect(persisted.map((m) => m.role)).toEqual(["user", "assistant"]);
+    expect(persisted.some((m) => textOf(m).includes("secret fact"))).toBe(false);
+  });
+
+  it("resumes a conversation across runs by reusing the same session", async () => {
+    const session = createSession({ id: "tab" });
+    const agent = defineAgent({ name: "a", provider: scriptedProvider([textResult("r")]) });
+    await runAgent(agent, { input: "first", session });
+    const second = await runAgent(agent, { input: "second", session });
+    // second run's full history includes both turns
+    expect(second.messages.map((m) => `${m.role}:${textOf(m)}`)).toEqual([
+      "user:first",
+      "assistant:r",
+      "user:second",
+      "assistant:r",
+    ]);
+  });
+
+  it("injects context as a system message visible to the provider", async () => {
+    let seenRequest: Message[] = [];
+    const agent = defineAgent({
+      name: "a",
+      instructions: "instructions",
+      provider: mockProvider({
+        result: () => textResult("ok"),
+        onRequest: (req) => {
+          seenRequest = [...req.messages];
+        },
+      }),
+    });
+    await runAgent(agent, { input: "hi", context: [staticContext("injected fact")] });
+    // [system(instructions), system(context), user(input)]
+    expect(seenRequest.map((m) => m.role)).toEqual(["system", "system", "user"]);
+    expect(textOf(seenRequest[1]!)).toContain("injected fact");
+  });
+
+  it("trims the request via contextWindow but keeps full history in RunResult", async () => {
+    let seenRequest: Message[] = [];
+    const agent = defineAgent({
+      name: "a",
+      provider: mockProvider({
+        result: () => textResult("final"),
+        onRequest: (req) => {
+          seenRequest = [...req.messages];
+        },
+      }),
+    });
+    const prior = [user("old-1"), assistant("old-2"), user("old-3")];
+    const result = await runAgent(agent, {
+      input: "newest",
+      messages: prior,
+      contextWindow: { maxTokens: 1, countTokens: (m) => m.length },
+    });
+    // request trimmed to a single (most recent) message
+    expect(seenRequest).toHaveLength(1);
+    expect(textOf(seenRequest[0]!)).toBe("newest");
+    // canonical history untouched: prior (3) + input (1) + assistant (1)
+    expect(result.messages).toHaveLength(5);
+  });
+
+  it("surfaces ContextWindowError as an error event and rethrows", async () => {
+    const seen: string[] = [];
+    const agent = defineAgent({
+      name: "a",
+      instructions: "a very long system prompt that cannot be dropped",
+      provider: scriptedProvider([textResult("ok")]),
+    });
+    await expect(
+      runAgent(agent, {
+        input: "hi",
+        onEvent: (e) => seen.push(e.type),
+        contextWindow: { maxTokens: 0, countTokens: (m) => m.length },
+      }),
+    ).rejects.toBeInstanceOf(ContextWindowError);
+    expect(seen).toContain("error");
+  });
+
+  it("routes a failing context provider through the error event + onError hook", async () => {
+    const seen: string[] = [];
+    let onErrorSeen = false;
+    const agent = defineAgent({
+      name: "a",
+      provider: scriptedProvider([textResult("ok")]),
+      hooks: { onError: () => { onErrorSeen = true; } },
+    });
+    const exploding = {
+      name: "boom",
+      resolve: () => {
+        throw new Error("context blew up");
+      },
+    };
+    await expect(
+      runAgent(agent, { input: "hi", context: [exploding], onEvent: (e) => seen.push(e.type) }),
+    ).rejects.toBeInstanceOf(AgentError);
+    expect(seen).toContain("error");
+    expect(onErrorSeen).toBe(true);
+  });
+
+  it("does not persist to the session when the run fails", async () => {
+    const session = createSession({ id: "fail" });
+    const agent = defineAgent({
+      name: "a",
+      tools: [echo],
+      provider: scriptedProvider([toolCallResult([{ id: "c1", name: "echo", arguments: { value: "x" } }])]),
+    });
+    await expect(runAgent(agent, { input: "go", session, maxSteps: 1 })).rejects.toBeInstanceOf(
+      MaxStepsExceededError,
+    );
+    expect(await session.messages()).toHaveLength(0);
   });
 });

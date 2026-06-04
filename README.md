@@ -290,11 +290,12 @@ bun test         # run the test suite
 bun run build    # emit dist/ (JS + .d.ts)
 ```
 
-Phases 1–4 (Foundation & Contracts, Provider Abstraction, Agent & Tool
-Contracts, Execution Flow) are implemented. Public entry points:
+Phases 1–5 (Foundation & Contracts, Provider Abstraction, Agent & Tool
+Contracts, Execution Flow, Context & Session Management) are implemented. Public
+entry points:
 
 ```ts
-import { s, user, system, AgentError, defineTool, defineAgent, runAgent } from "engine-lib";
+import { s, user, system, AgentError, defineTool, defineAgent, runAgent, createSession, staticContext } from "engine-lib";
 // or via subpaths:
 import { s } from "engine-lib/schema";
 import { user } from "engine-lib/messages";
@@ -304,6 +305,8 @@ import { createOpenAI } from "engine-lib/providers";
 import { defineTool } from "engine-lib/tools";
 import { defineAgent } from "engine-lib/agent";
 import { runAgent } from "engine-lib/execution";
+import { createSession } from "engine-lib/session";
+import { staticContext, truncateOldest } from "engine-lib/context";
 ```
 
 `runAgent` drives the provider-native tool-calling loop: it sends the
@@ -312,8 +315,22 @@ conversation + tool schemas to the provider, validates and dispatches tool calls
 until a final answer, the step budget (`MaxStepsExceededError`), or cancellation
 (`CancelledError`). It runs buffered (`await runAgent(agent, { input })` →
 `RunResult`) or streaming (`runAgent(agent, { input, stream: true })` → an
-async-iterable of `RunEvent`s). Sessions/context, the full event emitter, and
-multi-agent coordination follow in Phases 5–7 — see [`ROADMAP.md`](./ROADMAP.md).
+async-iterable of `RunEvent`s).
+
+Durable conversation state and run-time context injection are wired into the
+loop. Pass `session` (from `createSession({ id })`, backed by a `SessionStore` —
+`InMemorySessionStore` ships built-in) to resume a conversation: prior history is
+read before the run and the new turn is appended after. Pass `context`
+(`staticContext` / `dynamicContext` providers) to inject run-time facts into the
+system layer — injected context and instructions are rebuilt every run and never
+persisted. Pass `contextWindow: { maxTokens, strategy }` to keep the request
+within budget via `truncateOldest()` or `summarizeOldest()`, raising
+`ContextWindowError` only when history is irreducible; trimming never mutates the
+persisted/returned history.
+
+The full multi-subscriber event emitter + telemetry bridge and multi-agent
+coordination follow in Phases 6–7 — see [`ROADMAP.md`](./ROADMAP.md). (An
+optional `forge/data`-backed `SessionStore` is also deferred to a later change.)
 
 ## License
 

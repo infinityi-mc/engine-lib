@@ -31,6 +31,8 @@ import type { Message, TextPart } from "../messages/types";
 import type { CompletionRequest, CompletionResult, FinishReason } from "../providers/types";
 import { StreamAccumulator } from "../providers/stream";
 import type { EngineContext } from "../runtime/types";
+import { resolveContext } from "../context/providers";
+import { applyContextWindow } from "../context/window";
 import { toToolResultMessage } from "../tools/result";
 import type { ToolContext, ToolDefinition, ToolResult } from "../tools/types";
 import type { RunEvent, RunHandle, RunInput, RunOptions, RunResult } from "./types";
@@ -148,15 +150,31 @@ async function* executeAgent(
     }
   };
 
-  const messages: Message[] = [];
-  const instructions = await resolveInstructions(agent, engineCtx);
-  if (instructions !== undefined && instructions !== "") messages.push(system(instructions));
-  if (opts.messages !== undefined) messages.push(...opts.messages);
-  messages.push(...normalizeInput(opts.input));
-
   try {
     throwIfAborted(opts.signal);
     yield { type: "run.start", agent: agent.name };
+
+    // Assemble the conversation: instructions + injected context (rebuilt fresh
+    // each run, never persisted), then prior history (from the session when set,
+    // else opts.messages), then this run's new input. Kept inside the try so a
+    // failing context provider or session-store load is wrapped as an AgentError,
+    // surfaced as an `error` event, and routed through the onError hook.
+    const instructions = await resolveInstructions(agent, engineCtx);
+    const contextMessages = await resolveContext(opts.context, engineCtx);
+    const prior =
+      opts.session !== undefined ? await opts.session.messages() : (opts.messages ?? []);
+    const inputMessages = normalizeInput(opts.input);
+
+    const messages: Message[] = [];
+    if (instructions !== undefined && instructions !== "") messages.push(system(instructions));
+    messages.push(...contextMessages);
+    messages.push(...prior);
+    messages.push(...inputMessages);
+
+    // Messages produced by *this* run (input + assistant/tool turns) — the only
+    // ones appended back to the session. System/context/prior are excluded.
+    const newMessages: Message[] = [...inputMessages];
+
     await hooks?.onStart?.({ agent, messages: [...messages] }, engineCtx);
 
     let usage = emptyUsage();
@@ -168,8 +186,15 @@ async function* executeAgent(
       throwIfAborted(opts.signal);
       steps++;
 
-      const req = buildRequest(agent, opts, providerTools, messages);
-      const model = req.model ?? provider.defaultModel;
+      const model = (opts.generation?.model ?? agent.generation?.model) ?? provider.defaultModel;
+      // Trim a *view* of the history to fit the context window; the canonical
+      // `messages` (persisted + returned) is never mutated.
+      const requestMessages = await applyContextWindow(messages, opts.contextWindow, {
+        provider,
+        model,
+        engine: engineCtx,
+      });
+      const req = buildRequest(agent, opts, providerTools, requestMessages);
 
       let result: CompletionResult;
       if (stream && provider.capabilities.streaming) {
@@ -197,6 +222,7 @@ async function* executeAgent(
       finishReason = result.finishReason;
       finalMessage = result.message;
       messages.push(result.message);
+      newMessages.push(result.message);
       yield { type: "message", message: result.message };
       await hooks?.onStep?.({ step: steps, result }, engineCtx);
 
@@ -211,6 +237,7 @@ async function* executeAgent(
           steps,
           usage,
         };
+        await opts.session?.append(newMessages);
         yield { type: "run.finish", result: runResult };
         await hooks?.onFinish?.({ output, usage }, engineCtx);
         return runResult;
@@ -234,6 +261,7 @@ async function* executeAgent(
       for (const { call, result: toolResult } of settled) {
         const message = toToolResultMessage(call.id, toolResult);
         messages.push(message);
+        newMessages.push(message);
         yield { type: "message", message };
       }
     }
