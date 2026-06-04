@@ -290,11 +290,11 @@ bun test         # run the test suite
 bun run build    # emit dist/ (JS + .d.ts)
 ```
 
-Phases 1–3 (Foundation & Contracts, Provider Abstraction, Agent & Tool
-Contracts) are implemented. Public entry points:
+Phases 1–4 (Foundation & Contracts, Provider Abstraction, Agent & Tool
+Contracts, Execution Flow) are implemented. Public entry points:
 
 ```ts
-import { s, user, system, AgentError, defineTool, defineAgent } from "engine-lib";
+import { s, user, system, AgentError, defineTool, defineAgent, runAgent } from "engine-lib";
 // or via subpaths:
 import { s } from "engine-lib/schema";
 import { user } from "engine-lib/messages";
@@ -303,11 +303,17 @@ import { resolveSecret } from "engine-lib/runtime";
 import { createOpenAI } from "engine-lib/providers";
 import { defineTool } from "engine-lib/tools";
 import { defineAgent } from "engine-lib/agent";
+import { runAgent } from "engine-lib/execution";
 ```
 
-`defineTool` / `defineAgent` build the agent and tool *contracts* (declarative
-definitions, the structured tool-result model, and the per-agent tool registry);
-the execution loop (`runAgent`) lands in Phase 4 — see [`ROADMAP.md`](./ROADMAP.md).
+`runAgent` drives the provider-native tool-calling loop: it sends the
+conversation + tool schemas to the provider, validates and dispatches tool calls
+(in parallel, with per-call error isolation), feeds results back, and repeats
+until a final answer, the step budget (`MaxStepsExceededError`), or cancellation
+(`CancelledError`). It runs buffered (`await runAgent(agent, { input })` →
+`RunResult`) or streaming (`runAgent(agent, { input, stream: true })` → an
+async-iterable of `RunEvent`s). Sessions/context, the full event emitter, and
+multi-agent coordination follow in Phases 5–7 — see [`ROADMAP.md`](./ROADMAP.md).
 
 ## License
 

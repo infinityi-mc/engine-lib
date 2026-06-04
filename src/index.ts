@@ -113,3 +113,13 @@ export type {
   Instructions,
   ToolRegistry,
 } from "./agent/index";
+
+// Execution (Phase 4)
+export { addUsage, DEFAULT_MAX_STEPS, emptyUsage, runAgent } from "./execution/index";
+export type {
+  RunEvent,
+  RunHandle,
+  RunInput,
+  RunOptions,
+  RunResult,
+} from "./execution/index";
