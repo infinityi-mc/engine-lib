@@ -9,10 +9,110 @@
 
 import type { Message } from "../messages/types";
 import type { Schema } from "../schema/types";
+import type { EngineContext } from "../runtime/types";
+import type {
+  CompletionRequest,
+  CompletionResult,
+  Provider,
+  ProviderCapabilities,
+} from "../providers/types";
+import { collectStream } from "../providers/stream";
+import type { StreamEvent } from "../providers/stream";
 
 /** Build a `Message[]` from arguments, for readable test fixtures. */
 export function conversation(...messages: Message[]): Message[] {
   return messages;
+}
+
+const MOCK_CAPABILITIES: ProviderCapabilities = {
+  tools: true,
+  streaming: true,
+  multimodalInput: true,
+  parallelToolCalls: true,
+  structuredOutput: true,
+};
+
+/** Options for {@link mockProvider}. */
+export interface MockProviderOptions {
+  readonly name?: string;
+  readonly defaultModel?: string;
+  readonly capabilities?: Partial<ProviderCapabilities>;
+  /** Scripted buffered result (or a function of the request). */
+  readonly result?: CompletionResult | ((req: CompletionRequest) => CompletionResult);
+  /** Scripted stream events (or a function of the request). When omitted, a
+   * single text/finish stream is derived from {@link MockProviderOptions.result}. */
+  readonly events?: StreamEvent[] | ((req: CompletionRequest) => StreamEvent[]);
+  /** Called with every request, so tests can assert on what was sent. */
+  readonly onRequest?: (req: CompletionRequest, ctx?: EngineContext) => void;
+}
+
+/**
+ * A network-free {@link Provider} for contract tests and Phase-4 run-loop
+ * tests. Returns scripted results/streams and records every request.
+ */
+export function mockProvider(opts: MockProviderOptions = {}): Provider {
+  const name = opts.name ?? "mock";
+  const defaultModel = opts.defaultModel ?? "mock-model";
+
+  const resultFor = (req: CompletionRequest): CompletionResult => {
+    if (typeof opts.result === "function") return opts.result(req);
+    if (opts.result !== undefined) return opts.result;
+    return {
+      message: { role: "assistant", content: [{ type: "text", text: "ok" }] },
+      toolCalls: [],
+      finishReason: "stop",
+      model: req.model ?? defaultModel,
+      raw: {},
+    };
+  };
+
+  const eventsFor = (req: CompletionRequest): StreamEvent[] => {
+    if (typeof opts.events === "function") return opts.events(req);
+    if (opts.events !== undefined) return opts.events;
+    const result = resultFor(req);
+    const text = result.message.content
+      .filter((p): p is { type: "text"; text: string } => p.type === "text")
+      .map((p) => p.text)
+      .join("");
+    const events: StreamEvent[] = [{ type: "message_start", model: result.model }];
+    if (text !== "") events.push({ type: "text_delta", text });
+    result.toolCalls.forEach((call, index) => {
+      const argumentsText = call.argumentsText
+        ?? (call.arguments === undefined ? "" : JSON.stringify(call.arguments) ?? "");
+      events.push({ type: "tool_call_start", index, id: call.id, name: call.name });
+      if (argumentsText !== "") events.push({ type: "tool_call_delta", index, argumentsTextDelta: argumentsText });
+      events.push({ type: "tool_call_end", index });
+    });
+    events.push({
+      type: "finish",
+      finishReason: result.finishReason,
+      ...(result.usage !== undefined ? { usage: result.usage } : {}),
+    });
+    return events;
+  };
+
+  return {
+    name,
+    defaultModel,
+    capabilities: { ...MOCK_CAPABILITIES, ...opts.capabilities },
+    async complete(req: CompletionRequest, ctx?: EngineContext): Promise<CompletionResult> {
+      opts.onRequest?.(req, ctx);
+      return resultFor(req);
+    },
+    async *stream(req: CompletionRequest, ctx?: EngineContext): AsyncIterable<StreamEvent> {
+      opts.onRequest?.(req, ctx);
+      for (const event of eventsFor(req)) yield event;
+    },
+  };
+}
+
+/** Drain a {@link Provider.stream} into a {@link CompletionResult} for assertions. */
+export async function collectProviderStream(
+  provider: Provider,
+  req: CompletionRequest,
+  ctx?: EngineContext,
+): Promise<CompletionResult> {
+  return collectStream(provider.stream(req, ctx), req.model ?? provider.defaultModel);
 }
 
 /**
