@@ -284,11 +284,21 @@ intended surface and may change before a stable release.
 ## Getting Started
 
 ```bash
-bun install
+bun install      # install dependencies
+bun run check    # type-check (tsc --noEmit)
+bun test         # run the test suite
+bun run build    # emit dist/ (JS + .d.ts)
 ```
 
-```bash
-bun run index.ts
+Phase 1 (Foundation & Contracts) is implemented. Public entry points:
+
+```ts
+import { s, user, system, AgentError } from "engine-lib";
+// or via subpaths:
+import { s } from "engine-lib/schema";
+import { user } from "engine-lib/messages";
+import { AgentError } from "engine-lib/errors";
+import { resolveSecret } from "engine-lib/runtime";
 ```
 
 ## License
