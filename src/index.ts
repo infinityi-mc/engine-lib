@@ -9,7 +9,8 @@
  * (see `ROADMAP.md`).
  *
  * Sub-paths are also available: `engine-lib/schema`, `engine-lib/messages`,
- * `engine-lib/errors`, `engine-lib/runtime`, `engine-lib/testing`.
+ * `engine-lib/errors`, `engine-lib/runtime`, `engine-lib/providers`,
+ * `engine-lib/testing`.
  *
  * @module
  */
@@ -54,3 +55,39 @@ export type {
 // Runtime (forge integration)
 export { isSecret, resolveSecret, Secret } from "./runtime/index";
 export type { EngineContext, TelemetryHandle } from "./runtime/index";
+
+// Providers (Phase 2)
+export {
+  collectStream,
+  createAnthropic,
+  createGoogle,
+  createOpenAI,
+  createOpenAICompatible,
+  createProvider,
+  createProviderHttp,
+  defaultProviderResilience,
+  openSseStream,
+  parseSse,
+  StreamAccumulator,
+  toProviderError,
+} from "./providers/index";
+export type {
+  AdapterSpec,
+  AnthropicOptions,
+  CompletionRequest,
+  CompletionResult,
+  FinishReason,
+  GoogleOptions,
+  OpenAICompatibleOptions,
+  OpenAIOptions,
+  Provider,
+  ProviderCapabilities,
+  ProviderHttpOptions,
+  ProviderTool,
+  ResponseSchema,
+  SseMessage,
+  StreamEvent,
+  ToolCall,
+  ToolChoice,
+  Usage,
+} from "./providers/index";
