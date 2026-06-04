@@ -271,6 +271,10 @@ function makeHandle(
     resolveCompleted = resolve;
     rejectCompleted = reject;
   });
+  // The run error is always propagated through the async-iterable (the generator
+  // re-throws). Swallow it here so a consumer that only iterates — and never
+  // awaits `completed` — doesn't trip an unhandled-rejection warning/crash.
+  completed.catch(() => {});
 
   async function* iterate(): AsyncGenerator<RunEvent> {
     try {

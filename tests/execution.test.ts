@@ -258,6 +258,41 @@ describe("runAgent — streaming", () => {
     expect(result.steps).toBe(2);
   });
 
+  it("surfaces a run error through iteration and rejects completed", async () => {
+    const agent = defineAgent({
+      name: "a",
+      tools: [echo],
+      provider: scriptedProvider([toolCallResult([{ id: "c1", name: "echo", arguments: { value: "x" } }])]),
+    });
+    const handle = runAgent(agent, { input: "go", stream: true, maxSteps: 1 });
+
+    const events: RunEvent[] = [];
+    let iterationError: unknown;
+    try {
+      for await (const event of handle) events.push(event);
+    } catch (err) {
+      iterationError = err;
+    }
+    expect(iterationError).toBeInstanceOf(MaxStepsExceededError);
+    expect(events.map((e) => e.type)).toContain("error");
+    await expect(handle.completed).rejects.toBeInstanceOf(MaxStepsExceededError);
+  });
+
+  it("does not crash when a failing stream is iterated without awaiting completed", async () => {
+    const agent = defineAgent({
+      name: "a",
+      tools: [echo],
+      provider: scriptedProvider([toolCallResult([{ id: "c1", name: "echo", arguments: { value: "x" } }])]),
+    });
+    const handle = runAgent(agent, { input: "go", stream: true, maxSteps: 1 });
+    // Intentionally never touch `handle.completed`.
+    await expect((async () => {
+      for await (const _ of handle) void _;
+    })()).rejects.toBeInstanceOf(MaxStepsExceededError);
+    // Give the microtask queue a tick; an unhandled rejection would surface here.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
   it("forwards events to the onEvent callback in buffered mode", async () => {
     const seen: string[] = [];
     const agent = defineAgent({ name: "a", provider: scriptedProvider([textResult("ok")]) });
