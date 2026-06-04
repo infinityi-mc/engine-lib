@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { defineAgent, defineTool } from "../src/agent/index";
 import { staticContext } from "../src/context/index";
-import { CancelledError, ContextWindowError, MaxStepsExceededError } from "../src/errors";
+import { AgentError, CancelledError, ContextWindowError, MaxStepsExceededError } from "../src/errors";
 import { runAgent } from "../src/execution/index";
 import type { RunEvent } from "../src/execution/index";
 import { assistant, user } from "../src/messages/index";
@@ -443,6 +443,27 @@ describe("runAgent — sessions & context (Phase 5)", () => {
       }),
     ).rejects.toBeInstanceOf(ContextWindowError);
     expect(seen).toContain("error");
+  });
+
+  it("routes a failing context provider through the error event + onError hook", async () => {
+    const seen: string[] = [];
+    let onErrorSeen = false;
+    const agent = defineAgent({
+      name: "a",
+      provider: scriptedProvider([textResult("ok")]),
+      hooks: { onError: () => { onErrorSeen = true; } },
+    });
+    const exploding = {
+      name: "boom",
+      resolve: () => {
+        throw new Error("context blew up");
+      },
+    };
+    await expect(
+      runAgent(agent, { input: "hi", context: [exploding], onEvent: (e) => seen.push(e.type) }),
+    ).rejects.toBeInstanceOf(AgentError);
+    expect(seen).toContain("error");
+    expect(onErrorSeen).toBe(true);
   });
 
   it("does not persist to the session when the run fails", async () => {

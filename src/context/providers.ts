@@ -12,8 +12,11 @@ import type { ContextItem, ContextProvider } from "./types";
 
 /** Render one {@link ContextItem} to text (strings pass through; else JSON). */
 function renderItem(item: ContextItem): string {
+  // JSON.stringify(undefined) returns the value `undefined`, not a string — coerce to "".
   const body =
-    typeof item.content === "string" ? item.content : JSON.stringify(item.content, null, 2);
+    typeof item.content === "string"
+      ? item.content
+      : (JSON.stringify(item.content, null, 2) ?? "");
   return item.title !== undefined && item.title !== "" ? `## ${item.title}\n${body}` : body;
 }
 

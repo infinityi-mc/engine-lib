@@ -39,6 +39,14 @@ describe("context providers", () => {
     expect(textOf(msgs[0]!)).toBe("now=42");
   });
 
+  it("renders undefined content as empty (never the literal 'undefined')", async () => {
+    // A provider fn that forgets to return a value yields undefined content.
+    const provider = dynamicContext("oops", () => undefined, "Title");
+    const msgs = await resolveContext([provider], {});
+    expect(textOf(msgs[0]!)).toBe("## Title\n");
+    expect(textOf(msgs[0]!)).not.toContain("undefined");
+  });
+
   it("merges multiple providers into one system message, order preserved", async () => {
     const msgs = await resolveContext([staticContext("first"), staticContext("second")], {});
     expect(msgs).toHaveLength(1);

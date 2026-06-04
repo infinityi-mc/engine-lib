@@ -150,27 +150,31 @@ async function* executeAgent(
     }
   };
 
-  // Assemble the conversation: instructions + injected context (rebuilt fresh
-  // each run, never persisted), then prior history (from the session when set,
-  // else opts.messages), then this run's new input.
-  const instructions = await resolveInstructions(agent, engineCtx);
-  const contextMessages = await resolveContext(opts.context, engineCtx);
-  const prior = opts.session !== undefined ? await opts.session.messages() : (opts.messages ?? []);
-  const inputMessages = normalizeInput(opts.input);
-
-  const messages: Message[] = [];
-  if (instructions !== undefined && instructions !== "") messages.push(system(instructions));
-  messages.push(...contextMessages);
-  messages.push(...prior);
-  messages.push(...inputMessages);
-
-  // Messages produced by *this* run (input + assistant/tool turns) — the only
-  // ones appended back to the session. System/context/prior are excluded.
-  const newMessages: Message[] = [...inputMessages];
-
   try {
     throwIfAborted(opts.signal);
     yield { type: "run.start", agent: agent.name };
+
+    // Assemble the conversation: instructions + injected context (rebuilt fresh
+    // each run, never persisted), then prior history (from the session when set,
+    // else opts.messages), then this run's new input. Kept inside the try so a
+    // failing context provider or session-store load is wrapped as an AgentError,
+    // surfaced as an `error` event, and routed through the onError hook.
+    const instructions = await resolveInstructions(agent, engineCtx);
+    const contextMessages = await resolveContext(opts.context, engineCtx);
+    const prior =
+      opts.session !== undefined ? await opts.session.messages() : (opts.messages ?? []);
+    const inputMessages = normalizeInput(opts.input);
+
+    const messages: Message[] = [];
+    if (instructions !== undefined && instructions !== "") messages.push(system(instructions));
+    messages.push(...contextMessages);
+    messages.push(...prior);
+    messages.push(...inputMessages);
+
+    // Messages produced by *this* run (input + assistant/tool turns) — the only
+    // ones appended back to the session. System/context/prior are excluded.
+    const newMessages: Message[] = [...inputMessages];
+
     await hooks?.onStart?.({ agent, messages: [...messages] }, engineCtx);
 
     let usage = emptyUsage();
