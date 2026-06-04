@@ -57,6 +57,29 @@ describe("openSseStream", () => {
     expect(captured?.aborted).toBe(true);
   });
 
+  it("retries transient HTTP statuses before returning the stream", async () => {
+    let attempts = 0;
+    const fetchImpl = (async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return new Response("rate limited", { status: 429 });
+      }
+      return new Response(streamOf("data: x\n\n"), {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    }) as unknown as typeof fetch;
+
+    const body = await openSseStream(
+      "test",
+      { baseUrl: "https://api.example.com/v1", headers: {}, fetch: fetchImpl },
+      { path: "stream", body: {} },
+    );
+
+    expect(body).not.toBeNull();
+    expect(attempts).toBe(2);
+  });
+
   it("records streaming request telemetry", async () => {
     const spanNames: string[] = [];
     const metricRecords: Array<{ value: number; attributes?: Record<string, unknown> }> = [];

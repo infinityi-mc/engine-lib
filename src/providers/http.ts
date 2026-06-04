@@ -191,23 +191,22 @@ export async function openSseStream(
   const startedAt = performance.now();
   let statusLabel: string | undefined;
   try {
-    const response = await pipeline.execute((pctx) =>
-      fetchImpl(url, {
+    const response = await pipeline.execute(async (pctx) => {
+      const response = await fetchImpl(url, {
         method: "POST",
         headers,
         body: JSON.stringify(req.body),
         signal: combineSignals(pctx.signal, req.signal, ctx?.signal),
-      }),
-    );
-    statusLabel = String(response.status);
-
-    if (!response.ok) {
-      const detail = await response.text().catch(() => "");
-      throw toProviderError(provider, {
-        status: response.status,
-        message: detail || response.statusText,
       });
-    }
+      statusLabel = String(response.status);
+      if (!response.ok) {
+        const detail = await response.text().catch(() => "");
+        throw Object.assign(new Error(detail || response.statusText), {
+          status: response.status,
+        });
+      }
+      return response;
+    });
     if (response.body === null) {
       throw new ProviderError(`${provider} streaming response had no body`, {
         provider,
