@@ -48,6 +48,14 @@
       "import": "./dist/execution/index.js",
       "types": "./dist/execution/index.d.ts"
     },
+    "./session": {
+      "import": "./dist/session/index.js",
+      "types": "./dist/session/index.d.ts"
+    },
+    "./context": {
+      "import": "./dist/context/index.js",
+      "types": "./dist/context/index.d.ts"
+    },
     "./testing": {
       "import": "./dist/testing/index.js",
       "types": "./dist/testing/index.d.ts"
@@ -55,7 +63,7 @@
   },
   "scripts": {
     "clean": "bun -e \"const fs = require('fs'); fs.rmSync('dist', { recursive: true, force: true });\"",
-    "build:js": "bun build src/index.ts src/schema/index.ts src/messages/index.ts src/errors.ts src/runtime/index.ts src/providers/index.ts src/tools/index.ts src/agent/index.ts src/execution/index.ts src/testing/index.ts --outdir dist --root src --splitting --target node",
+    "build:js": "bun build src/index.ts src/schema/index.ts src/messages/index.ts src/errors.ts src/runtime/index.ts src/providers/index.ts src/tools/index.ts src/agent/index.ts src/execution/index.ts src/session/index.ts src/context/index.ts src/testing/index.ts --outdir dist --root src --splitting --target node",
     "build:types": "tsc -p tsconfig.build.json",
     "build": "bun run clean && bun run build:js && bun run build:types",
     "check": "tsc --noEmit",

@@ -18,6 +18,8 @@ import type { Message } from "../messages/types";
 import type { FinishReason, Usage } from "../providers/types";
 import type { Logger, TelemetryHandle } from "../runtime/types";
 import type { GenerationSettings } from "../agent/types";
+import type { ContextProvider, ContextWindowOptions } from "../context/types";
+import type { Session } from "../session/types";
 import type { ToolResult } from "../tools/types";
 
 /** New input for a run: raw text (→ a user message), a single message, or several. */
@@ -37,8 +39,14 @@ export type RunEvent =
 export interface RunOptions {
   /** New input for this run. */
   readonly input?: RunInput;
-  /** Prior conversation prepended before `input` (Phase 5 sources this from a session). */
+  /** Prior conversation prepended before `input`. Ignored when `session` is set (history comes from the session). */
   readonly messages?: Message[];
+  /** Durable conversation: history is read before the run and new messages appended after it. */
+  readonly session?: Session;
+  /** Context providers injected into the system layer at run time (after instructions, before history). */
+  readonly context?: readonly ContextProvider[];
+  /** Token budgeting for the messages sent to the provider (does not affect persisted/returned history). */
+  readonly contextWindow?: ContextWindowOptions;
   /** Per-run generation overrides, merged over the agent's `generation` defaults. */
   readonly generation?: GenerationSettings;
   /** Cap on provider turns (model→tools→model cycles). Defaults to {@link DEFAULT_MAX_STEPS}. */

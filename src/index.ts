@@ -123,3 +123,31 @@ export type {
   RunOptions,
   RunResult,
 } from "./execution/index";
+
+// Session (Phase 5)
+export { createSession, InMemorySessionStore } from "./session/index";
+export type {
+  CreateSessionOptions,
+  Session,
+  SessionState,
+  SessionStore,
+} from "./session/index";
+
+// Context (Phase 5)
+export {
+  applyContextWindow,
+  dynamicContext,
+  estimateTokens,
+  resolveContext,
+  staticContext,
+  summarizeOldest,
+  truncateOldest,
+} from "./context/index";
+export type {
+  ContextItem,
+  ContextProvider,
+  ContextStrategy,
+  ContextStrategyContext,
+  ContextWindowOptions,
+  TokenCounter,
+} from "./context/index";
