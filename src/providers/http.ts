@@ -155,7 +155,7 @@ export async function openSseStream(
         method: "POST",
         headers,
         body: JSON.stringify(req.body),
-        signal: combineSignals(pctx.signal, req.signal ?? ctx?.signal),
+        signal: combineSignals(pctx.signal, req.signal, ctx?.signal),
       }),
     );
   } catch (error) {

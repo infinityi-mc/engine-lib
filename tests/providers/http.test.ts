@@ -4,9 +4,10 @@ import { ProviderError } from "../../src/errors";
 import {
   createProviderHttp,
   defaultProviderResilience,
+  openSseStream,
   toProviderError,
 } from "../../src/providers/http";
-import { jsonFetch } from "./helpers";
+import { jsonFetch, streamOf } from "./helpers";
 
 describe("createProviderHttp", () => {
   it("resolves the base URL + path and merges default headers", async () => {
@@ -26,6 +27,33 @@ describe("createProviderHttp", () => {
     const { fetch } = jsonFetch({ error: "nope" }, { status: 500 });
     const http = createProviderHttp({ baseUrl: "https://api.example.com", headers: {}, fetch });
     await expect(http.post("things", {})).rejects.toBeDefined();
+  });
+});
+
+describe("openSseStream", () => {
+  it("honours ctx.signal even when req.signal is also provided", async () => {
+    let captured: AbortSignal | undefined;
+    const fetchImpl = (async (_input: unknown, init?: RequestInit) => {
+      captured = init?.signal ?? undefined;
+      return new Response(streamOf("data: x\n\n"), {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    }) as unknown as typeof fetch;
+
+    const reqController = new AbortController();
+    const ctxController = new AbortController();
+    await openSseStream(
+      "test",
+      { baseUrl: "https://api.example.com/v1", headers: {}, fetch: fetchImpl },
+      { path: "stream", body: {}, signal: reqController.signal },
+      { signal: ctxController.signal },
+    );
+
+    expect(captured).toBeDefined();
+    expect(captured?.aborted).toBe(false);
+    ctxController.abort();
+    expect(captured?.aborted).toBe(true);
   });
 });
 
