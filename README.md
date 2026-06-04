@@ -290,9 +290,9 @@ bun test         # run the test suite
 bun run build    # emit dist/ (JS + .d.ts)
 ```
 
-Phases 1–5 (Foundation & Contracts, Provider Abstraction, Agent & Tool
-Contracts, Execution Flow, Context & Session Management) are implemented. Public
-entry points:
+Phases 1–6 (Foundation & Contracts, Provider Abstraction, Agent & Tool
+Contracts, Execution Flow, Context & Session Management, Event System &
+Lifecycle Hooks) are implemented. Public entry points:
 
 ```ts
 import { s, user, system, AgentError, defineTool, defineAgent, runAgent, createSession, staticContext } from "engine-lib";
@@ -307,6 +307,7 @@ import { defineAgent } from "engine-lib/agent";
 import { runAgent } from "engine-lib/execution";
 import { createSession } from "engine-lib/session";
 import { staticContext, truncateOldest } from "engine-lib/context";
+import { createEventHub, loggingSubscriber, messageBusSubscriber } from "engine-lib/events";
 ```
 
 `runAgent` drives the provider-native tool-calling loop: it sends the
@@ -328,9 +329,35 @@ within budget via `truncateOldest()` or `summarizeOldest()`, raising
 `ContextWindowError` only when history is irreducible; trimming never mutates the
 persisted/returned history.
 
-The full multi-subscriber event emitter + telemetry bridge and multi-agent
-coordination follow in Phases 6–7 — see [`ROADMAP.md`](./ROADMAP.md). (An
-optional `forge/data`-backed `SessionStore` is also deferred to a later change.)
+Every run is observable. Beyond the single `onEvent` callback (and the streaming
+async-iterable), pass `subscribers: RunSubscriber[]` to fan a run's `RunEvent`s
+out to multiple independent sinks — they are dispatched in order, awaited, and
+isolated (a subscriber that throws neither aborts the run nor starves the
+others). `loggingSubscriber(logger)` and `messageBusSubscriber(bus)` bridge a
+run to a forge `Logger` and `MessageBus`:
+
+```ts
+import { loggingSubscriber, messageBusSubscriber } from "engine-lib/events";
+
+await runAgent(agent, {
+  input: "go",
+  telemetry, // forge Telemetry handle → automatic run/provider/tool spans + metrics
+  subscribers: [
+    loggingSubscriber(logger),       // one structured log line per event
+    messageBusSubscriber(messageBus) // republish as agent.run.start, agent.tool.call, …
+  ],
+});
+```
+
+Supplying a `telemetry` handle enables the `forge/telemetry` bridge with no
+further wiring: an `agent.run` span wraps the run, nested `agent.provider.call`
+and `agent.tool.execute` spans cover each provider turn and tool execution, and
+`agent.run.duration` / `agent.tool.duration` / `agent.tokens` / `agent.runs`
+metrics are recorded.
+
+Multi-agent coordination follows in Phase 7 — see [`ROADMAP.md`](./ROADMAP.md).
+(An optional `forge/data`-backed `SessionStore` is also deferred to a later
+change.)
 
 ## License
 
