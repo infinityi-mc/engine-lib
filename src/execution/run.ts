@@ -242,7 +242,11 @@ async function* executeAgent(
   } catch (err) {
     const agentError = toAgentError(err);
     yield { type: "error", error: agentError };
-    await hooks?.onError?.({ error: agentError }, engineCtx);
+    try {
+      await hooks?.onError?.({ error: agentError }, engineCtx);
+    } catch {
+      // Preserve the run failure: onError observes errors, but should not replace them.
+    }
     throw agentError;
   }
 }

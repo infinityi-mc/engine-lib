@@ -226,6 +226,24 @@ describe("runAgent — buffered", () => {
     await expect(runAgent(agent, { input: "go", maxSteps: 1 })).rejects.toBeInstanceOf(MaxStepsExceededError);
     expect(order).toEqual(["MaxStepsExceededError"]);
   });
+
+  it("preserves the original failure if onError throws", async () => {
+    const order: string[] = [];
+    const agent = defineAgent({
+      name: "a",
+      tools: [echo],
+      provider: scriptedProvider([toolCallResult([{ id: "c1", name: "echo", arguments: { value: "x" } }])]),
+      hooks: {
+        onError: ({ error }) => {
+          order.push(error.name);
+          throw new Error("hook failed");
+        },
+      },
+    });
+
+    await expect(runAgent(agent, { input: "go", maxSteps: 1 })).rejects.toBeInstanceOf(MaxStepsExceededError);
+    expect(order).toEqual(["MaxStepsExceededError"]);
+  });
 });
 
 describe("runAgent — streaming", () => {
