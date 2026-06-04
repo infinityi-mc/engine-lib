@@ -11,8 +11,18 @@
  */
 
 import { createHttpClient } from "@infinityi/forge/http/client";
-import type { FetchLike, HttpClient, PipelineLike } from "@infinityi/forge/http/client";
-import { combine, exponentialBackoff, retry, timeout } from "@infinityi/forge/resilience";
+import type {
+  FetchLike,
+  HttpClient,
+  PipelineLike,
+} from "@infinityi/forge/http/client";
+import {
+  combine,
+  exponentialBackoff,
+  retry,
+  timeout,
+} from "@infinityi/forge/resilience";
+import { tracedFetch } from "@infinityi/forge/telemetry/instrumentation/fetch";
 
 import { ProviderError } from "../errors";
 import type { EngineContext } from "../runtime/types";
@@ -58,7 +68,8 @@ function messageOf(error: unknown): string {
 /** Retry transient failures: 429, any 5xx, and network errors (no status). */
 function isTransient(error: unknown): boolean {
   // User/engine cancellation is terminal — never retry it.
-  if (error instanceof DOMException && error.name === "AbortError") return false;
+  if (error instanceof DOMException && error.name === "AbortError")
+    return false;
   const status = statusOf(error);
   if (status === undefined) return true; // network / abort-less failure
   return status === 429 || status >= 500;
@@ -83,7 +94,10 @@ export function defaultProviderResilience(timeoutMs: number): PipelineLike {
  * Build a forge {@link HttpClient} for a provider, wiring telemetry/logger from
  * the {@link EngineContext} and a default resilience pipeline.
  */
-export function createProviderHttp(opts: ProviderHttpOptions, ctx?: EngineContext): HttpClient {
+export function createProviderHttp(
+  opts: ProviderHttpOptions,
+  ctx?: EngineContext,
+): HttpClient {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const telemetry = ctx?.telemetry;
   return createHttpClient({
@@ -91,9 +105,13 @@ export function createProviderHttp(opts: ProviderHttpOptions, ctx?: EngineContex
     // e.g. the `/v1` segment) rather than replacing its last segment.
     baseUrl: opts.baseUrl.endsWith("/") ? opts.baseUrl : `${opts.baseUrl}/`,
     defaultHeaders: opts.headers,
-    timeoutMs,
+    // The default resilience pipeline already applies timeoutMs per attempt.
+    // Passing timeoutMs to forge's HttpClient too would arm a second deadline.
+    timeoutMs: opts.resilience === undefined ? undefined : timeoutMs,
     resilience: opts.resilience ?? defaultProviderResilience(timeoutMs),
-    telemetry: telemetry ? { meter: telemetry.meter, tracer: telemetry.tracer } : undefined,
+    telemetry: telemetry
+      ? { meter: telemetry.meter, tracer: telemetry.tracer }
+      : undefined,
     logger: ctx?.logger ?? telemetry?.log,
     fetch: opts.fetch,
     allowAbsoluteUrls: opts.allowAbsoluteUrls,
@@ -109,7 +127,17 @@ function joinUrl(baseUrl: string, path: string): string {
 }
 
 /** Combine the resilience signal with the caller's cancellation signal. */
-function combineSignals(...signals: Array<AbortSignal | undefined>): AbortSignal | undefined {
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return "";
+  }
+}
+
+function combineSignals(
+  ...signals: Array<AbortSignal | undefined>
+): AbortSignal | undefined {
   const present = signals.filter((s): s is AbortSignal => s !== undefined);
   if (present.length === 0) return undefined;
   if (present.length === 1) return present[0];
@@ -142,17 +170,28 @@ export async function openSseStream(
 ): Promise<ReadableStream<Uint8Array>> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const pipeline = opts.resilience ?? defaultProviderResilience(timeoutMs);
-  const fetchImpl: FetchLike = opts.fetch ?? ((input, init) => fetch(input, init));
+  const telemetry = ctx?.telemetry;
+  const baseFetch: FetchLike =
+    opts.fetch ?? ((input, init) => fetch(input, init));
+  const fetchImpl: FetchLike = telemetry?.tracer
+    ? tracedFetch({ tracer: telemetry.tracer, fetch: baseFetch })
+    : baseFetch;
+  const durationHistogram = telemetry?.meter?.createHistogram(
+    "http.client.request.duration",
+    { description: "Duration of outbound HTTP client requests.", unit: "s" },
+  );
   const url = joinUrl(opts.baseUrl, req.path);
+  const serverAddress = hostOf(url);
   const headers = {
     "content-type": "application/json",
     accept: "text/event-stream",
     ...opts.headers,
   };
 
-  let response: Response;
+  const startedAt = performance.now();
+  let statusLabel: string | undefined;
   try {
-    response = await pipeline.execute((pctx) =>
+    const response = await pipeline.execute((pctx) =>
       fetchImpl(url, {
         method: "POST",
         headers,
@@ -160,30 +199,50 @@ export async function openSseStream(
         signal: combineSignals(pctx.signal, req.signal, ctx?.signal),
       }),
     );
-  } catch (error) {
-    throw toProviderError(provider, error);
-  }
+    statusLabel = String(response.status);
 
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    throw toProviderError(provider, {
-      status: response.status,
-      message: detail || response.statusText,
-    });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      throw toProviderError(provider, {
+        status: response.status,
+        message: detail || response.statusText,
+      });
+    }
+    if (response.body === null) {
+      throw new ProviderError(`${provider} streaming response had no body`, {
+        provider,
+      });
+    }
+    return response.body;
+  } catch (error) {
+    statusLabel ??= statusOf(error)?.toString() ?? "error";
+    throw toProviderError(provider, error);
+  } finally {
+    const attributes: Record<string, string | number | boolean> = {
+      "http.request.method": "POST",
+      "server.address": serverAddress,
+    };
+    if (statusLabel !== undefined) {
+      attributes["http.response.status_code"] = statusLabel;
+    }
+    durationHistogram?.record(
+      (performance.now() - startedAt) / 1000,
+      attributes,
+    );
   }
-  if (response.body === null) {
-    throw new ProviderError(`${provider} streaming response had no body`, { provider });
-  }
-  return response.body;
 }
 
 /** Wrap any thrown HTTP/transport error as a {@link ProviderError}. */
-export function toProviderError(provider: string, error: unknown): ProviderError {
+export function toProviderError(
+  provider: string,
+  error: unknown,
+): ProviderError {
   if (error instanceof ProviderError) return error;
   const status = statusOf(error);
   const detail = messageOf(error);
-  const message = status !== undefined
-    ? `${provider} request failed (HTTP ${status}): ${detail}`
-    : `${provider} request failed: ${detail}`;
+  const message =
+    status !== undefined
+      ? `${provider} request failed (HTTP ${status}): ${detail}`
+      : `${provider} request failed: ${detail}`;
   return new ProviderError(message, { provider, cause: error });
 }

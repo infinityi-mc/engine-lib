@@ -105,7 +105,7 @@ describe("adapter stream() over injected SSE fetch", () => {
       new Response(body, {
         status: 200,
         headers: { "content-type": "text/event-stream" },
-      })) as typeof fetch;
+      })) as unknown as typeof fetch;
     const provider = createOpenAICompatible({ baseUrl: "https://host/v1", model: "m", fetch: fetchImpl });
     await expect(collect(provider.stream(req))).rejects.toBeInstanceOf(ProviderError);
   });

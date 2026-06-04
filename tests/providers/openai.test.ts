@@ -54,6 +54,8 @@ describe("buildOpenAIBody", () => {
     const body = buildOpenAIBody(req, "gpt-5", false) as Record<string, any>;
     expect(body["input"]).toEqual([{ type: "function_call_output", call_id: "call_1", output: "42" }]);
   });
+
+
 });
 
 describe("parseOpenAIResponse", () => {
@@ -102,6 +104,24 @@ describe("translateOpenAIStream", () => {
       { type: "tool_call_delta", index: 0, argumentsTextDelta: '{"a":1}' },
       { type: "tool_call_end", index: 0 },
       { type: "finish", finishReason: "tool_calls", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } },
+    ]);
+  });
+
+  it("emits finish when the stream ends before a terminal response event", async () => {
+    const events = await collect(
+      translateOpenAIStream(
+        sseMessages(
+          { data: JSON.stringify({ type: "response.created" }) },
+          { data: JSON.stringify({ type: "response.output_text.delta", delta: "hi" }) },
+          { data: "[DONE]" },
+        ),
+        "gpt-5",
+      ),
+    );
+    expect(events).toEqual([
+      { type: "message_start", model: "gpt-5" },
+      { type: "text_delta", text: "hi" },
+      { type: "finish", finishReason: "stop" },
     ]);
   });
 });

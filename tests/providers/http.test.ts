@@ -7,6 +7,7 @@ import {
   openSseStream,
   toProviderError,
 } from "../../src/providers/http";
+import type { EngineContext } from "../../src/runtime/types";
 import { jsonFetch, streamOf } from "./helpers";
 
 describe("createProviderHttp", () => {
@@ -54,6 +55,56 @@ describe("openSseStream", () => {
     expect(captured?.aborted).toBe(false);
     ctxController.abort();
     expect(captured?.aborted).toBe(true);
+  });
+
+  it("records streaming request telemetry", async () => {
+    const spanNames: string[] = [];
+    const metricRecords: Array<{ value: number; attributes?: Record<string, unknown> }> = [];
+    const span = {
+      setAttribute: () => span,
+      setAttributes: () => span,
+      setStatus: () => span,
+      addEvent: () => span,
+      end: () => {},
+    };
+    const ctx = {
+      telemetry: {
+        tracer: {
+          startSpan: () => span,
+          withSpan: (name: string, fn: (activeSpan: typeof span) => unknown) => {
+            spanNames.push(name);
+            return fn(span);
+          },
+        },
+        meter: {
+          createHistogram: () => ({
+            record: (value: number, attributes?: Record<string, unknown>) => {
+              metricRecords.push({ value, attributes });
+            },
+          }),
+        },
+      },
+    } as unknown as EngineContext;
+    const fetchImpl = (async (_input: unknown, _init?: RequestInit) =>
+      new Response(streamOf("data: x\n\n"), {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      })) as unknown as typeof fetch;
+
+    await openSseStream(
+      "test",
+      { baseUrl: "https://api.example.com/v1", headers: {}, fetch: fetchImpl },
+      { path: "stream", body: {} },
+      ctx,
+    );
+
+    expect(spanNames).toEqual(["HTTP POST"]);
+    expect(metricRecords).toHaveLength(1);
+    expect(metricRecords[0]?.attributes).toEqual({
+      "http.request.method": "POST",
+      "http.response.status_code": "200",
+      "server.address": "api.example.com",
+    });
   });
 });
 

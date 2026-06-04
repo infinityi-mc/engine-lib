@@ -6,6 +6,7 @@
 
 import type { SseMessage } from "../sse";
 import type { StreamEvent } from "../stream";
+import type { FinishReason } from "../types";
 import { parseOpenAIResponse } from "./map";
 
 interface OpenAIStreamEvent {
@@ -25,6 +26,11 @@ export async function* translateOpenAIStream(
   let nextIndex = 0;
   const indexByItem = new Map<string, number>();
   let started = false;
+  let hadToolCalls = false;
+  let finished = false;
+
+  const fallbackFinishReason = (): FinishReason =>
+    hadToolCalls ? "tool_calls" : "stop";
 
   for await (const message of messages) {
     if (message.data === "" || message.data === "[DONE]") continue;
@@ -45,7 +51,9 @@ export async function* translateOpenAIStream(
       case "response.output_item.added":
         if (event.item?.type === "function_call") {
           const index = nextIndex++;
-          if (event.item.id !== undefined) indexByItem.set(event.item.id, index);
+          hadToolCalls = true;
+          if (event.item.id !== undefined)
+            indexByItem.set(event.item.id, index);
           yield {
             type: "tool_call_start",
             index,
@@ -55,23 +63,35 @@ export async function* translateOpenAIStream(
         }
         break;
       case "response.output_text.delta":
-        if (event.delta !== undefined) yield { type: "text_delta", text: event.delta };
+        if (event.delta !== undefined)
+          yield { type: "text_delta", text: event.delta };
         break;
       case "response.function_call_arguments.delta": {
-        const index = event.item_id !== undefined ? indexByItem.get(event.item_id) : undefined;
+        const index =
+          event.item_id !== undefined
+            ? indexByItem.get(event.item_id)
+            : undefined;
         if (index !== undefined && event.delta !== undefined) {
-          yield { type: "tool_call_delta", index, argumentsTextDelta: event.delta };
+          yield {
+            type: "tool_call_delta",
+            index,
+            argumentsTextDelta: event.delta,
+          };
         }
         break;
       }
       case "response.function_call_arguments.done": {
-        const index = event.item_id !== undefined ? indexByItem.get(event.item_id) : undefined;
+        const index =
+          event.item_id !== undefined
+            ? indexByItem.get(event.item_id)
+            : undefined;
         if (index !== undefined) yield { type: "tool_call_end", index };
         break;
       }
       case "response.completed":
       case "response.incomplete":
       case "response.failed": {
+        finished = true;
         const result = parseOpenAIResponse(event.response, model);
         yield {
           type: "finish",
@@ -83,5 +103,9 @@ export async function* translateOpenAIStream(
       default:
         break;
     }
+  }
+
+  if (!finished) {
+    yield { type: "finish", finishReason: fallbackFinishReason() };
   }
 }

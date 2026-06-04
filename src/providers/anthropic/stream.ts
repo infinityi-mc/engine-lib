@@ -14,7 +14,12 @@ interface AnthropicStreamEvent {
   index?: number;
   message?: { model?: string; usage?: { input_tokens?: number } };
   content_block?: { type?: string; id?: string; name?: string };
-  delta?: { type?: string; text?: string; partial_json?: string; stop_reason?: string | null };
+  delta?: {
+    type?: string;
+    text?: string;
+    partial_json?: string;
+    stop_reason?: string | null;
+  };
   usage?: { output_tokens?: number };
 }
 
@@ -28,6 +33,23 @@ export async function* translateAnthropicStream(
   let outputTokens = 0;
   let stopReason: string | null | undefined;
   let hadToolCalls = false;
+  let sawUsage = false;
+  let finished = false;
+
+  const finishEvent = (includeUsage = sawUsage): StreamEvent => {
+    const usage: Usage | undefined = includeUsage
+      ? {
+          inputTokens,
+          outputTokens,
+          totalTokens: inputTokens + outputTokens,
+        }
+      : undefined;
+    return {
+      type: "finish",
+      finishReason: mapStopReason(stopReason, hadToolCalls),
+      ...(usage !== undefined ? { usage } : {}),
+    };
+  };
 
   for await (const message of messages) {
     if (message.data === "") continue;
@@ -40,11 +62,17 @@ export async function* translateAnthropicStream(
 
     switch (event.type) {
       case "message_start":
-        inputTokens = event.message?.usage?.input_tokens ?? 0;
+        if (event.message?.usage?.input_tokens !== undefined) {
+          inputTokens = event.message.usage.input_tokens;
+          sawUsage = true;
+        }
         yield { type: "message_start", model: event.message?.model ?? model };
         break;
       case "content_block_start":
-        if (event.content_block?.type === "tool_use" && event.index !== undefined) {
+        if (
+          event.content_block?.type === "tool_use" &&
+          event.index !== undefined
+        ) {
           toolIndexes.add(event.index);
           hadToolCalls = true;
           yield {
@@ -56,10 +84,21 @@ export async function* translateAnthropicStream(
         }
         break;
       case "content_block_delta":
-        if (event.delta?.type === "text_delta" && event.delta.text !== undefined) {
+        if (
+          event.delta?.type === "text_delta" &&
+          event.delta.text !== undefined
+        ) {
           yield { type: "text_delta", text: event.delta.text };
-        } else if (event.delta?.type === "input_json_delta" && event.index !== undefined && event.delta.partial_json !== undefined) {
-          yield { type: "tool_call_delta", index: event.index, argumentsTextDelta: event.delta.partial_json };
+        } else if (
+          event.delta?.type === "input_json_delta" &&
+          event.index !== undefined &&
+          event.delta.partial_json !== undefined
+        ) {
+          yield {
+            type: "tool_call_delta",
+            index: event.index,
+            argumentsTextDelta: event.delta.partial_json,
+          };
         }
         break;
       case "content_block_stop":
@@ -68,20 +107,21 @@ export async function* translateAnthropicStream(
         }
         break;
       case "message_delta":
-        if (event.delta?.stop_reason !== undefined) stopReason = event.delta.stop_reason;
-        if (event.usage?.output_tokens !== undefined) outputTokens = event.usage.output_tokens;
+        if (event.delta?.stop_reason !== undefined)
+          stopReason = event.delta.stop_reason;
+        if (event.usage?.output_tokens !== undefined) {
+          outputTokens = event.usage.output_tokens;
+          sawUsage = true;
+        }
         break;
-      case "message_stop": {
-        const usage: Usage = {
-          inputTokens,
-          outputTokens,
-          totalTokens: inputTokens + outputTokens,
-        };
-        yield { type: "finish", finishReason: mapStopReason(stopReason, hadToolCalls), usage };
+      case "message_stop":
+        finished = true;
+        yield finishEvent(true);
         break;
-      }
       default:
         break;
     }
   }
+
+  if (!finished) yield finishEvent();
 }

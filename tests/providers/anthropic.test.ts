@@ -38,6 +38,8 @@ describe("buildAnthropicBody", () => {
     expect(body["tools"]).toEqual([{ name: "f", input_schema: { type: "object" }, strict: true }]);
     expect(body["tool_choice"]).toEqual({ type: "any" });
   });
+
+
 });
 
 describe("parseAnthropicResponse", () => {
@@ -81,6 +83,24 @@ describe("translateAnthropicStream", () => {
       { type: "tool_call_delta", index: 0, argumentsTextDelta: '{"a":1}' },
       { type: "tool_call_end", index: 0 },
       { type: "finish", finishReason: "tool_calls", usage: { inputTokens: 5, outputTokens: 7, totalTokens: 12 } },
+    ]);
+  });
+
+  it("emits finish when the stream ends before message_stop", async () => {
+    const events = await collect(
+      translateAnthropicStream(
+        sseMessages(
+          { event: "message_start", data: JSON.stringify({ type: "message_start", message: { model: "claude", usage: { input_tokens: 5 } } }) },
+          { event: "content_block_delta", data: JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text: "hi" } }) },
+          { event: "message_delta", data: JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 1 } }) },
+        ),
+        "claude",
+      ),
+    );
+    expect(events).toEqual([
+      { type: "message_start", model: "claude" },
+      { type: "text_delta", text: "hi" },
+      { type: "finish", finishReason: "stop", usage: { inputTokens: 5, outputTokens: 1, totalTokens: 6 } },
     ]);
   });
 });
