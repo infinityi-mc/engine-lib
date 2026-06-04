@@ -70,6 +70,18 @@ describe("defaultProviderResilience", () => {
     expect(attempts).toBe(3);
   });
 
+  it("does not retry an AbortError (user/engine cancellation)", async () => {
+    const pipeline = defaultProviderResilience(2_000);
+    let attempts = 0;
+    await expect(
+      pipeline.execute(() => {
+        attempts += 1;
+        throw new DOMException("aborted", "AbortError");
+      }),
+    ).rejects.toBeDefined();
+    expect(attempts).toBe(1);
+  });
+
   it("does not retry a non-transient (4xx) failure", async () => {
     const pipeline = defaultProviderResilience(2_000);
     let attempts = 0;

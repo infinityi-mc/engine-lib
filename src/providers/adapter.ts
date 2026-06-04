@@ -71,7 +71,13 @@ export function createProvider(spec: AdapterSpec): Provider {
         { path: spec.streamPath(model, req), body, signal: ctx?.signal },
         ctx,
       );
-      yield* spec.translateStream(parseSse(stream, ctx?.signal), model);
+      try {
+        yield* spec.translateStream(parseSse(stream, ctx?.signal), model);
+      } catch (error) {
+        // Mid-stream failures (e.g. a network drop while reading the body) must
+        // surface as ProviderError too, matching complete()'s contract.
+        throw toProviderError(spec.name, error);
+      }
     },
   };
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
+import { ProviderError } from "../../src/errors";
 import { user } from "../../src/messages/index";
 import { createAnthropic } from "../../src/providers/anthropic/index";
 import { createGoogle } from "../../src/providers/google/index";
@@ -88,5 +89,24 @@ describe("adapter stream() over injected SSE fetch", () => {
     expect(events).toContainEqual({ type: "text_delta", text: "he" });
     expect(events).toContainEqual({ type: "text_delta", text: "llo" });
     expect(events[events.length - 1]).toEqual({ type: "finish", finishReason: "stop" });
+  });
+
+  it("wraps a mid-stream body error as ProviderError", async () => {
+    const encoder = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ model: "m", choices: [{ delta: { content: "he" } }] })}\n\n`),
+        );
+        controller.error(new Error("network drop"));
+      },
+    });
+    const fetchImpl = (async () =>
+      new Response(body, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      })) as typeof fetch;
+    const provider = createOpenAICompatible({ baseUrl: "https://host/v1", model: "m", fetch: fetchImpl });
+    await expect(collect(provider.stream(req))).rejects.toBeInstanceOf(ProviderError);
   });
 });

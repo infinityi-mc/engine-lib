@@ -57,6 +57,8 @@ function messageOf(error: unknown): string {
 
 /** Retry transient failures: 429, any 5xx, and network errors (no status). */
 function isTransient(error: unknown): boolean {
+  // User/engine cancellation is terminal — never retry it.
+  if (error instanceof DOMException && error.name === "AbortError") return false;
   const status = statusOf(error);
   if (status === undefined) return true; // network / abort-less failure
   return status === 429 || status >= 500;
