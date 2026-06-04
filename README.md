@@ -290,16 +290,24 @@ bun test         # run the test suite
 bun run build    # emit dist/ (JS + .d.ts)
 ```
 
-Phase 1 (Foundation & Contracts) is implemented. Public entry points:
+Phases 1–3 (Foundation & Contracts, Provider Abstraction, Agent & Tool
+Contracts) are implemented. Public entry points:
 
 ```ts
-import { s, user, system, AgentError } from "engine-lib";
+import { s, user, system, AgentError, defineTool, defineAgent } from "engine-lib";
 // or via subpaths:
 import { s } from "engine-lib/schema";
 import { user } from "engine-lib/messages";
 import { AgentError } from "engine-lib/errors";
 import { resolveSecret } from "engine-lib/runtime";
+import { createOpenAI } from "engine-lib/providers";
+import { defineTool } from "engine-lib/tools";
+import { defineAgent } from "engine-lib/agent";
 ```
+
+`defineTool` / `defineAgent` build the agent and tool *contracts* (declarative
+definitions, the structured tool-result model, and the per-agent tool registry);
+the execution loop (`runAgent`) lands in Phase 4 — see [`ROADMAP.md`](./ROADMAP.md).
 
 ## License
 
