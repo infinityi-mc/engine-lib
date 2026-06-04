@@ -22,6 +22,27 @@ describe("buildChatBody", () => {
     ]);
   });
 
+  it("wraps raw base64 images as a data URL in array content", () => {
+    const req: CompletionRequest = {
+      messages: [
+        user([
+          { type: "text", text: "look" },
+          { type: "image", mimeType: "image/jpeg", data: "BBBB" },
+          { type: "image", mimeType: "image/jpeg", data: "https://x/y.jpg" },
+        ]),
+      ],
+    };
+    const body = buildChatBody(req, "m", false) as Record<string, any>;
+    expect(body["messages"][0]).toEqual({
+      role: "user",
+      content: [
+        { type: "text", text: "look" },
+        { type: "image_url", image_url: { url: "data:image/jpeg;base64,BBBB" } },
+        { type: "image_url", image_url: { url: "https://x/y.jpg" } },
+      ],
+    });
+  });
+
   it("adds stream_options.include_usage when streaming and maps tools", () => {
     const req: CompletionRequest = {
       messages: [user("x")],

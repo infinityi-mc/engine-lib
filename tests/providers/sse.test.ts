@@ -35,4 +35,16 @@ describe("parseSse", () => {
     const messages = await drain(streamOf("data: tail\n"));
     expect(messages).toEqual([{ data: "tail" }]);
   });
+
+  it("keeps a single event when a CRLF is split across chunk boundaries", async () => {
+    // The `\r` of the first `\r\n` lands at the end of chunk 1; the `\n` opens
+    // chunk 2. Eager normalization would split this into two events.
+    const messages = await drain(streamOf("data: hello\r", "\ndata: world\r\n\r\n"));
+    expect(messages).toEqual([{ data: "hello\nworld" }]);
+  });
+
+  it("dispatches a final line that has no trailing newline at all", async () => {
+    const messages = await drain(streamOf("data: a\n\ndata: b"));
+    expect(messages).toEqual([{ data: "a" }, { data: "b" }]);
+  });
 });

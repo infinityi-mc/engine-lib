@@ -5,7 +5,7 @@
  */
 
 import type { ContentPart, Message } from "../../messages/types";
-import { isText, isToolCall, isToolResult, stringifyArguments, systemText, withoutSystem } from "../shared";
+import { imageDataUrl, isText, isToolCall, isToolResult, stringifyArguments, systemText, withoutSystem } from "../shared";
 import type { CompletionRequest, CompletionResult, FinishReason, ToolCall, ToolChoice } from "../types";
 
 interface OpenAIUsage {
@@ -41,7 +41,7 @@ interface OpenAIOutputItem {
 function toInputContent(part: ContentPart): Record<string, unknown> | undefined {
   if (part.type === "text") return { type: "input_text", text: part.text };
   if (part.type === "image") {
-    return { type: "input_image", image_url: part.data, detail: "auto" };
+    return { type: "input_image", image_url: imageDataUrl(part), detail: "auto" };
   }
   return undefined;
 }

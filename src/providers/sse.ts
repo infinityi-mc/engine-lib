@@ -38,6 +38,32 @@ export async function* parseSse(
     return message;
   };
 
+  /** Consume one complete line; returns a message when a blank line flushes one. */
+  const consumeLine = (line: string): SseMessage | undefined => {
+    if (line === "") return flush();
+    if (line.startsWith(":")) return undefined; // comment / keep-alive
+
+    const colon = line.indexOf(":");
+    const field = colon === -1 ? line : line.slice(0, colon);
+    let rest = colon === -1 ? "" : line.slice(colon + 1);
+    if (rest.startsWith(" ")) rest = rest.slice(1);
+
+    if (field === "event") event = rest;
+    else if (field === "data") data.push(rest);
+    // `id` / `retry` fields are ignored.
+    return undefined;
+  };
+
+  function* drainLines(): Generator<SseMessage> {
+    let newlineIndex: number;
+    while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+      const line = buffer.slice(0, newlineIndex);
+      buffer = buffer.slice(newlineIndex + 1);
+      const message = consumeLine(line);
+      if (message !== undefined) yield message;
+    }
+  }
+
   try {
     while (true) {
       if (signal?.aborted) return;
@@ -45,32 +71,28 @@ export async function* parseSse(
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
 
-      let newlineIndex: number;
-      // Normalize CRLF/CR to LF as we split into complete lines.
-      buffer = buffer.replace(/\r\n?/g, "\n");
-      while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
-        const line = buffer.slice(0, newlineIndex);
-        buffer = buffer.slice(newlineIndex + 1);
+      // Normalize CRLF/CR to LF, but hold back a *trailing* `\r`: it may be the
+      // first half of a `\r\n` pair split across the chunk boundary, and
+      // normalizing it eagerly would emit a spurious empty line.
+      const trailingCr = buffer.endsWith("\r");
+      const head = trailingCr ? buffer.slice(0, -1) : buffer;
+      buffer = head.replace(/\r\n?/g, "\n") + (trailingCr ? "\r" : "");
 
-        if (line === "") {
-          const message = flush();
-          if (message !== undefined) yield message;
-          continue;
-        }
-        if (line.startsWith(":")) continue; // comment / keep-alive
-
-        const colon = line.indexOf(":");
-        const field = colon === -1 ? line : line.slice(0, colon);
-        let rest = colon === -1 ? "" : line.slice(colon + 1);
-        if (rest.startsWith(" ")) rest = rest.slice(1);
-
-        if (field === "event") event = rest;
-        else if (field === "data") data.push(rest);
-        // `id` / `retry` fields are ignored.
-      }
+      yield* drainLines();
     }
-    const message = flush();
-    if (message !== undefined) yield message;
+
+    // Stream ended: flush the decoder and process any remaining content,
+    // including a final line with no trailing newline.
+    buffer += decoder.decode();
+    buffer = buffer.replace(/\r\n?/g, "\n");
+    yield* drainLines();
+    if (buffer.length > 0) {
+      const message = consumeLine(buffer);
+      if (message !== undefined) yield message;
+      buffer = "";
+    }
+    const tail = flush();
+    if (tail !== undefined) yield tail;
   } finally {
     reader.releaseLock();
   }

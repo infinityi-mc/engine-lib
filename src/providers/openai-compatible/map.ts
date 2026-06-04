@@ -6,7 +6,7 @@
  */
 
 import type { Message } from "../../messages/types";
-import { isText, isToolCall, isToolResult, stringifyArguments, toolResultText } from "../shared";
+import { imageDataUrl, isText, isToolCall, isToolResult, stringifyArguments, toolResultText } from "../shared";
 import type { CompletionRequest, CompletionResult, FinishReason, ToolCall, ToolChoice } from "../types";
 
 interface ChatUsage {
@@ -65,7 +65,7 @@ function toChatMessages(messages: readonly Message[]): unknown[] {
       const content: Record<string, unknown>[] = [];
       for (const part of message.content) {
         if (part.type === "text") content.push({ type: "text", text: part.text });
-        else if (part.type === "image") content.push({ type: "image_url", image_url: { url: part.data } });
+        else if (part.type === "image") content.push({ type: "image_url", image_url: { url: imageDataUrl(part) } });
       }
       out.push({ role: "user", content });
     } else {

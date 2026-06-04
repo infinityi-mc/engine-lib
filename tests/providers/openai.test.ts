@@ -33,6 +33,22 @@ describe("buildOpenAIBody", () => {
     });
   });
 
+  it("wraps raw base64 images as a data URL and passes URLs through", () => {
+    const req: CompletionRequest = {
+      messages: [
+        user([
+          { type: "image", mimeType: "image/png", data: "AAAA" },
+          { type: "image", mimeType: "image/png", data: "https://x/y.png" },
+        ]),
+      ],
+    };
+    const body = buildOpenAIBody(req, "gpt-5", false) as Record<string, any>;
+    expect(body["input"][0].content).toEqual([
+      { type: "input_image", image_url: "data:image/png;base64,AAAA", detail: "auto" },
+      { type: "input_image", image_url: "https://x/y.png", detail: "auto" },
+    ]);
+  });
+
   it("emits function_call_output for tool results", () => {
     const req: CompletionRequest = { messages: [toolResult("call_1", "42")] };
     const body = buildOpenAIBody(req, "gpt-5", false) as Record<string, any>;

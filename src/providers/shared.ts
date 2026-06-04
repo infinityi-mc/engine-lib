@@ -4,8 +4,16 @@
  * @module
  */
 
-import type { Message, TextPart, ToolCallPart, ToolResultPart } from "../messages/types";
+import type { ImagePart, Message, TextPart, ToolCallPart, ToolResultPart } from "../messages/types";
 import type { FinishReason } from "./types";
+
+/**
+ * Resolve an {@link ImagePart} to a value usable in an `image_url`-style field:
+ * an `http(s)` URL is passed through, raw base64 is wrapped as a `data:` URI.
+ */
+export function imageDataUrl(part: ImagePart): string {
+  return /^https?:\/\//.test(part.data) ? part.data : `data:${part.mimeType};base64,${part.data}`;
+}
 
 /** Concatenated text of every `system` message, or `undefined` if none. */
 export function systemText(messages: readonly Message[]): string | undefined {
