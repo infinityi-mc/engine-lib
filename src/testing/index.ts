@@ -76,6 +76,13 @@ export function mockProvider(opts: MockProviderOptions = {}): Provider {
       .join("");
     const events: StreamEvent[] = [{ type: "message_start", model: result.model }];
     if (text !== "") events.push({ type: "text_delta", text });
+    result.toolCalls.forEach((call, index) => {
+      const argumentsText = call.argumentsText
+        ?? (call.arguments === undefined ? "" : JSON.stringify(call.arguments) ?? "");
+      events.push({ type: "tool_call_start", index, id: call.id, name: call.name });
+      if (argumentsText !== "") events.push({ type: "tool_call_delta", index, argumentsTextDelta: argumentsText });
+      events.push({ type: "tool_call_end", index });
+    });
     events.push({
       type: "finish",
       finishReason: result.finishReason,

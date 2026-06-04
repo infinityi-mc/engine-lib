@@ -48,9 +48,9 @@ export function createAnthropic(opts: AnthropicOptions): Provider {
     http: {
       baseUrl: opts.baseUrl ?? "https://api.anthropic.com/v1",
       headers: {
+        ...opts.defaultHeaders,
         "x-api-key": apiKey,
         "anthropic-version": opts.version ?? DEFAULT_VERSION,
-        ...opts.defaultHeaders,
       },
       ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
       ...(opts.resilience !== undefined ? { resilience: opts.resilience } : {}),

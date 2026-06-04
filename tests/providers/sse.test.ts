@@ -47,4 +47,24 @@ describe("parseSse", () => {
     const messages = await drain(streamOf("data: a\n\ndata: b"));
     expect(messages).toEqual([{ data: "a" }, { data: "b" }]);
   });
+
+  it("cancels the stream when iteration stops early", async () => {
+    let cancelled = false;
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode("data: one\n\n"));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+
+    for await (const message of parseSse(stream)) {
+      expect(message).toEqual({ data: "one" });
+      break;
+    }
+
+    expect(cancelled).toBe(true);
+  });
 });

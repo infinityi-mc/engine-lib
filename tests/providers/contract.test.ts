@@ -35,6 +35,37 @@ describe("mockProvider", () => {
     const result = await collectProviderStream(provider, req);
     expect(result.message.content).toEqual([{ type: "text", text: "ok" }]);
   });
+
+  it("derives tool-call events from the result when no events are scripted", async () => {
+    const provider = mockProvider({
+      result: {
+        message: {
+          role: "assistant",
+          content: [
+            { type: "text", text: "checking" },
+            { type: "tool_call", id: "call_1", name: "lookup", arguments: { city: "SF" } },
+          ],
+        },
+        toolCalls: [
+          { id: "call_1", name: "lookup", arguments: { city: "SF" }, argumentsText: '{"city":"SF"}' },
+        ],
+        finishReason: "tool_calls",
+        model: "mock-model",
+        raw: {},
+      },
+    });
+
+    const result = await collectProviderStream(provider, req);
+
+    expect(result.message.content).toEqual([
+      { type: "text", text: "checking" },
+      { type: "tool_call", id: "call_1", name: "lookup", arguments: { city: "SF" } },
+    ]);
+    expect(result.toolCalls).toEqual([
+      { id: "call_1", name: "lookup", arguments: { city: "SF" }, argumentsText: '{"city":"SF"}' },
+    ]);
+    expect(result.finishReason).toBe("tool_calls");
+  });
 });
 
 describe("adapter complete() over injected fetch", () => {
@@ -72,6 +103,35 @@ describe("adapter complete() over injected fetch", () => {
     const result = await provider.complete(req);
     expect(calls[0]?.url).toBe("https://host/v1/chat/completions");
     expect(result.message.content).toEqual([{ type: "text", text: "hi" }]);
+  });
+
+  it("lets dedicated apiKey options override conflicting defaultHeaders", async () => {
+    const openaiFetch = jsonFetch({ status: "completed", output: [] });
+    await createOpenAI({
+      apiKey: "sk-real",
+      fetch: openaiFetch.fetch,
+      defaultHeaders: { authorization: "Bearer sk-other" },
+    }).complete(req);
+    expect(new Headers(openaiFetch.calls[0]?.init?.headers).get("authorization")).toBe("Bearer sk-real");
+
+    const anthropicFetch = jsonFetch({ content: [], stop_reason: "end_turn" });
+    await createAnthropic({
+      apiKey: "anthropic-real",
+      version: "2023-06-01",
+      fetch: anthropicFetch.fetch,
+      defaultHeaders: { "x-api-key": "anthropic-other", "anthropic-version": "other-version" },
+    }).complete(req);
+    const anthropicHeaders = new Headers(anthropicFetch.calls[0]?.init?.headers);
+    expect(anthropicHeaders.get("x-api-key")).toBe("anthropic-real");
+    expect(anthropicHeaders.get("anthropic-version")).toBe("2023-06-01");
+
+    const googleFetch = jsonFetch({ candidates: [] });
+    await createGoogle({
+      apiKey: "google-real",
+      fetch: googleFetch.fetch,
+      defaultHeaders: { "x-goog-api-key": "google-other" },
+    }).complete(req);
+    expect(new Headers(googleFetch.calls[0]?.init?.headers).get("x-goog-api-key")).toBe("google-real");
   });
 });
 

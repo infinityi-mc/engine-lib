@@ -49,8 +49,8 @@ export function createOpenAI(opts: OpenAIOptions): Provider {
     http: {
       baseUrl: opts.baseUrl ?? "https://api.openai.com/v1",
       headers: {
-        authorization: `Bearer ${apiKey}`,
         ...opts.defaultHeaders,
+        authorization: `Bearer ${apiKey}`,
       },
       ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
       ...(opts.resilience !== undefined ? { resilience: opts.resilience } : {}),

@@ -27,6 +27,7 @@ export async function* parseSse(
   let buffer = "";
   let event: string | undefined;
   let data: string[] = [];
+  let completed = false;
 
   const flush = (): SseMessage | undefined => {
     if (data.length === 0 && event === undefined) return undefined;
@@ -68,7 +69,10 @@ export async function* parseSse(
     while (true) {
       if (signal?.aborted) return;
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        completed = true;
+        break;
+      }
       buffer += decoder.decode(value, { stream: true });
 
       // Normalize CRLF/CR to LF, but hold back a *trailing* `\r`: it may be the
@@ -94,6 +98,7 @@ export async function* parseSse(
     const tail = flush();
     if (tail !== undefined) yield tail;
   } finally {
+    if (!completed) await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
 }

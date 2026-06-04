@@ -44,8 +44,8 @@ export function createGoogle(opts: GoogleOptions): Provider {
     http: {
       baseUrl: opts.baseUrl ?? "https://generativelanguage.googleapis.com/v1beta",
       headers: {
-        "x-goog-api-key": apiKey,
         ...opts.defaultHeaders,
+        "x-goog-api-key": apiKey,
       },
       ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
       ...(opts.resilience !== undefined ? { resilience: opts.resilience } : {}),
