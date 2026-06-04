@@ -91,3 +91,25 @@ export type {
   ToolChoice,
   Usage,
 } from "./providers/index";
+
+// Tools (Phase 3)
+export { defineTool, renderToolContent, toProviderTool, toToolResultMessage } from "./tools/index";
+export type {
+  ToolContext,
+  ToolDefinition,
+  ToolFailure,
+  ToolResult,
+  ToolSpec,
+  ToolSuccess,
+} from "./tools/index";
+
+// Agent (Phase 3)
+export { createToolRegistry, defineAgent } from "./agent/index";
+export type {
+  AgentDefinition,
+  AgentHooks,
+  GenerationSettings,
+  InstructionContext,
+  Instructions,
+  ToolRegistry,
+} from "./agent/index";
