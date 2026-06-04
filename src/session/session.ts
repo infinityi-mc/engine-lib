@@ -39,16 +39,22 @@ export function createSession(opts: CreateSessionOptions = {}): Session {
   const seed = opts.messages;
   const metadata = opts.metadata;
 
-  let seeded = false;
-  /** Write the seed history through to the store once, if the store is empty. */
-  const ensureSeeded = async (): Promise<void> => {
-    if (seeded) return;
-    seeded = true;
-    if (seed === undefined || seed.length === 0) return;
-    const existing = await store.load(id);
-    if (existing === undefined || existing.messages.length === 0) {
-      await store.append(id, seed);
-    }
+  let seedPromise: Promise<void> | undefined;
+  /**
+   * Write the seed history through to the store once, if the store is empty.
+   * Memoizes the in-flight promise so concurrent callers block on the same
+   * seeding operation rather than racing past a half-set flag.
+   */
+  const ensureSeeded = (): Promise<void> => {
+    if (seedPromise !== undefined) return seedPromise;
+    seedPromise = (async () => {
+      if (seed === undefined || seed.length === 0) return;
+      const existing = await store.load(id);
+      if (existing === undefined || existing.messages.length === 0) {
+        await store.append(id, seed);
+      }
+    })();
+    return seedPromise;
   };
 
   return {
@@ -65,7 +71,7 @@ export function createSession(opts: CreateSessionOptions = {}): Session {
       await store.append(id, messages);
     },
     async clear(): Promise<void> {
-      seeded = true; // a cleared session must not be re-seeded
+      seedPromise = Promise.resolve(); // a cleared session must not be re-seeded
       await store.delete(id);
     },
   };

@@ -72,6 +72,19 @@ describe("createSession", () => {
     ]);
   });
 
+  it("seeds exactly once under concurrent first access", async () => {
+    const session = createSession({ id: "race", messages: [user("seed")] });
+    // Fire messages() and append() concurrently on a fresh session.
+    const [history] = await Promise.all([session.messages(), session.append([user("new")])]);
+    void history;
+    const final = await session.messages();
+    // seed must not be lost: both the seed and the appended message are present.
+    expect(final.map((m) => m.content[0])).toEqual([
+      { type: "text", text: "seed" },
+      { type: "text", text: "new" },
+    ]);
+  });
+
   it("append persists and clear wipes (and prevents re-seeding)", async () => {
     const session = createSession({ id: "s", messages: [user("seed")] });
     await session.append([user("more")]);
