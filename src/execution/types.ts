@@ -21,6 +21,7 @@ import type { GenerationSettings } from "../agent/types";
 import type { ContextProvider, ContextWindowOptions } from "../context/types";
 import type { Session } from "../session/types";
 import type { ToolResult } from "../tools/types";
+import type { RunSubscriber } from "../events/types";
 
 /** New input for a run: raw text (→ a user message), a single message, or several. */
 export type RunInput = string | Message | Message[];
@@ -55,6 +56,13 @@ export interface RunOptions {
   readonly stream?: boolean;
   /** Event sink invoked for every {@link RunEvent}, in both buffered and streaming modes. */
   readonly onEvent?: (event: RunEvent) => void;
+  /**
+   * Additional independent event subscribers (UI streaming, audit log, metrics,
+   * a `forge/messaging` bridge). Dispatched after {@link RunOptions.onEvent}, in
+   * order, awaited per event. A subscriber that throws/rejects is isolated — it
+   * neither aborts the run nor starves the others.
+   */
+  readonly subscribers?: readonly RunSubscriber[];
   /** Forge telemetry handle, threaded to provider calls / tools / hooks. */
   readonly telemetry?: TelemetryHandle;
   /** Structured logger (defaults to `telemetry.log`). */

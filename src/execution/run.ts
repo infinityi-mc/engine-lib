@@ -35,6 +35,10 @@ import { resolveContext } from "../context/providers";
 import { applyContextWindow } from "../context/window";
 import { toToolResultMessage } from "../tools/result";
 import type { ToolContext, ToolDefinition, ToolResult } from "../tools/types";
+import { createEventHub } from "../events/hub";
+import type { EventHub } from "../events/types";
+import { createRunTelemetry, SPAN_PROVIDER, SPAN_RUN, SPAN_TOOL } from "../events/telemetry";
+import type { RunTelemetry } from "../events/telemetry";
 import type { RunEvent, RunHandle, RunInput, RunOptions, RunResult } from "./types";
 import { addUsage, emptyUsage } from "./usage";
 
@@ -117,6 +121,7 @@ function throwIfAborted(signal?: AbortSignal): void {
 async function* executeAgent(
   agent: AgentDefinition,
   opts: RunOptions,
+  tel: RunTelemetry,
 ): AsyncGenerator<RunEvent, RunResult> {
   const maxSteps = opts.maxSteps ?? DEFAULT_MAX_STEPS;
   const stream = opts.stream === true;
@@ -143,10 +148,20 @@ async function* executeAgent(
       return { ok: false, error: `invalid arguments for "${call.name}": ${detail}` };
     }
     const toolCtx: ToolContext = { ...engineCtx, toolCallId: call.id, agentName: agent.name };
+    const span = tel.startSpan(SPAN_TOOL, { "tool.name": call.name, "tool.call_id": call.id });
+    const startedAt = Date.now();
     try {
-      return await tool.execute(parsed.data, toolCtx);
+      const result = await tool.execute(parsed.data, toolCtx);
+      span.setAttributes({ "tool.ok": result.ok });
+      span.ok();
+      return result;
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      const message = err instanceof Error ? err.message : String(err);
+      span.fail(message);
+      return { ok: false, error: message };
+    } finally {
+      span.end();
+      tel.recordTool({ "tool.name": call.name, "agent.name": agent.name }, Date.now() - startedAt);
     }
   };
 
@@ -196,26 +211,42 @@ async function* executeAgent(
       });
       const req = buildRequest(agent, opts, providerTools, requestMessages);
 
+      const useStreaming = stream && provider.capabilities.streaming;
+      const providerSpan = tel.startSpan(SPAN_PROVIDER, {
+        "provider.name": provider.name,
+        "provider.model": model,
+        "provider.mode": useStreaming ? "stream" : "complete",
+        "agent.step": steps,
+      });
       let result: CompletionResult;
-      if (stream && provider.capabilities.streaming) {
-        const acc = new StreamAccumulator();
-        let streamError: ProviderError | undefined;
-        for await (const event of provider.stream(req, engineCtx)) {
-          acc.push(event);
-          if (event.type === "text_delta" && event.text !== "") {
-            yield { type: "token", delta: event.text };
-          } else if (event.type === "error") {
-            streamError = event.error;
+      try {
+        if (useStreaming) {
+          const acc = new StreamAccumulator();
+          let streamError: ProviderError | undefined;
+          for await (const event of provider.stream(req, engineCtx)) {
+            acc.push(event);
+            if (event.type === "text_delta" && event.text !== "") {
+              yield { type: "token", delta: event.text };
+            } else if (event.type === "error") {
+              streamError = event.error;
+            }
+          }
+          if (streamError !== undefined) throw streamError;
+          result = acc.result(model);
+        } else {
+          result = await provider.complete(req, engineCtx);
+          if (stream) {
+            const buffered = extractText(result.message);
+            if (buffered !== "") yield { type: "token", delta: buffered };
           }
         }
-        if (streamError !== undefined) throw streamError;
-        result = acc.result(model);
-      } else {
-        result = await provider.complete(req, engineCtx);
-        if (stream) {
-          const buffered = extractText(result.message);
-          if (buffered !== "") yield { type: "token", delta: buffered };
-        }
+        providerSpan.setAttributes({ "provider.finish_reason": result.finishReason });
+        providerSpan.ok();
+      } catch (err) {
+        providerSpan.fail(err instanceof Error ? err.message : String(err));
+        throw err;
+      } finally {
+        providerSpan.end();
       }
 
       usage = addUsage(usage, result.usage);
@@ -279,23 +310,56 @@ async function* executeAgent(
   }
 }
 
-/** Drive the generator to completion, forwarding events to `onEvent`. */
+/** Set the run span's outcome attributes from the final result. */
+function runResultAttrs(result: RunResult): Record<string, string | number> {
+  return {
+    "agent.steps": result.steps,
+    "agent.finish_reason": result.finishReason,
+    "agent.usage.total_tokens": result.usage.totalTokens,
+  };
+}
+
+/**
+ * Drive the generator to completion, dispatching every event through `hub`.
+ * The whole loop runs inside the `agent.run` span so provider/tool spans nest
+ * underneath it, and run-level duration/usage metrics are recorded.
+ */
 async function driveToCompletion(
   gen: AsyncGenerator<RunEvent, RunResult>,
-  onEvent?: (event: RunEvent) => void,
+  hub: EventHub,
+  tel: RunTelemetry,
+  agentName: string,
 ): Promise<RunResult> {
-  let next = await gen.next();
-  while (!next.done) {
-    onEvent?.(next.value);
-    next = await gen.next();
+  const startedAt = Date.now();
+  try {
+    const result = await tel.withSpan(SPAN_RUN, { "agent.name": agentName }, async (span) => {
+      let next = await gen.next();
+      while (!next.done) {
+        await hub.emit(next.value);
+        next = await gen.next();
+      }
+      span.setAttributes(runResultAttrs(next.value));
+      span.ok();
+      return next.value;
+    });
+    tel.recordRun({ "agent.name": agentName, "agent.outcome": "ok" }, Date.now() - startedAt, result.usage);
+    return result;
+  } catch (err) {
+    tel.recordRun(
+      { "agent.name": agentName, "agent.outcome": "error" },
+      Date.now() - startedAt,
+      emptyUsage(),
+    );
+    throw err;
   }
-  return next.value;
 }
 
 /** Wrap the generator as a {@link RunHandle} (async-iterable + `completed`). */
 function makeHandle(
   gen: AsyncGenerator<RunEvent, RunResult>,
-  onEvent?: (event: RunEvent) => void,
+  hub: EventHub,
+  tel: RunTelemetry,
+  agentName: string,
 ): RunHandle {
   let resolveCompleted!: (result: RunResult) => void;
   let rejectCompleted!: (reason: unknown) => void;
@@ -308,18 +372,56 @@ function makeHandle(
   // awaits `completed` — doesn't trip an unhandled-rejection warning/crash.
   completed.catch(() => {});
 
+  const span = tel.startSpan(SPAN_RUN, { "agent.name": agentName });
+  const startedAt = Date.now();
+
   async function* iterate(): AsyncGenerator<RunEvent> {
+    // Tracks whether the run reached a terminal state (finished or errored).
+    // The `finally` uses it to close out the span and settle `completed` when a
+    // consumer abandons the stream early (its `return()` skips both branches).
+    let settled = false;
     try {
       let next = await gen.next();
       while (!next.done) {
-        onEvent?.(next.value);
+        await hub.emit(next.value);
         yield next.value;
         next = await gen.next();
       }
+      span.setAttributes(runResultAttrs(next.value));
+      span.ok();
+      settled = true;
+      tel.recordRun(
+        { "agent.name": agentName, "agent.outcome": "ok" },
+        Date.now() - startedAt,
+        next.value.usage,
+      );
       resolveCompleted(next.value);
     } catch (err) {
+      span.fail(err instanceof Error ? err.message : String(err));
+      settled = true;
+      tel.recordRun(
+        { "agent.name": agentName, "agent.outcome": "error" },
+        Date.now() - startedAt,
+        emptyUsage(),
+      );
       rejectCompleted(err);
       throw err;
+    } finally {
+      if (!settled) {
+        // Consumer broke out of the iteration early. Propagate the cancellation
+        // into the underlying generator, mark the run span cancelled, and settle
+        // `completed` so neither the span nor the promise is left dangling.
+        const cancelled = new CancelledError("run stream abandoned before completion");
+        await gen.return(undefined as never).catch(() => {});
+        span.fail(cancelled.message);
+        tel.recordRun(
+          { "agent.name": agentName, "agent.outcome": "incomplete" },
+          Date.now() - startedAt,
+          emptyUsage(),
+        );
+        rejectCompleted(cancelled);
+      }
+      span.end();
     }
   }
 
@@ -328,6 +430,25 @@ function makeHandle(
     [Symbol.asyncIterator]: () => iterator,
     completed,
   };
+}
+
+/**
+ * Assemble the {@link EventHub} for a run: the single {@link RunOptions.onEvent}
+ * sink first, then any {@link RunOptions.subscribers}, with per-subscriber error
+ * isolation logged via the run's logger.
+ */
+function buildEventHub(opts: RunOptions): EventHub {
+  const logger = opts.logger ?? opts.telemetry?.log;
+  return createEventHub({
+    subscribers: [opts.onEvent, ...(opts.subscribers ?? [])],
+    onSubscriberError: (error, event, index) => {
+      logger?.warn("agent.run subscriber threw", {
+        event: event.type,
+        index,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    },
+  });
 }
 
 /**
@@ -349,7 +470,9 @@ export function runAgent(
   agent: AgentDefinition,
   opts: RunOptions = {},
 ): Promise<RunResult> | RunHandle {
-  const gen = executeAgent(agent, opts);
-  if (opts.stream === true) return makeHandle(gen, opts.onEvent);
-  return driveToCompletion(gen, opts.onEvent);
+  const tel = createRunTelemetry(opts.telemetry);
+  const hub = buildEventHub(opts);
+  const gen = executeAgent(agent, opts, tel);
+  if (opts.stream === true) return makeHandle(gen, hub, tel, agent.name);
+  return driveToCompletion(gen, hub, tel, agent.name);
 }

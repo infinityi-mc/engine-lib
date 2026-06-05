@@ -151,3 +151,27 @@ export type {
   ContextWindowOptions,
   TokenCounter,
 } from "./context/index";
+
+// Events & telemetry (Phase 6)
+export {
+  createEventHub,
+  createRunTelemetry,
+  eventFields,
+  eventPayload,
+  loggingSubscriber,
+  messageBusSubscriber,
+  SPAN_PROVIDER,
+  SPAN_RUN,
+  SPAN_TOOL,
+} from "./events/index";
+export type {
+  Attrs,
+  EventHub,
+  EventHubOptions,
+  LoggingSubscriberOptions,
+  LogLevel,
+  MessageBusSubscriberOptions,
+  RunSubscriber,
+  RunTelemetry,
+  SpanHandle,
+} from "./events/index";
