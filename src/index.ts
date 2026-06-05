@@ -114,6 +114,10 @@ export type {
   ToolRegistry,
 } from "./agent/index";
 
+// Multi-agent coordination (Phase 7)
+export { createAgentRegistry } from "./agent/index";
+export type { AgentRegistry } from "./agent/index";
+
 // Execution (Phase 4)
 export { addUsage, DEFAULT_MAX_STEPS, emptyUsage, runAgent } from "./execution/index";
 export type {
