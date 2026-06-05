@@ -104,6 +104,11 @@ export function asTool<TArgs = { input: string }>(
         bridge?.reportUsage(result.usage);
         return { ok: true, content: result.output };
       } catch (err) {
+        // A failed child run still consumed tokens; fold whatever it stamped on
+        // the error into the parent's usage before surfacing the tool error.
+        if (err instanceof AgentError && err.usage !== undefined) {
+          bridge?.reportUsage(err.usage);
+        }
         const message = err instanceof AgentError ? err.message : String(err);
         return { ok: false, error: message };
       }

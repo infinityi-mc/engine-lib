@@ -192,6 +192,10 @@ async function* executeAgent(
     }
   };
 
+  // Hoisted above the try so the catch can stamp tokens-consumed-so-far onto
+  // the error it throws.
+  let usage = emptyUsage();
+
   try {
     throwIfAborted(opts.signal);
     yield { type: "run.start", agent: agent.name };
@@ -219,7 +223,6 @@ async function* executeAgent(
 
     await hooks?.onStart?.({ agent, messages: [...messages] }, engineCtx);
 
-    let usage = emptyUsage();
     let finishReason: FinishReason = "stop";
     let finalMessage: Message = { role: "assistant", content: [] };
     let steps = 0;
@@ -332,6 +335,10 @@ async function* executeAgent(
     throw new MaxStepsExceededError(`exceeded max steps (${maxSteps})`, { steps: maxSteps });
   } catch (err) {
     const agentError = toAgentError(err);
+    // Surface the tokens consumed before the failure so callers (and a parent
+    // run, via asTool) don't lose them. Don't clobber a usage already stamped
+    // by a nested run.
+    if (agentError.usage === undefined) agentError.usage = usage;
     yield { type: "error", error: agentError };
     try {
       await hooks?.onError?.({ error: agentError }, engineCtx);
@@ -340,6 +347,11 @@ async function* executeAgent(
     }
     throw agentError;
   }
+}
+
+/** Token usage stamped on a failed run's error, or zero when unknown. */
+function usageOfError(err: unknown): Usage {
+  return err instanceof AgentError && err.usage !== undefined ? err.usage : emptyUsage();
 }
 
 /** Set the run span's outcome attributes from the final result. */
@@ -380,7 +392,7 @@ async function driveToCompletion(
     tel.recordRun(
       { "agent.name": agentName, "agent.outcome": "error" },
       Date.now() - startedAt,
-      emptyUsage(),
+      usageOfError(err),
     );
     throw err;
   }
@@ -434,7 +446,7 @@ function makeHandle(
       tel.recordRun(
         { "agent.name": agentName, "agent.outcome": "error" },
         Date.now() - startedAt,
-        emptyUsage(),
+        usageOfError(err),
       );
       rejectCompleted(err);
       throw err;

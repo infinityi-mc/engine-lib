@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { ExecutionError } from "../src/errors";
+import { AgentError, ExecutionError } from "../src/errors";
 import { asTool, createAgentRegistry, defineAgent, defineTool } from "../src/agent/index";
 import { runAgent } from "../src/execution/index";
 import type { RunEvent } from "../src/execution/index";
@@ -106,6 +106,23 @@ function scriptedProvider(results: CompletionResult[]) {
   return mockProvider({ result: () => results[Math.min(i++, results.length - 1)]! });
 }
 
+/** A provider that yields each scripted result once, then throws on the next call. */
+function throwingAfter(results: CompletionResult[]) {
+  let i = 0;
+  return mockProvider({
+    result: () => {
+      if (i < results.length) return results[i++]!;
+      throw new Error("provider blew up");
+    },
+  });
+}
+
+const noop = defineTool({
+  name: "noop",
+  parameters: s.object({}),
+  execute: () => ({ ok: true, content: "noop" }),
+});
+
 describe("asTool — sub-agent-as-tool", () => {
   it("wraps an agent with a default name/description and `{ input }` schema", () => {
     const child = defineAgent({ name: "researcher", provider });
@@ -185,6 +202,58 @@ describe("asTool — sub-agent-as-tool", () => {
     expect(result.output).toBe("recovered");
     const toolMessage = result.messages.find((m) => m.role === "tool");
     expect(toolMessage).toBeDefined();
+  });
+
+  it("folds a failing child's partial usage into the parent total", async () => {
+    // Child consumes 9 tokens on its first turn, then its provider throws.
+    const child = defineAgent({
+      name: "researcher",
+      provider: throwingAfter([
+        toolCallResult(
+          [{ id: "n1", name: "noop", arguments: {} }],
+          { inputTokens: 6, outputTokens: 3, totalTokens: 9 },
+        ),
+      ]),
+      tools: [noop],
+    });
+    const parent = defineAgent({
+      name: "lead",
+      provider: scriptedProvider([
+        toolCallResult(
+          [{ id: "c1", name: "researcher", arguments: { input: "x" } }],
+          { inputTokens: 4, outputTokens: 3, totalTokens: 7 },
+        ),
+        textResult("recovered", { inputTokens: 2, outputTokens: 1, totalTokens: 3 }),
+      ]),
+      tools: [asTool(child)],
+    });
+
+    const result = await runAgent(parent, { input: "go" });
+    expect(result.output).toBe("recovered");
+    // parent step 1 (7) + child's partial usage before failing (9) + parent step 2 (3).
+    expect(result.usage.totalTokens).toBe(19);
+  });
+
+  it("stamps tokens-consumed-so-far onto the error of a failed run", async () => {
+    const agent = defineAgent({
+      name: "doomed",
+      provider: throwingAfter([
+        toolCallResult(
+          [{ id: "n1", name: "noop", arguments: {} }],
+          { inputTokens: 6, outputTokens: 3, totalTokens: 9 },
+        ),
+      ]),
+      tools: [noop],
+    });
+
+    let caught: unknown;
+    try {
+      await runAgent(agent, { input: "go" });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(AgentError);
+    expect((caught as AgentError).usage?.totalTokens).toBe(9);
   });
 
   it("increments depth for a sub-agent nested inside another sub-agent", async () => {
