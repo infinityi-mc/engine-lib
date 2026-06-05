@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { AgentError, ExecutionError } from "../src/errors";
+import { AgentError, CancelledError, ExecutionError } from "../src/errors";
 import { asTool, createAgentRegistry, defineAgent, defineTool } from "../src/agent/index";
 import { runAgent } from "../src/execution/index";
 import type { RunEvent } from "../src/execution/index";
@@ -254,6 +254,40 @@ describe("asTool — sub-agent-as-tool", () => {
     }
     expect(caught).toBeInstanceOf(AgentError);
     expect((caught as AgentError).usage?.totalTokens).toBe(9);
+  });
+
+  it("accounts for tool usage when the run is aborted during tool execution", async () => {
+    const controller = new AbortController();
+    const greedy = defineTool({
+      name: "greedy",
+      parameters: s.object({}),
+      execute: (_args, ctx) => {
+        ctx.run?.reportUsage({ inputTokens: 0, outputTokens: 0, totalTokens: 5 });
+        controller.abort();
+        return { ok: true, content: "done" };
+      },
+    });
+    const agent = defineAgent({
+      name: "host",
+      provider: scriptedProvider([
+        toolCallResult(
+          [{ id: "g1", name: "greedy", arguments: {} }],
+          { inputTokens: 4, outputTokens: 3, totalTokens: 7 },
+        ),
+        textResult("never reached"),
+      ]),
+      tools: [greedy],
+    });
+
+    let caught: unknown;
+    try {
+      await runAgent(agent, { input: "go", signal: controller.signal });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(CancelledError);
+    // provider turn (7) + tool's bridged usage (5), folded before the abort check.
+    expect((caught as AgentError).usage?.totalTokens).toBe(12);
   });
 
   it("increments depth for a sub-agent nested inside another sub-agent", async () => {

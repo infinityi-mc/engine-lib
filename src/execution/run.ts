@@ -313,13 +313,17 @@ async function* executeAgent(
       const settled = await Promise.all(
         calls.map(async (call) => ({ call, outcome: await runOneTool(call) })),
       );
+
+      // Fold each tool's bridged usage (e.g. a sub-agent's tokens) before the
+      // abort check, so a cancellation detected here still accounts for tokens
+      // already spent by the tools that just ran.
+      for (const { outcome } of settled) usage = addUsage(usage, outcome.usage);
       throwIfAborted(opts.signal);
 
       for (const { call, outcome } of settled) {
         // Surface anything a tool bridged to the parent run: nested events
-        // first (e.g. a sub-agent's run events), then fold its token usage.
+        // (e.g. a sub-agent's run events) before the tool's own result.
         for (const childEvent of outcome.events) yield childEvent;
-        usage = addUsage(usage, outcome.usage);
         const toolResult = outcome.result;
         yield { type: "tool.result", id: call.id, name: call.name, result: toolResult };
         await hooks?.onToolResult?.({ call, result: toolResult }, engineCtx);
