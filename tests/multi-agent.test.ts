@@ -37,6 +37,16 @@ describe("createAgentRegistry", () => {
     expect(registry.list().map((a) => a.name)).toEqual(["triage", "support"]);
   });
 
+  it("returns a stable snapshot from list() that a later register() cannot mutate", () => {
+    const registry = createAgentRegistry([triage]);
+    const snapshot = registry.list();
+    expect(snapshot).toHaveLength(1);
+
+    registry.register(billing);
+    expect(snapshot).toHaveLength(1);
+    expect(registry.list()).toHaveLength(2);
+  });
+
   it("resolve() returns the agent or throws a clear ExecutionError", () => {
     const registry = createAgentRegistry([triage]);
     expect(registry.resolve("triage")).toBe(triage);

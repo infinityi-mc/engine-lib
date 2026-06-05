@@ -30,7 +30,7 @@ export interface AgentRegistry {
    * @throws {ExecutionError} if no agent with `name` is registered.
    */
   resolve(name: string): AgentDefinition;
-  /** Every registered agent, in registration order. */
+  /** A snapshot of every registered agent, in registration order. */
   list(): readonly AgentDefinition[];
   /**
    * Register an additional agent.
@@ -79,7 +79,8 @@ export function createAgentRegistry(
       return agent;
     },
     list(): readonly AgentDefinition[] {
-      return ordered;
+      // Copy so a snapshot is not mutated by a later register().
+      return [...ordered];
     },
     register,
   };
