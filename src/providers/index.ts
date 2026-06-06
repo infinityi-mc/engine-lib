@@ -1,10 +1,15 @@
 /**
  * `engine-lib/providers` — the unified LLM provider surface.
  *
- * Re-exports the normalized {@link Provider} contract, the streaming model,
- * the shared HTTP/SSE plumbing, and the four shipped adapters
- * ({@link createOpenAI}, {@link createAnthropic}, {@link createGoogle},
- * {@link createOpenAICompatible}).
+ * Re-exports the normalized {@link Provider} contract, the streaming model, the
+ * four shipped adapters ({@link createOpenAI}, {@link createAnthropic},
+ * {@link createGoogle}, {@link createOpenAICompatible}), and advanced adapter
+ * plumbing.
+ *
+ * Most applications should import provider factories from the root package or
+ * from this subpath. `createProvider`, HTTP/SSE helpers, and stream
+ * accumulation utilities are for custom provider adapters and conformance
+ * tests; they are intentionally not re-exported from the root barrel.
  *
  * @module
  */

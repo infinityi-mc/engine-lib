@@ -2,12 +2,13 @@
  * `engine-lib` — agent infrastructure for TypeScript, built on
  * `@infinityi/forge`.
  *
- * This root barrel re-exports the full public surface: the schema contract,
- * conversation model, error taxonomy, forge integration surface, providers,
- * tools, agents, multi-agent coordination, the execution loop, sessions,
- * context strategies, and events/telemetry.
+ * This root barrel re-exports the stable, ergonomic public surface: schemas,
+ * messages, errors, provider factories, tools, agents, multi-agent helpers, the
+ * execution loop, sessions, context helpers, and event subscribers.
  *
- * Every domain is also importable from its own subpath for tree-shaking:
+ * Lower-level adapter and transport helpers are intentionally kept off the root
+ * import. Every domain is importable from its own subpath for tree-shaking and
+ * for advanced integrations:
  * `engine-lib/schema`, `engine-lib/messages`, `engine-lib/errors`,
  * `engine-lib/runtime`, `engine-lib/providers`, `engine-lib/tools`,
  * `engine-lib/agent`, `engine-lib/execution`, `engine-lib/session`,
@@ -63,21 +64,12 @@ export type { EngineContext, TelemetryHandle } from "./runtime/index";
 
 // Providers (Phase 2)
 export {
-  collectStream,
   createAnthropic,
   createGoogle,
   createOpenAI,
   createOpenAICompatible,
-  createProvider,
-  createProviderHttp,
-  defaultProviderResilience,
-  openSseStream,
-  parseSse,
-  StreamAccumulator,
-  toProviderError,
 } from "./providers/index";
 export type {
-  AdapterSpec,
   AnthropicOptions,
   CompletionRequest,
   CompletionResult,
@@ -87,10 +79,8 @@ export type {
   OpenAIOptions,
   Provider,
   ProviderCapabilities,
-  ProviderHttpOptions,
   ProviderTool,
   ResponseSchema,
-  SseMessage,
   StreamEvent,
   ToolCall,
   ToolChoice,
@@ -98,7 +88,7 @@ export type {
 } from "./providers/index";
 
 // Tools (Phase 3)
-export { defineTool, renderToolContent, toProviderTool, toToolResultMessage } from "./tools/index";
+export { defineTool } from "./tools/index";
 export type {
   ToolContext,
   ToolDefinition,
@@ -109,23 +99,21 @@ export type {
 } from "./tools/index";
 
 // Agent (Phase 3)
-export { createToolRegistry, defineAgent } from "./agent/index";
+export { defineAgent } from "./agent/index";
 export type {
   AgentDefinition,
   AgentHooks,
   GenerationSettings,
   InstructionContext,
   Instructions,
-  ToolRegistry,
 } from "./agent/index";
 
 // Multi-agent coordination (Phase 7)
 export { asTool, createAgentRegistry } from "./agent/index";
-export { handoffProviderTools, handoffToolName, resolveHandoffTargets } from "./agent/index";
 export type { AgentRegistry, AsToolOptions } from "./agent/index";
 
 // Execution (Phase 4)
-export { addUsage, DEFAULT_MAX_HANDOFFS, DEFAULT_MAX_STEPS, emptyUsage, runAgent } from "./execution/index";
+export { runAgent } from "./execution/index";
 export type {
   RunBridge,
   RunEvent,
@@ -146,10 +134,7 @@ export type {
 
 // Context (Phase 5)
 export {
-  applyContextWindow,
   dynamicContext,
-  estimateTokens,
-  resolveContext,
   staticContext,
   summarizeOldest,
   truncateOldest,
@@ -166,23 +151,14 @@ export type {
 // Events & telemetry (Phase 6)
 export {
   createEventHub,
-  createRunTelemetry,
-  eventFields,
-  eventPayload,
   loggingSubscriber,
   messageBusSubscriber,
-  SPAN_PROVIDER,
-  SPAN_RUN,
-  SPAN_TOOL,
 } from "./events/index";
 export type {
-  Attrs,
   EventHub,
   EventHubOptions,
   LoggingSubscriberOptions,
   LogLevel,
   MessageBusSubscriberOptions,
   RunSubscriber,
-  RunTelemetry,
-  SpanHandle,
 } from "./events/index";
