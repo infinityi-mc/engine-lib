@@ -79,10 +79,12 @@
     "build:types": "tsc -p tsconfig.build.json",
     "build": "bun run clean && bun run build:js && bun run build:types",
     "check": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "docs": "typedoc"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",
+    "typedoc": "^0.28.19",
     "typescript": "^6.0.3"
   },
   "peerDependencies": {
