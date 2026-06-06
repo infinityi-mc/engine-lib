@@ -1,9 +1,10 @@
 /**
  * `defineTool` — the ergonomic constructor for {@link ToolDefinition}s.
  *
- * The argument type `TArgs` is inferred from the parameter schema
- * (`parameters: Schema<TArgs>`), so `execute` receives fully-typed arguments
- * with zero annotations (Design Principle 8).
+ * Application code should prefer this constructor over hand-writing
+ * `ToolDefinition` objects. The argument type `TArgs` is inferred from the
+ * parameter schema (`parameters: Schema<TArgs>`), so `execute` receives
+ * fully-typed, already-validated arguments with zero annotations.
  *
  * @example
  * ```ts
@@ -36,7 +37,10 @@ export interface ToolSpec<TArgs> {
  * Define a tool with argument types inferred from its parameter schema.
  *
  * Pure: validates that `name` is non-empty and returns a frozen
- * {@link ToolDefinition}. No execution or registration happens here.
+ * {@link ToolDefinition}. No execution or registration happens here. Return
+ * `{ ok: false, error }` for expected/domain failures; reserve thrown errors
+ * for unexpected implementation faults. `runAgent` isolates both forms as tool
+ * results so one bad tool call does not crash the whole run.
  */
 export function defineTool<TArgs>(spec: ToolSpec<TArgs>): ToolDefinition<TArgs> {
   if (typeof spec.name !== "string" || spec.name.trim() === "") {

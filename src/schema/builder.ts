@@ -1,10 +1,12 @@
 /**
  * The `s` builder — the public entry point for declaring schemas.
  *
- * `s` constructs {@link Schema} values for the JSON-Schema-expressible
- * types engine-lib needs to describe tool parameters and structured
- * outputs. It is intentionally dependency-free; external schema libraries
- * (e.g. Zod) plug in through `asSchema` rather than as a hard dependency.
+ * `s` constructs {@link Schema} values for the JSON-Schema-expressible types
+ * engine-lib needs to describe tool parameters and structured outputs. Objects
+ * are strict by default (`additionalProperties: false`), and fields wrapped in
+ * `s.optional()` infer as optional TypeScript properties. It is intentionally
+ * dependency-free; external schema libraries (e.g. Zod) plug in through
+ * `asSchema` rather than as a hard dependency.
  *
  * @example
  * ```ts
@@ -14,7 +16,7 @@
  *   service: s.string(),
  *   lines: s.optional(s.number({ int: true })),
  * });
- * type Params = Infer<typeof Params>; // { service: string; lines: number | undefined }
+ * type Params = Infer<typeof Params>; // { service: string; lines?: number }
  * ```
  *
  * @module

@@ -7,7 +7,9 @@
  * structured {@link ToolResult}: a *successful* outcome carries content fed back
  * to the model, while a *failed* outcome is surfaced to the model as a tool
  * error rather than thrown — bad arguments and tool failures become data the
- * model can recover from, not unhandled exceptions.
+ * model can recover from, not unhandled exceptions. The stable application
+ * path is {@link defineTool}; hand-written {@link ToolDefinition} objects are
+ * mainly useful for adapters and tests.
  *
  * @module
  */
@@ -50,8 +52,13 @@ export interface ToolSuccess {
 }
 
 /**
- * A failed tool outcome. Surfaced to the model as a tool error (an `isError`
+ * A failed tool outcome for expected/domain failures such as "file not found"
+ * or "permission denied". Surfaced to the model as a tool error (an `isError`
  * tool-result message), never thrown out of the run loop.
+ *
+ * `error` is intentionally a string in the stable contract. If a tool needs to
+ * return structured diagnostics, encode them in the string or return a
+ * structured success payload with an application-level status.
  */
 export interface ToolFailure {
   readonly ok: false;
@@ -72,6 +79,13 @@ export interface ToolDefinition<TArgs = unknown> {
   readonly description?: string;
   /** Parameter schema: `.jsonSchema` is advertised to the provider, `.parse` validates args. */
   readonly parameters: Schema<TArgs>;
-  /** Run the tool. Return a {@link ToolResult}; throwing is reserved for unexpected faults. */
+  /**
+   * Run the tool with already-validated arguments.
+   *
+   * Return `{ ok: true, content }` for success and `{ ok: false, error }` for
+   * expected/domain failures. Throw only for unexpected implementation faults;
+   * `runAgent` catches thrown errors and feeds them back to the model as
+   * recoverable tool-result errors.
+   */
   execute(args: TArgs, ctx: ToolContext): ToolResult | Promise<ToolResult>;
 }
