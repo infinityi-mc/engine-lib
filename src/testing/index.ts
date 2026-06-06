@@ -127,3 +127,60 @@ export function expectValid<T>(schema: Schema<T>, input: unknown): T {
     .join("; ");
   throw new Error(`expected input to be valid, but: ${detail}`);
 }
+
+// --- network-free `fetch` doubles -----------------------------------------
+
+/** A recorded outbound call captured by a {@link RecordingFetch}. */
+export interface RecordedCall {
+  readonly url: string;
+  readonly init?: RequestInit;
+}
+
+/** A fake `fetch` plus the list of calls it recorded. */
+export interface RecordingFetch {
+  readonly fetch: typeof fetch;
+  readonly calls: RecordedCall[];
+}
+
+/** A `ReadableStream<Uint8Array>` that emits `chunks` (one enqueue each). */
+export function byteStreamOf(...chunks: string[]): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+      controller.close();
+    },
+  });
+}
+
+/**
+ * A `fetch` that returns a fixed JSON `body` / `status` and records every call,
+ * for driving a {@link Provider} adapter without a network.
+ */
+export function jsonFetch(body: unknown, init?: { status?: number }): RecordingFetch {
+  const calls: RecordedCall[] = [];
+  const fetchImpl = (async (input: Parameters<typeof fetch>[0], requestInit?: RequestInit) => {
+    calls.push({ url: String(input), init: requestInit });
+    return new Response(JSON.stringify(body), {
+      status: init?.status ?? 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+  return { fetch: fetchImpl, calls };
+}
+
+/**
+ * A `fetch` that returns a fixed `text/event-stream` body and records every
+ * call, for driving a {@link Provider} adapter's `stream()` without a network.
+ */
+export function sseFetch(sse: string): RecordingFetch {
+  const calls: RecordedCall[] = [];
+  const fetchImpl = (async (input: Parameters<typeof fetch>[0], requestInit?: RequestInit) => {
+    calls.push({ url: String(input), init: requestInit });
+    return new Response(byteStreamOf(sse), {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    });
+  }) as typeof fetch;
+  return { fetch: fetchImpl, calls };
+}
