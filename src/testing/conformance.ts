@@ -26,7 +26,7 @@
  * import { createOpenAICompatible } from "engine-lib/providers";
  *
  * runProviderConformance("openai-compatible", {
- *   makeProvider: (fetch) => createOpenAICompatible({ baseUrl: "https://h/v1", model: "m", fetch }),
+ *   makeProvider: ({ fetch }) => createOpenAICompatible({ baseUrl: "https://h/v1", model: "m", fetch }),
  *   expectPath: "/chat/completions",
  *   fixtures: {
  *     text: { body: { choices: [{ finish_reason: "stop", message: { content: "hi" } }] }, expectText: "hi" },
