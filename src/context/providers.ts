@@ -1,6 +1,8 @@
 /**
  * Built-in {@link ContextProvider}s and the resolver that turns them into the
- * system messages injected at the head of a run.
+ * system messages injected at the head of a run. Context providers are resolved
+ * once per run, before the first provider call; their output is never persisted
+ * to a session.
  *
  * @module
  */
@@ -50,7 +52,8 @@ export function dynamicContext(
 /**
  * Resolve all providers and fold their items into a single `system` message
  * (the injected-context block), or `[]` when there is nothing to inject.
- * Providers resolve concurrently; their order is preserved in the output.
+ * Providers resolve concurrently; their declaration order is preserved in the
+ * output.
  */
 export async function resolveContext(
   providers: readonly ContextProvider[] | undefined,
