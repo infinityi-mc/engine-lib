@@ -70,6 +70,8 @@ export interface AgentHooks {
   onFinish?(event: { output: string; usage?: Usage }, ctx: EngineContext): void | Promise<void>;
   /** When the run fails. */
   onError?(event: { error: AgentError }, ctx: EngineContext): void | Promise<void>;
+  /** When this agent hands the run off to another agent (Phase 7). */
+  onHandoff?(event: { from: AgentDefinition; to: AgentDefinition }, ctx: EngineContext): void | Promise<void>;
 }
 
 /** A declarative agent definition — data describing behavior, executed by the runtime. */
@@ -78,6 +80,14 @@ export interface AgentDefinition {
   readonly provider: Provider;
   readonly instructions?: Instructions;
   readonly tools?: readonly ToolDefinition[];
+  /**
+   * Agents this one may hand the run off to (Phase 7). Each target becomes a
+   * synthetic `transfer_to_<name>` tool the model can call to switch the active
+   * agent. A target may be given directly as an {@link AgentDefinition}, or by
+   * name as a `string` resolved through the {@link AgentRegistry} passed in
+   * `RunOptions.registry`.
+   */
+  readonly handoffs?: readonly (AgentDefinition | string)[];
   /** Default generation settings applied to each turn. */
   readonly generation?: GenerationSettings;
   /** Lifecycle hook slots. */

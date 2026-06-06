@@ -1,10 +1,18 @@
 import { describe, expect, it } from "bun:test";
 
-import { AgentError, CancelledError, ExecutionError } from "../src/errors";
-import { asTool, createAgentRegistry, defineAgent, defineTool } from "../src/agent/index";
+import { AgentError, CancelledError, ExecutionError, MaxHandoffsExceededError } from "../src/errors";
+import {
+  asTool,
+  createAgentRegistry,
+  defineAgent,
+  defineTool,
+  handoffProviderTools,
+  handoffToolName,
+  resolveHandoffTargets,
+} from "../src/agent/index";
 import { runAgent } from "../src/execution/index";
 import type { RunEvent } from "../src/execution/index";
-import type { CompletionResult, ToolCall, Usage } from "../src/providers/types";
+import type { CompletionRequest, CompletionResult, ToolCall, Usage } from "../src/providers/types";
 import { s } from "../src/schema/index";
 import { mockProvider } from "../src/testing/index";
 
@@ -345,5 +353,222 @@ describe("asTool — sub-agent-as-tool", () => {
     expect(result.output).toBe("ok");
     // The loop provides the bridge, but ignoring it changes nothing.
     expect(sawBridge).toBe(true);
+  });
+});
+
+// --- handoff / delegation -------------------------------------------------
+
+const transfer = (id: string, to: string): ToolCall => ({
+  id,
+  name: handoffToolName(to),
+  arguments: {},
+});
+
+describe("handoff helpers", () => {
+  it("names the synthetic transfer tool and builds its provider schema", () => {
+    expect(handoffToolName("billing")).toBe("transfer_to_billing");
+
+    const router = defineAgent({ name: "router", provider, handoffs: [billing, support] });
+    const targets = resolveHandoffTargets(router);
+    expect([...targets.keys()]).toEqual(["transfer_to_billing", "transfer_to_support"]);
+    expect(targets.get("transfer_to_billing")).toBe(billing);
+
+    const tools = handoffProviderTools(targets);
+    expect(tools.map((t) => t.name)).toEqual(["transfer_to_billing", "transfer_to_support"]);
+    expect(tools[0]?.description).toContain("billing");
+    expect(tools[0]?.parameters).toBeDefined();
+  });
+
+  it("resolves string targets via the registry and rejects unknown ones", () => {
+    const registry = createAgentRegistry([billing]);
+    const router = defineAgent({ name: "router", provider, handoffs: ["billing"] });
+    expect(resolveHandoffTargets(router, registry).get("transfer_to_billing")).toBe(billing);
+
+    const bad = defineAgent({ name: "router", provider, handoffs: ["ghost"] });
+    expect(() => resolveHandoffTargets(bad, registry)).toThrow(ExecutionError);
+    // A string target with no registry is a clear configuration error.
+    expect(() => resolveHandoffTargets(bad)).toThrow(/no registry was provided/);
+  });
+});
+
+describe("handoff — delegation in the run loop", () => {
+  it("switches the active agent, preserves history, and records the trail", async () => {
+    const specialist = defineAgent({
+      name: "billing",
+      instructions: "you are billing",
+      provider: scriptedProvider([
+        textResult("refund issued", { inputTokens: 3, outputTokens: 2, totalTokens: 5 }),
+      ]),
+    });
+    const router = defineAgent({
+      name: "triage",
+      instructions: "route the request",
+      handoffs: [specialist],
+      provider: scriptedProvider([
+        toolCallResult([transfer("h1", "billing")], { inputTokens: 5, outputTokens: 2, totalTokens: 7 }),
+      ]),
+    });
+
+    const events: RunEvent[] = [];
+    const result = await runAgent(router, {
+      input: "I need a refund",
+      onEvent: (e) => events.push(e),
+    });
+
+    expect(result.output).toBe("refund issued");
+    // The specialist produced the final answer; the trail records the switch.
+    expect(result.agent).toBe("billing");
+    expect(result.handoffs).toEqual(["billing"]);
+    // Usage spans both agents: triage turn (7) + billing turn (5).
+    expect(result.usage.totalTokens).toBe(12);
+
+    const handoff = events.find((e) => e.type === "agent.handoff");
+    expect(handoff).toMatchObject({ type: "agent.handoff", from: "triage", to: "billing" });
+
+    // History is preserved across the switch: the original user input survives.
+    const userText = result.messages
+      .filter((m) => m.role === "user")
+      .flatMap((m) => m.content)
+      .some((p) => p.type === "text" && p.text === "I need a refund");
+    expect(userText).toBe(true);
+    // The synthetic transfer call was acknowledged with a tool-result message.
+    expect(result.messages.some((m) => m.role === "tool")).toBe(true);
+  });
+
+  it("advertises the synthetic transfer tool to the model", async () => {
+    let advertised: string[] = [];
+    const router = defineAgent({
+      name: "triage",
+      handoffs: [billing],
+      provider: mockProvider({
+        onRequest: (req: CompletionRequest) => {
+          advertised = (req.tools ?? []).map((t) => t.name);
+        },
+        result: textResult("done"),
+      }),
+    });
+
+    await runAgent(router, { input: "hi" });
+    expect(advertised).toContain("transfer_to_billing");
+  });
+
+  it("resolves a string-named handoff target through RunOptions.registry", async () => {
+    const specialist = defineAgent({
+      name: "billing",
+      provider: scriptedProvider([textResult("billing handled")]),
+    });
+    const registry = createAgentRegistry([specialist]);
+    const router = defineAgent({
+      name: "triage",
+      handoffs: ["billing"],
+      provider: scriptedProvider([toolCallResult([transfer("h1", "billing")])]),
+    });
+
+    const result = await runAgent(router, { input: "go", registry });
+    expect(result.output).toBe("billing handled");
+    expect(result.agent).toBe("billing");
+  });
+
+  it("fails clearly when a string handoff target has no registry", async () => {
+    const router = defineAgent({
+      name: "triage",
+      handoffs: ["billing"],
+      provider: scriptedProvider([toolCallResult([transfer("h1", "billing")])]),
+    });
+
+    let caught: unknown;
+    try {
+      await runAgent(router, { input: "go" });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ExecutionError);
+    expect((caught as Error).message).toMatch(/no registry was provided/);
+  });
+
+  it("runs a real tool and a handoff requested in the same turn", async () => {
+    let toolRan = false;
+    const log = defineTool({
+      name: "log",
+      parameters: s.object({}),
+      execute: () => {
+        toolRan = true;
+        return { ok: true, content: "logged" };
+      },
+    });
+    const specialist = defineAgent({
+      name: "billing",
+      provider: scriptedProvider([textResult("billing done")]),
+    });
+    const router = defineAgent({
+      name: "triage",
+      tools: [log],
+      handoffs: [specialist],
+      provider: scriptedProvider([
+        toolCallResult([
+          { id: "t1", name: "log", arguments: {} },
+          transfer("h1", "billing"),
+        ]),
+      ]),
+    });
+
+    const events: RunEvent[] = [];
+    const result = await runAgent(router, { input: "go", onEvent: (e) => events.push(e) });
+
+    expect(toolRan).toBe(true);
+    expect(result.agent).toBe("billing");
+    expect(result.output).toBe("billing done");
+    // Both the real tool result and the handoff were surfaced.
+    const toolResults = events.filter((e) => e.type === "tool.result");
+    expect(toolResults.map((e) => e.type === "tool.result" && e.name)).toEqual([
+      "log",
+      "transfer_to_billing",
+    ]);
+  });
+
+  it("caps ping-pong handoffs with MaxHandoffsExceededError", async () => {
+    const a = defineAgent({
+      name: "a",
+      handoffs: ["b"],
+      provider: scriptedProvider([toolCallResult([transfer("x", "b")])]),
+    });
+    const b = defineAgent({
+      name: "b",
+      handoffs: ["a"],
+      provider: scriptedProvider([toolCallResult([transfer("y", "a")])]),
+    });
+    const registry = createAgentRegistry([a, b]);
+
+    let caught: unknown;
+    try {
+      await runAgent(a, { input: "go", registry, maxHandoffs: 2 });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(MaxHandoffsExceededError);
+    expect((caught as MaxHandoffsExceededError).handoffs).toBe(2);
+  });
+
+  it("rejects a handoff target whose tool name collides with a real tool", async () => {
+    const collide = defineTool({
+      name: "transfer_to_billing",
+      parameters: s.object({}),
+      execute: () => ({ ok: true, content: "x" }),
+    });
+    const router = defineAgent({
+      name: "triage",
+      tools: [collide],
+      handoffs: [billing],
+      provider: scriptedProvider([textResult("never")]),
+    });
+
+    let caught: unknown;
+    try {
+      await runAgent(router, { input: "go" });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ExecutionError);
+    expect((caught as Error).message).toMatch(/collides with a handoff target/);
   });
 });

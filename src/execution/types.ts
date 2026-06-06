@@ -18,6 +18,7 @@ import type { Message } from "../messages/types";
 import type { FinishReason, Usage } from "../providers/types";
 import type { Logger, TelemetryHandle } from "../runtime/types";
 import type { GenerationSettings } from "../agent/types";
+import type { AgentRegistry } from "../agent/agent-registry";
 import type { ContextProvider, ContextWindowOptions } from "../context/types";
 import type { Session } from "../session/types";
 import type { ToolResult } from "../tools/types";
@@ -42,7 +43,13 @@ export type RunEvent =
    * don't care about nesting can ignore this variant; those that do can recurse
    * into `event`.
    */
-  | { readonly type: "agent.child"; readonly agent: string; readonly depth: number; readonly event: RunEvent };
+  | { readonly type: "agent.child"; readonly agent: string; readonly depth: number; readonly event: RunEvent }
+  /**
+   * The active agent handed the run off to another agent (Phase 7). `from` and
+   * `to` are agent names. Emitted at the switch point; the message history is
+   * preserved across the handoff.
+   */
+  | { readonly type: "agent.handoff"; readonly from: string; readonly to: string };
 
 /**
  * A handle the run loop hands to a tool so it can participate in its parent run:
@@ -91,6 +98,18 @@ export interface RunOptions {
   readonly logger?: Logger;
   /** Cancellation signal; halts the loop and in-flight provider/tool calls. */
   readonly signal?: AbortSignal;
+  /**
+   * Cap on agent handoffs in a single run, to bound triage↔specialist
+   * ping-pong (Phase 7). Defaults to {@link DEFAULT_MAX_HANDOFFS}. Exceeding it
+   * throws {@link MaxHandoffsExceededError}.
+   */
+  readonly maxHandoffs?: number;
+  /**
+   * Registry used to resolve string-named {@link AgentDefinition.handoffs}
+   * targets (Phase 7). Not needed when every handoff target is given directly
+   * as an {@link AgentDefinition}.
+   */
+  readonly registry?: AgentRegistry;
 }
 
 /** The buffered result of a completed run. */
@@ -107,6 +126,16 @@ export interface RunResult {
   readonly steps: number;
   /** Token usage aggregated across all turns (zeros when unreported). */
   readonly usage: Usage;
+  /**
+   * Name of the agent that produced the final answer (Phase 7). Equals the
+   * agent passed to {@link runAgent} unless the run handed off to another.
+   */
+  readonly agent: string;
+  /**
+   * Ordered trail of agent names the run handed off to (Phase 7). Empty when no
+   * handoff occurred; the final entry equals {@link RunResult.agent}.
+   */
+  readonly handoffs: readonly string[];
 }
 
 /**

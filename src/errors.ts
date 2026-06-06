@@ -117,6 +117,20 @@ export class MaxStepsExceededError extends ExecutionError {
   }
 }
 
+/** The run exceeded the configured maximum number of agent handoffs. */
+export class MaxHandoffsExceededError extends ExecutionError {
+  readonly handoffs?: number;
+
+  constructor(
+    message: string,
+    options?: ErrorOptions & { handoffs?: number },
+  ) {
+    super(message, options);
+    this.name = "MaxHandoffsExceededError";
+    if (options?.handoffs !== undefined) this.handoffs = options.handoffs;
+  }
+}
+
 /** The run was aborted via `AbortSignal`. */
 export class CancelledError extends AgentError {
   constructor(message: string, options?: ErrorOptions) {

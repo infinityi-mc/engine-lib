@@ -290,12 +290,13 @@ bun test         # run the test suite
 bun run build    # emit dist/ (JS + .d.ts)
 ```
 
-Phases 1–6 (Foundation & Contracts, Provider Abstraction, Agent & Tool
+Phases 1–7 (Foundation & Contracts, Provider Abstraction, Agent & Tool
 Contracts, Execution Flow, Context & Session Management, Event System &
-Lifecycle Hooks) are implemented. Public entry points:
+Lifecycle Hooks, Multi-Agent Coordination & Registry) are implemented. Public
+entry points:
 
 ```ts
-import { s, user, system, AgentError, defineTool, defineAgent, runAgent, createSession, staticContext } from "engine-lib";
+import { s, user, system, AgentError, defineTool, defineAgent, runAgent, createSession, staticContext, createAgentRegistry, asTool } from "engine-lib";
 // or via subpaths:
 import { s } from "engine-lib/schema";
 import { user } from "engine-lib/messages";
@@ -303,7 +304,7 @@ import { AgentError } from "engine-lib/errors";
 import { resolveSecret } from "engine-lib/runtime";
 import { createOpenAI } from "engine-lib/providers";
 import { defineTool } from "engine-lib/tools";
-import { defineAgent } from "engine-lib/agent";
+import { defineAgent, createAgentRegistry, asTool } from "engine-lib/agent";
 import { runAgent } from "engine-lib/execution";
 import { createSession } from "engine-lib/session";
 import { staticContext, truncateOldest } from "engine-lib/context";
@@ -355,9 +356,61 @@ and `agent.tool.execute` spans cover each provider turn and tool execution, and
 `agent.run.duration` / `agent.tool.duration` / `agent.tokens` / `agent.runs`
 metrics are recorded.
 
-Multi-agent coordination follows in Phase 7 — see [`ROADMAP.md`](./ROADMAP.md).
-(An optional `forge/data`-backed `SessionStore` is also deferred to a later
-change.)
+### Multi-agent coordination (Phase 7)
+
+Compose agents in two complementary ways. Both reuse the same `runAgent` loop —
+no separate orchestrator.
+
+**Handoff / delegation.** Declare `handoffs` on an agent and each target becomes
+a synthetic `transfer_to_<name>` tool the model can call to transfer the running
+conversation to a specialist. The message history is preserved across the switch;
+the new agent's instructions are injected as an additional system message. The
+`RunResult` reports the agent that produced the final answer (`result.agent`) and
+the ordered `result.handoffs` trail. A `maxHandoffs` cap (default 8) bounds
+triage↔specialist ping-pong with `MaxHandoffsExceededError`. Targets may be given
+directly as an `AgentDefinition`, or by name as a `string` resolved through an
+`AgentRegistry` passed in `RunOptions.registry`.
+
+```ts
+import { defineAgent, runAgent, createAgentRegistry } from "engine-lib";
+
+const billing = defineAgent({ name: "billing", provider, instructions: "Handle billing." });
+const triage = defineAgent({
+  name: "triage",
+  provider,
+  instructions: "Route the user to the right specialist.",
+  handoffs: [billing], // → exposes a `transfer_to_billing` tool
+});
+
+const result = await runAgent(triage, { input: "I want a refund" });
+result.agent;    // "billing" — the specialist answered
+result.handoffs; // ["billing"] — the transfer trail
+
+// String-named targets resolve via a registry (no global state):
+const registry = createAgentRegistry([billing]);
+const router = defineAgent({ name: "router", provider, handoffs: ["billing"] });
+await runAgent(router, { input: "…", registry });
+```
+
+**Sub-agent-as-tool.** Wrap an agent as a `ToolDefinition` with `asTool(agent)`
+so a parent invokes it through the normal tool-calling path. The child runs to
+completion and its output is fed back as the tool result; the child's token usage
+is folded into the parent's total and its events surface to the parent as
+`agent.child` events (with `depth` tracking nesting).
+
+```ts
+import { asTool, defineAgent } from "engine-lib";
+
+const researcher = defineAgent({ name: "researcher", provider, instructions: "Research deeply." });
+const lead = defineAgent({
+  name: "lead",
+  provider,
+  tools: [asTool(researcher, { description: "Delegate research to a specialist." })],
+});
+// lead's model calls the "researcher" tool → child run executes → output fed back.
+```
+
+(An optional `forge/data`-backed `SessionStore` is deferred to a later change.)
 
 ## License
 
