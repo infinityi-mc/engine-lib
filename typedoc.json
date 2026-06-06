@@ -1,0 +1,16 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": [
+    "src/index.ts",
+    "src/lifecycle/index.ts",
+    "src/testing/index.ts",
+    "src/testing/conformance.ts"
+  ],
+  "out": "docs/api",
+  "readme": "none",
+  "name": "engine-lib API",
+  "excludeInternal": true,
+  "externalSymbolLinkMappings": {
+    "@infinityi/forge": { "*": "https://github.com/tqcuong2k/forge" }
+  }
+}

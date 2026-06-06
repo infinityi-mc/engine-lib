@@ -6,6 +6,9 @@ out
 dist
 *.tgz
 
+# generated TypeDoc API reference (run `bun run docs`)
+docs/api
+
 # code coverage
 coverage
 *.lcov

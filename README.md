@@ -275,9 +275,10 @@ engine-lib depends on `@infinityi/forge` and reuses it directly:
 
 ## Status
 
-Early development. The runtime and provider adapters are being built out in
-phases — see [`ROADMAP.md`](./ROADMAP.md). APIs in the examples above describe the
-intended surface and may change before a stable release.
+**All eight roadmap phases are implemented** — see [`ROADMAP.md`](./ROADMAP.md).
+The runtime, provider adapters, multi-agent coordination, the Forge lifecycle
+adapter, the cross-provider conformance suite, and runnable examples are all in
+place. APIs may still be refined before a stable release.
 
 ---
 
@@ -290,10 +291,10 @@ bun test         # run the test suite
 bun run build    # emit dist/ (JS + .d.ts)
 ```
 
-Phases 1–7 (Foundation & Contracts, Provider Abstraction, Agent & Tool
+Phases 1–8 (Foundation & Contracts, Provider Abstraction, Agent & Tool
 Contracts, Execution Flow, Context & Session Management, Event System &
-Lifecycle Hooks, Multi-Agent Coordination & Registry) are implemented. Public
-entry points:
+Lifecycle Hooks, Multi-Agent Coordination & Registry, and Developer Experience
+& Conformance) are implemented. Public entry points:
 
 ```ts
 import { s, user, system, AgentError, defineTool, defineAgent, runAgent, createSession, staticContext, createAgentRegistry, asTool } from "engine-lib";
@@ -309,7 +310,14 @@ import { runAgent } from "engine-lib/execution";
 import { createSession } from "engine-lib/session";
 import { staticContext, truncateOldest } from "engine-lib/context";
 import { createEventHub, loggingSubscriber, messageBusSubscriber } from "engine-lib/events";
+import { agentRuntimeComponent } from "engine-lib/lifecycle";
+// test-only doubles + the cross-provider conformance battery:
+import { mockProvider, scriptedProvider, textResult, toolCallResult } from "engine-lib/testing";
+import { runProviderConformance } from "engine-lib/testing/conformance";
 ```
+
+Runnable, offline examples live in [`examples/`](./examples/) (`bun examples/incident-analysis.ts`),
+and the generated API reference is described in [`docs/`](./docs/README.md) (`bun run docs`).
 
 `runAgent` drives the provider-native tool-calling loop: it sends the
 conversation + tool schemas to the provider, validates and dispatches tool calls
@@ -408,6 +416,38 @@ const lead = defineAgent({
   tools: [asTool(researcher, { description: "Delegate research to a specialist." })],
 });
 // lead's model calls the "researcher" tool → child run executes → output fed back.
+```
+
+### Developer experience & conformance (Phase 8)
+
+Three things make the library trustworthy to adopt:
+
+- **Provider conformance suite** — a fixture-driven battery, shipped from
+  `engine-lib/testing/conformance`, that every adapter must pass (buffered
+  completion, streaming, tool calling, usage, capability honesty, error
+  mapping). Each adapter supplies its native wire fixtures plus the canonical
+  normalized values; the battery drives the public `Provider` seam through an
+  injected fake `fetch`, so third-party adapters can prove parity with the
+  in-house ones. All four built-in adapters are wired through it.
+- **Lifecycle adapter** — `agentRuntimeComponent()` (from `engine-lib/lifecycle`)
+  adapts the runtime to a `forge/lifecycle` `Component`: `start()` fail-fast
+  validates providers (and optionally probes them so a bad deploy rolls back in
+  `forge.boot`), `healthcheck()` maps provider probes to a forge `HealthResult`,
+  and `stop()` runs an `onStop` hook (e.g. flush/close a durable session store).
+- **Test doubles & examples** — network-free helpers in `engine-lib/testing`
+  (`mockProvider`, `scriptedProvider`, `textResult`/`toolCallResult`,
+  `jsonFetch`/`sseFetch`, `inMemorySessionStore`) let consumers unit-test agents
+  deterministically, and [`examples/`](./examples/) holds runnable versions of
+  the scenarios above.
+
+```ts
+import { boot } from "@infinityi/forge/lifecycle";
+import { agentRuntimeComponent } from "engine-lib/lifecycle";
+
+const app = await boot({
+  components: [agentRuntimeComponent({ providers: [provider], sessionStore, probeOnStart: true })],
+});
+// app.ready === true; app.stop() drains it (running the optional onStop hook).
 ```
 
 (An optional `forge/data`-backed `SessionStore` is deferred to a later change.)
