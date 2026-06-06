@@ -41,7 +41,9 @@ export interface AgentRegistry {
 }
 
 /**
- * Build an {@link AgentRegistry}, optionally seeded with `agents`.
+ * Build an explicit, host-owned {@link AgentRegistry}, optionally seeded with
+ * `agents`. There is no global registry; pass this value to `runAgent` when an
+ * agent declares string-named handoff targets.
  *
  * @throws {ExecutionError} if two agents share a name.
  */

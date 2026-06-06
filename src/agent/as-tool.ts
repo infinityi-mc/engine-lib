@@ -5,7 +5,7 @@
  *
  * The returned tool runs the child agent with {@link runAgent} (buffered) and
  * returns its final text as the tool result. When dispatched inside a run, the
- * child's events and token usage are **propagated to the parent run** through
+ * child's events and token usage are propagated to the parent run through
  * the {@link ToolContext.run} bridge: each child {@link RunEvent} is re-emitted
  * as an `agent.child` event, and the child's usage is folded into the parent's
  * aggregate. A failing child run (a thrown {@link AgentError}) becomes a tool
@@ -68,6 +68,9 @@ function childDepth(event: RunEvent): number {
  * The tool's `execute` runs `agent` to completion, threading the parent's
  * telemetry / logger / abort signal through, propagating the child's events and
  * usage to the parent run, and returning the child's final output as content.
+ * The default tool schema is `{ input: string }`; custom schemas should provide
+ * `toInput` so validated tool arguments can be converted into the child run's
+ * `RunInput`.
  */
 export function asTool<TArgs = { input: string }>(
   agent: AgentDefinition,

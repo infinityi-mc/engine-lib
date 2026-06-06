@@ -5,8 +5,10 @@
  * {@link Provider} to call, what {@link Instructions} to send, which
  * {@link ToolDefinition tools} the model may invoke, the default
  * {@link GenerationSettings generation settings}, and {@link AgentHooks}
- * lifecycle slots. Phase 3 only *defines* these shapes; the Phase-4 run loop
- * consumes them and the Phase-6 event system invokes the hooks.
+ * lifecycle slots. The stable application path is `defineAgent`; hand-written
+ * {@link AgentDefinition} objects are mainly useful for tests and adapters.
+ * Definitions are data only: the run loop resolves instructions, invokes
+ * hooks, advertises tools, and performs handoffs.
  *
  * @module
  */
@@ -39,23 +41,29 @@ export interface GenerationSettings {
   readonly toolChoice?: ToolChoice;
 }
 
-/** Context available to dynamic {@link Instructions} (extended with injected context in Phase 5). */
+/** Context available to dynamic {@link Instructions}. */
 export interface InstructionContext extends EngineContext {
   readonly agent: AgentDefinition;
 }
 
 /**
  * System instructions: a static string, or a function of run context resolved
- * at run time (Phase 4) so the host can fold in per-run facts.
+ * at run time so the host can fold in per-run facts. Resolved instructions are
+ * injected into the system layer for the provider request, but are not persisted
+ * to sessions.
  */
 export type Instructions =
   | string
   | ((ctx: InstructionContext) => string | Promise<string>);
 
 /**
- * Lifecycle hook slots. Declared here on the agent; the Phase-4 loop / Phase-6
- * event system invoke them at well-defined points. All are optional and may be
- * async (awaited in declaration order).
+ * Lifecycle hook slots. Declared here on the agent; the run loop invokes them
+ * at well-defined points. All hooks are optional, awaited, and receive the
+ * shared engine context.
+ *
+ * Public `RunEvent`s are emitted before the corresponding hook is invoked.
+ * Hook failures fail the run and are routed through `onError`; an `onError`
+ * failure never replaces the original run failure.
  */
 export interface AgentHooks {
   /** Before the first provider call. */
@@ -85,7 +93,7 @@ export interface AgentDefinition {
    * synthetic `transfer_to_<name>` tool the model can call to switch the active
    * agent. A target may be given directly as an {@link AgentDefinition}, or by
    * name as a `string` resolved through the {@link AgentRegistry} passed in
-   * `RunOptions.registry`.
+   * `RunOptions.registry`. String targets without a registry fail the run.
    */
   readonly handoffs?: readonly (AgentDefinition | string)[];
   /** Default generation settings applied to each turn. */

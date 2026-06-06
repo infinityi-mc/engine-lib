@@ -1,10 +1,11 @@
 /**
  * `defineAgent` — the ergonomic constructor for {@link AgentDefinition}s.
  *
- * Pure and fail-fast: it validates the agent's `name` and eagerly builds a
- * {@link ToolRegistry} so duplicate tool names are caught at definition time
- * (an `ExecutionError`) rather than mid-run. It returns the definition as data;
- * running it is Phase 4's job.
+ * Application code should prefer this constructor over hand-writing
+ * `AgentDefinition` objects. Pure and fail-fast: it validates the agent's
+ * `name` and eagerly builds a {@link ToolRegistry} so duplicate tool names are
+ * caught at definition time (an `ExecutionError`) rather than mid-run. It
+ * returns the definition as data; running it is `runAgent`'s job.
  *
  * @example
  * ```ts
@@ -26,6 +27,10 @@ import type { AgentDefinition } from "./types";
 
 /**
  * Define an agent, validating its name and tool-name uniqueness.
+ *
+ * Instructions, hooks, handoffs, and generation settings are stored as data and
+ * resolved by the run loop. No provider calls, context resolution, or registry
+ * lookup happens here.
  *
  * @throws {TypeError} if `name` is missing/empty.
  * @throws {ExecutionError} if two tools share a name.
