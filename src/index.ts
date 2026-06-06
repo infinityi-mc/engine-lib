@@ -115,12 +115,15 @@ export type { AgentRegistry, AsToolOptions } from "./agent/index";
 // Execution (Phase 4)
 export { runAgent } from "./execution/index";
 export type {
+  AnyRunOptions,
+  BufferedRunOptions,
   RunBridge,
   RunEvent,
   RunHandle,
   RunInput,
   RunOptions,
   RunResult,
+  StreamingRunOptions,
 } from "./execution/index";
 
 // Session (Phase 5)

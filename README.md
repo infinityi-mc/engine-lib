@@ -347,6 +347,36 @@ until a final answer, the step budget (`MaxStepsExceededError`), or cancellation
 `RunResult`) or streaming (`runAgent(agent, { input, stream: true })` → an
 async-iterable of `RunEvent`s).
 
+`runAgent` has three stable call shapes:
+
+```ts
+const result = await runAgent(agent, { input: "go" });
+// Promise<RunResult>
+
+const handle = runAgent(agent, { input: "go", stream: true });
+// RunHandle: AsyncIterable<RunEvent> & { completed: Promise<RunResult> }
+
+const maybeStream: boolean = shouldStream();
+const resultOrHandle = runAgent(agent, { input: "go", stream: maybeStream });
+// Promise<RunResult> | RunHandle
+```
+
+Streaming consumers should either drain the async iterable or await
+`handle.completed`. Successful streams emit a final `run.finish` event and then
+`completed` resolves with the same `RunResult`. If iteration throws,
+`completed` rejects with the same error; if iteration is abandoned early,
+`completed` rejects with `CancelledError`.
+
+Run events are ordered. Every run starts with `run.start`. Provider assistant
+turns are emitted as `message`; streaming text arrives as `token` before the
+assistant `message` that contains the accumulated text. Tool calls emit
+`tool.call`, then `tool.result`, then the tool-result `message`. Successful runs
+end with `run.finish`; failed runs emit `error` and then reject or throw the same
+`AgentError`. Tool validation failures, unknown tools, and thrown tool
+implementations are isolated as `{ ok: false }` tool results so the model can
+recover; provider failures, context/session failures, max-step/max-handoff
+limits, and cancellation fail the run.
+
 Durable conversation state and run-time context injection are wired into the
 loop. Pass `session` (from `createSession({ id })`, backed by a `SessionStore` —
 `InMemorySessionStore` ships built-in) to resume a conversation: prior history is

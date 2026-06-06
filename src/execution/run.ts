@@ -42,7 +42,17 @@ import { createEventHub } from "../events/hub";
 import type { EventHub } from "../events/types";
 import { createRunTelemetry, SPAN_PROVIDER, SPAN_RUN, SPAN_TOOL } from "../events/telemetry";
 import type { RunTelemetry } from "../events/telemetry";
-import type { RunBridge, RunEvent, RunHandle, RunInput, RunOptions, RunResult } from "./types";
+import type {
+  AnyRunOptions,
+  BufferedRunOptions,
+  RunBridge,
+  RunEvent,
+  RunHandle,
+  RunInput,
+  RunOptions,
+  RunResult,
+  StreamingRunOptions,
+} from "./types";
 import { addUsage, emptyUsage } from "./usage";
 
 /** Default cap on provider turns when {@link RunOptions.maxSteps} is omitted. */
@@ -594,18 +604,24 @@ function buildEventHub(opts: RunOptions): EventHub {
 /**
  * Run an agent to completion using the provider-native tool-calling loop.
  *
- * Buffered mode (default) resolves with a {@link RunResult}. Streaming mode
- * (`stream: true`) returns a {@link RunHandle} you can `for await` over for
- * {@link RunEvent}s, with `handle.completed` resolving to the final result.
+ * Buffered mode (default, or `stream: false`) resolves with a {@link RunResult}.
+ * Streaming mode (`stream: true`) returns a {@link RunHandle} you can
+ * `for await` over for {@link RunEvent}s, with `handle.completed` resolving to
+ * the final result. When `stream` is a non-literal boolean, the return type is
+ * `Promise<RunResult> | RunHandle`.
  */
 export function runAgent(
   agent: AgentDefinition,
-  opts?: RunOptions & { stream?: false },
+  opts?: BufferedRunOptions,
 ): Promise<RunResult>;
 export function runAgent(
   agent: AgentDefinition,
-  opts: RunOptions & { stream: true },
+  opts: StreamingRunOptions,
 ): RunHandle;
+export function runAgent(
+  agent: AgentDefinition,
+  opts: AnyRunOptions,
+): Promise<RunResult> | RunHandle;
 export function runAgent(
   agent: AgentDefinition,
   opts: RunOptions = {},

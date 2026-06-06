@@ -5,10 +5,11 @@
  * shapes that share one core: *buffered* (returns a {@link RunResult}) and
  * *streaming* (returns a {@link RunHandle} — an async-iterable of
  * {@link RunEvent}s plus a `completed` promise). Both modes also feed
- * {@link RunOptions.onEvent}.
+ * {@link RunOptions.onEvent} and {@link RunOptions.subscribers}.
  *
- * The {@link RunEvent} union is introduced here because streaming needs it;
- * Phase 6 formalizes a multi-subscriber emitter and telemetry spans on top.
+ * `RunEvent["type"]` values are part of the public contract. Consumers should
+ * handle unknown future variants defensively if they want minor-version
+ * compatibility with newly added events.
  *
  * @module
  */
@@ -27,7 +28,22 @@ import type { RunSubscriber } from "../events/types";
 /** New input for a run: raw text (→ a user message), a single message, or several. */
 export type RunInput = string | Message | Message[];
 
-/** A single event emitted over the course of a run. */
+/**
+ * A single event emitted over the course of a run.
+ *
+ * Ordering guarantees:
+ *
+ * - Every run starts with `run.start`.
+ * - Provider assistant turns are emitted as `message` events.
+ * - Streaming text is emitted as `token` before the assistant `message` that
+ *   contains the accumulated text.
+ * - Tool calls emit `tool.call`, then `tool.result`, then the corresponding
+ *   tool-result `message`.
+ * - Successful runs end with `run.finish`; failed runs emit `error` and then
+ *   reject/throw the same `AgentError`.
+ * - `agent.child` wraps events forwarded from sub-agent tools, and
+ *   `agent.handoff` marks a control transfer between agents.
+ */
 export type RunEvent =
   | { readonly type: "run.start"; readonly agent: string }
   | { readonly type: "message"; readonly message: Message }
@@ -112,6 +128,24 @@ export interface RunOptions {
   readonly registry?: AgentRegistry;
 }
 
+/** Options for buffered mode. This is the default when `stream` is omitted. */
+export type BufferedRunOptions = Omit<RunOptions, "stream"> & {
+  readonly stream?: false | undefined;
+};
+
+/** Options for streaming mode. */
+export type StreamingRunOptions = Omit<RunOptions, "stream"> & {
+  readonly stream: true;
+};
+
+/**
+ * Options for callers that decide streaming dynamically. Passing this shape to
+ * `runAgent` returns `Promise<RunResult> | RunHandle`.
+ */
+export type AnyRunOptions = Omit<RunOptions, "stream"> & {
+  readonly stream?: boolean;
+};
+
 /** The buffered result of a completed run. */
 export interface RunResult {
   /** Concatenated text of the final assistant message. */
@@ -142,6 +176,10 @@ export interface RunResult {
  * A streaming run: an async-iterable of {@link RunEvent}s, plus `completed`
  * which resolves with the final {@link RunResult} once the stream is fully
  * consumed (the same result is also delivered as the `run.finish` event).
+ *
+ * If iteration throws, `completed` rejects with the same error. If the consumer
+ * abandons iteration before a terminal event, `completed` rejects with
+ * `CancelledError`.
  */
 export type RunHandle = AsyncIterable<RunEvent> & {
   readonly completed: Promise<RunResult>;
