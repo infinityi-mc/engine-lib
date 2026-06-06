@@ -13,7 +13,7 @@ import { createOpenAICompatible } from "../../src/providers/openai-compatible/in
 import { runProviderConformance } from "../../src/testing/conformance";
 
 runProviderConformance("openai", {
-  makeProvider: (fetch) => createOpenAI({ apiKey: "k", fetch }),
+  makeProvider: ({ fetch, resilience }) => createOpenAI({ apiKey: "k", fetch, resilience }),
   expectPath: "/responses",
   fixtures: {
     text: {
@@ -62,7 +62,7 @@ runProviderConformance("openai", {
 });
 
 runProviderConformance("anthropic", {
-  makeProvider: (fetch) => createAnthropic({ apiKey: "k", fetch }),
+  makeProvider: ({ fetch, resilience }) => createAnthropic({ apiKey: "k", fetch, resilience }),
   expectPath: "/messages",
   fixtures: {
     text: {
@@ -104,7 +104,7 @@ runProviderConformance("anthropic", {
 });
 
 runProviderConformance("google", {
-  makeProvider: (fetch) => createGoogle({ apiKey: "k", model: "gemini-2.5-pro", fetch }),
+  makeProvider: ({ fetch, resilience }) => createGoogle({ apiKey: "k", model: "gemini-2.5-pro", fetch, resilience }),
   expectPath: "models/gemini-2.5-pro",
   fixtures: {
     text: {
@@ -141,7 +141,7 @@ runProviderConformance("google", {
 });
 
 runProviderConformance("openai-compatible", {
-  makeProvider: (fetch) => createOpenAICompatible({ baseUrl: "https://host/v1", model: "m", fetch }),
+  makeProvider: ({ fetch, resilience }) => createOpenAICompatible({ baseUrl: "https://host/v1", model: "m", fetch, resilience }),
   expectPath: "/chat/completions",
   fixtures: {
     text: {

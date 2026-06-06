@@ -12,9 +12,9 @@ import {
 } from "../src/agent/index";
 import { runAgent } from "../src/execution/index";
 import type { RunEvent } from "../src/execution/index";
-import type { CompletionRequest, CompletionResult, ToolCall, Usage } from "../src/providers/types";
+import type { CompletionRequest, CompletionResult, ToolCall } from "../src/providers/types";
 import { s } from "../src/schema/index";
-import { mockProvider } from "../src/testing/index";
+import { mockProvider, scriptedProvider, textResult, toolCallResult } from "../src/testing/index";
 
 const provider = mockProvider({ name: "mock", defaultModel: "mock-model" });
 
@@ -82,37 +82,6 @@ describe("createAgentRegistry", () => {
 });
 
 // --- sub-agent-as-tool (asTool) -------------------------------------------
-
-function textResult(text: string, usage?: Usage): CompletionResult {
-  return {
-    message: { role: "assistant", content: [{ type: "text", text }] },
-    toolCalls: [],
-    finishReason: "stop",
-    model: "mock-model",
-    raw: {},
-    ...(usage !== undefined ? { usage } : {}),
-  };
-}
-
-function toolCallResult(calls: ToolCall[], usage?: Usage): CompletionResult {
-  return {
-    message: {
-      role: "assistant",
-      content: calls.map((c) => ({ type: "tool_call", id: c.id, name: c.name, arguments: c.arguments })),
-    },
-    toolCalls: calls,
-    finishReason: "tool_calls",
-    model: "mock-model",
-    raw: {},
-    ...(usage !== undefined ? { usage } : {}),
-  };
-}
-
-/** A provider that returns each scripted result in turn (last one repeats). */
-function scriptedProvider(results: CompletionResult[]) {
-  let i = 0;
-  return mockProvider({ result: () => results[Math.min(i++, results.length - 1)]! });
-}
 
 /** A provider that yields each scripted result once, then throws on the next call. */
 function throwingAfter(results: CompletionResult[]) {

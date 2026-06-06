@@ -2,15 +2,19 @@
  * `engine-lib` — agent infrastructure for TypeScript, built on
  * `@infinityi/forge`.
  *
- * Phase 1 (Foundation & Contracts) exposes the shared building blocks the
- * rest of the library is built on: the schema contract, the conversation
- * model, the error taxonomy, and the forge integration surface. Provider,
- * agent, tool, execution, session, and event APIs follow in later phases
- * (see `ROADMAP.md`).
+ * This root barrel re-exports the full public surface: the schema contract,
+ * conversation model, error taxonomy, forge integration surface, providers,
+ * tools, agents, multi-agent coordination, the execution loop, sessions,
+ * context strategies, and events/telemetry.
  *
- * Sub-paths are also available: `engine-lib/schema`, `engine-lib/messages`,
- * `engine-lib/errors`, `engine-lib/runtime`, `engine-lib/providers`,
- * `engine-lib/testing`.
+ * Every domain is also importable from its own subpath for tree-shaking:
+ * `engine-lib/schema`, `engine-lib/messages`, `engine-lib/errors`,
+ * `engine-lib/runtime`, `engine-lib/providers`, `engine-lib/tools`,
+ * `engine-lib/agent`, `engine-lib/execution`, `engine-lib/session`,
+ * `engine-lib/context`, `engine-lib/events`, and `engine-lib/lifecycle`
+ * (forge lifecycle adapter). Test-only helpers live on `engine-lib/testing`,
+ * and the fixture-driven provider battery on `engine-lib/testing/conformance`
+ * (the only subpath that imports a test runner).
  *
  * @module
  */
