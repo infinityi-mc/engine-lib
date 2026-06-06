@@ -6,7 +6,10 @@
  * (a unified delta stream) — both speaking the Phase-1 {@link Message} model
  * and {@link JsonSchema} tool/output schemas. Adapters translate to/from the
  * provider's native shape; nothing above this layer knows which vendor is in
- * use.
+ * use. The stable application surface is the {@link Provider} contract, request
+ * / result / stream types, capabilities, and the built-in provider factories.
+ * Adapter scaffolding lives on `engine-lib/providers` as an advanced extension
+ * surface.
  *
  * @module
  */
@@ -35,18 +38,32 @@ export interface ResponseSchema {
   readonly strict?: boolean;
 }
 
-/** A provider-neutral request for a single model turn. */
+/**
+ * A provider-neutral request for a single model turn.
+ *
+ * `model` overrides the provider's `defaultModel` for this request only.
+ * Generation knobs are normalized across providers. `providerOptions` is the
+ * sanctioned escape hatch for vendor-specific fields that are not yet
+ * first-classed in this interface.
+ */
 export interface CompletionRequest {
   /** Model id; falls back to the provider's `defaultModel` when omitted. */
   readonly model?: string;
   /** Conversation so far (Phase-1 model); adapters extract any system message. */
   readonly messages: Message[];
+  /** Provider-facing tool declarations for this turn. */
   readonly tools?: ProviderTool[];
+  /** How the model may use tools this turn. */
   readonly toolChoice?: ToolChoice;
+  /** Optional structured-output schema for providers that support it. */
   readonly responseSchema?: ResponseSchema;
+  /** Maximum tokens the model may generate in the response. */
   readonly maxOutputTokens?: number;
+  /** Sampling temperature, provider-normalized where possible. */
   readonly temperature?: number;
+  /** Nucleus sampling value, provider-normalized where possible. */
   readonly topP?: number;
+  /** Stop sequences passed through when supported. */
   readonly stopSequences?: readonly string[];
   /** Vendor-neutral request metadata (e.g. an end-user id). */
   readonly metadata?: Record<string, string>;
@@ -99,11 +116,20 @@ export interface CompletionResult {
   readonly usage?: Usage;
   /** The model id that produced this result. */
   readonly model: string;
-  /** The provider-native response object (lossless escape hatch). */
+  /**
+   * The provider-native response object. This intentionally remains `unknown`:
+   * consumers may narrow it when they know the adapter, while engine-lib keeps
+   * the normalized result portable.
+   */
   readonly raw: unknown;
 }
 
-/** Declared, queryable provider capabilities so callers can degrade gracefully. */
+/**
+ * Declared, queryable provider capabilities so callers can degrade gracefully.
+ *
+ * Adapter authors should treat these as capability truth: the conformance suite
+ * validates that built-in adapters are honest about supported features.
+ */
 export interface ProviderCapabilities {
   readonly tools: boolean;
   readonly streaming: boolean;

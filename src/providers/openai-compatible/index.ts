@@ -40,7 +40,15 @@ const DEFAULT_CAPABILITIES: ProviderCapabilities = {
   structuredOutput: true,
 };
 
-/** Create a generic OpenAI-compatible (Chat Completions) {@link Provider}. */
+/**
+ * Create a generic OpenAI-compatible (Chat Completions) {@link Provider}.
+ *
+ * `apiKey` may be omitted for local/keyless servers or supplied as a raw string
+ * or Forge `Secret`. `model` becomes the provider's `defaultModel`; callers can
+ * still override `CompletionRequest.model` per request. Use `capabilities` to
+ * honestly describe the target server when it lacks tool, stream, multimodal,
+ * parallel-tool, or structured-output support.
+ */
 export function createOpenAICompatible(opts: OpenAICompatibleOptions): Provider {
   const headers: Record<string, string> = { ...opts.defaultHeaders };
   if (opts.apiKey !== undefined) headers["authorization"] = `Bearer ${resolveSecret(opts.apiKey)}`;

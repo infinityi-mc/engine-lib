@@ -34,7 +34,13 @@ const CAPABILITIES: ProviderCapabilities = {
   structuredOutput: true,
 };
 
-/** Create a Google Gemini (generateContent API) {@link Provider}. */
+/**
+ * Create a Google Gemini (generateContent API) {@link Provider}.
+ *
+ * `apiKey` may be a raw string or Forge `Secret`. `model` becomes the
+ * provider's `defaultModel`; callers can still override `CompletionRequest.model`
+ * per request.
+ */
 export function createGoogle(opts: GoogleOptions): Provider {
   const apiKey = resolveSecret(opts.apiKey);
   return createProvider({

@@ -38,7 +38,13 @@ const CAPABILITIES: ProviderCapabilities = {
   structuredOutput: true,
 };
 
-/** Create an Anthropic (Messages API) {@link Provider}. */
+/**
+ * Create an Anthropic (Messages API) {@link Provider}.
+ *
+ * `apiKey` may be a raw string or Forge `Secret`. `model` becomes the
+ * provider's `defaultModel`; callers can still override `CompletionRequest.model`
+ * per request.
+ */
 export function createAnthropic(opts: AnthropicOptions): Provider {
   const apiKey = resolveSecret(opts.apiKey);
   return createProvider({
