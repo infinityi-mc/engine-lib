@@ -527,6 +527,37 @@ canonical history returned from `runAgent` or stored in the session.
 messages while retaining system messages. `summarizeOldest()` is public, but it
 performs an additional provider call and should be chosen deliberately.
 
+### Events, subscribers, and telemetry
+
+Use `onEvent` for a single callback and `subscribers` for fan-out:
+
+```ts
+await runAgent(agent, {
+  input: "go",
+  onEvent: (event) => ui.observe(event),
+  subscribers: [loggingSubscriber(logger), messageBusSubscriber(messageBus)],
+});
+```
+
+`onEvent` is registered first, followed by `subscribers` in array order. Each
+subscriber may be sync or async; subscribers are awaited in order, so slow sinks
+apply back-pressure. Subscriber failures are isolated: a thrown/rejected
+subscriber is reported to the hub's error reporter/logger and does not abort the
+run or prevent later subscribers from seeing the event. Undefined subscriber
+slots are ignored.
+
+`loggingSubscriber()` writes compact fields from `eventFields()`.
+`messageBusSubscriber()` publishes a serializable `eventPayload()` projection.
+Those projection helpers are stable on `engine-lib/events` for custom
+subscribers, but they are intentionally not root exports.
+
+For telemetry, the stable application path is passing a Forge telemetry handle
+to `runAgent`. That enables `agent.run`, `agent.provider.call`, and
+`agent.tool.execute` spans plus `agent.run.duration`, `agent.tool.duration`,
+`agent.tokens`, and `agent.runs` metrics. `createRunTelemetry()` and the span
+constants are available from `engine-lib/events` for advanced integrations and
+tests.
+
 Every run is observable. Beyond the single `onEvent` callback (and the streaming
 async-iterable), pass `subscribers: RunSubscriber[]` to fan a run's `RunEvent`s
 out to multiple independent sinks — they are dispatched in order, awaited, and

@@ -1,10 +1,10 @@
 /**
  * {@link createEventHub} — the multi-subscriber fan-out used by the run loop.
  *
- * Dispatch is **ordered and awaited**: each subscriber sees every event in the
+ * Dispatch is ordered and awaited: each subscriber sees every event in the
  * order they were registered, and the next event is not delivered until the
  * current one has been handed to every subscriber. Each subscriber is
- * **isolated**: a throw/rejection is routed to `onSubscriberError` and
+ * isolated: a throw/rejection is routed to `onSubscriberError` and
  * swallowed, so one misbehaving subscriber can neither abort the run nor
  * prevent the others from observing the event.
  *

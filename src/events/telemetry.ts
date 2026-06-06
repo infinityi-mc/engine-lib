@@ -1,10 +1,13 @@
 /**
- * The `forge/telemetry` bridge for agent runs (Phase 6).
+ * The `forge/telemetry` bridge for agent runs.
  *
  * Wraps the run loop in spans and metrics expressed entirely in terms of
  * forge's `Telemetry` handle — engine-lib never invents its own observability
- * surface. Everything here is a no-op when no telemetry handle (or no
- * tracer/meter) is supplied, so the library stays usable with zero wiring.
+ * surface. The stable application path is passing `telemetry` to `runAgent`.
+ * `createRunTelemetry`, span constants, and telemetry handle types are exported
+ * from `engine-lib/events` for advanced integrations and tests. Everything here
+ * is a no-op when no telemetry handle (or no tracer/meter) is supplied, so the
+ * library stays usable with zero wiring.
  *
  * Spans:
  * - {@link SPAN_RUN} `agent.run` — one per {@link runAgent} call.
@@ -17,9 +20,9 @@
  * the run span is opened with `tracer.startSpan` and ended on completion;
  * child spans are still emitted but not nested under it.
  *
- * Metrics: `agent.run.duration` / `agent.tool.duration` (histograms, ms),
- * `agent.tokens` (counter, tagged `token.type`), `agent.runs` (counter, tagged
- * outcome).
+ * Metric names emitted by this bridge: `agent.run.duration` /
+ * `agent.tool.duration` (histograms, ms), `agent.tokens` (counter, tagged
+ * `token.type`), and `agent.runs` (counter, tagged outcome).
  *
  * @module
  */

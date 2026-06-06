@@ -1,9 +1,12 @@
 /**
- * Built-in {@link RunSubscriber} factories (Phase 6).
+ * Built-in {@link RunSubscriber} factories and event projection helpers.
  *
  * These are optional conveniences for the common external sinks. They depend
  * only on forge contracts (`Logger`, `MessageBus`) the host already owns, so
  * engine-lib never forces a transport or a logging backend on you.
+ * `eventFields` and `eventPayload` are stable on the `engine-lib/events`
+ * subpath for custom subscribers, but intentionally not exported from the root
+ * barrel.
  *
  * @module
  */
@@ -25,7 +28,8 @@ export interface LoggingSubscriberOptions {
 
 /**
  * A subscriber that writes one structured log line per {@link RunEvent} via a
- * forge {@link Logger}. Useful as a drop-in trace of everything a run did.
+ * forge {@link Logger}. It logs compact fields from {@link eventFields}, not
+ * the full event payload.
  */
 export function loggingSubscriber(
   logger: Logger,
@@ -60,7 +64,12 @@ export function messageBusSubscriber(
   };
 }
 
-/** Compact, log-friendly fields describing an event (no large payloads). */
+/**
+ * Compact, log-friendly fields describing an event (no large payloads).
+ *
+ * This is a stable projection helper for custom subscribers; it is not the full
+ * event object.
+ */
 export function eventFields(event: RunEvent): Record<string, string | number | boolean> {
   switch (event.type) {
     case "run.start":
@@ -88,7 +97,13 @@ export function eventFields(event: RunEvent): Record<string, string | number | b
   }
 }
 
-/** A JSON-serializable projection of an event, for publishing onto a bus. */
+/**
+ * A JSON-serializable projection of an event, for publishing onto a bus.
+ *
+ * This projection is intentionally smaller and more serialization-friendly than
+ * the full {@link RunEvent}; custom subscribers that need exact event objects
+ * should consume `RunEvent` directly.
+ */
 export function eventPayload(event: RunEvent): Record<string, unknown> {
   switch (event.type) {
     case "run.start":

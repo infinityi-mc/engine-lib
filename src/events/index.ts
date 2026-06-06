@@ -13,6 +13,8 @@
  *
  * Wire subscribers via {@link RunOptions.subscribers}; telemetry is enabled
  * automatically whenever a {@link RunOptions.telemetry} handle is supplied.
+ * The root package exports subscriber factories, while this subpath also
+ * exposes event projection and telemetry helpers for integrations.
  *
  * @module
  */
