@@ -40,6 +40,8 @@
 
 import { describe, expect, it } from "bun:test";
 
+import { combine } from "@infinityi/forge/resilience";
+import type { PipelineLike } from "@infinityi/forge/http/client";
 import { ProviderError } from "../errors";
 import { user } from "../messages/index";
 import type { CompletionRequest, Provider, Usage } from "../providers/types";
@@ -49,8 +51,20 @@ import { jsonFetch, sseFetch } from "./index";
 /** A `fetch`-compatible function. */
 type FetchFn = typeof globalThis.fetch;
 
-/** Build a fresh adapter wired to the supplied fake `fetch`. */
-export type MakeProvider = (fetch: FetchFn) => Provider;
+/** The transport seams the battery injects into the adapter under test. */
+export interface ProviderIO {
+  /** Fake `fetch` returning the fixture bytes. */
+  readonly fetch: FetchFn;
+  /** Optional resilience override (the battery passes a no-retry pipeline
+   * for the error-mapping case so it doesn't pay the default retry backoff). */
+  readonly resilience?: PipelineLike;
+}
+
+/** Build a fresh adapter wired to the supplied transport seams. */
+export type MakeProvider = (io: ProviderIO) => Provider;
+
+/** A single-attempt pipeline (`combine()` of no policies) — never retries. */
+const NO_RETRY: PipelineLike = combine();
 
 /** Native wire fixtures plus the canonical normalized values they decode to. */
 export interface ConformanceFixtures {
@@ -99,7 +113,7 @@ export function runProviderConformance(name: string, opts: ConformanceOptions): 
 
   describe(`provider conformance — ${name}`, () => {
     it("declares honest, well-formed capabilities and identity", () => {
-      const provider = makeProvider(jsonFetch(fixtures.text.body).fetch);
+      const provider = makeProvider({ fetch: jsonFetch(fixtures.text.body).fetch });
       expect(typeof provider.name).toBe("string");
       expect(provider.name.length).toBeGreaterThan(0);
       expect(typeof provider.defaultModel).toBe("string");
@@ -121,7 +135,7 @@ export function runProviderConformance(name: string, opts: ConformanceOptions): 
 
     it("completes a buffered turn into normalized text", async () => {
       const { fetch, calls } = jsonFetch(fixtures.text.body);
-      const result = await makeProvider(fetch).complete(REQUEST);
+      const result = await makeProvider({ fetch }).complete(REQUEST);
 
       expect(calls.length).toBeGreaterThan(0);
       if (expectPath !== undefined) expect(calls[0]?.url).toContain(expectPath);
@@ -136,7 +150,7 @@ export function runProviderConformance(name: string, opts: ConformanceOptions): 
     });
 
     it("surfaces a tool call with an id, name, and parsed arguments", async () => {
-      const result = await makeProvider(jsonFetch(fixtures.toolCall.body).fetch).complete(REQUEST);
+      const result = await makeProvider({ fetch: jsonFetch(fixtures.toolCall.body).fetch }).complete(REQUEST);
 
       expect(result.finishReason).toBe("tool_calls");
       expect(result.toolCalls.length).toBeGreaterThan(0);
@@ -152,7 +166,7 @@ export function runProviderConformance(name: string, opts: ConformanceOptions): 
     });
 
     it("normalizes token usage", async () => {
-      const result = await makeProvider(jsonFetch(fixtures.usage.body).fetch).complete(REQUEST);
+      const result = await makeProvider({ fetch: jsonFetch(fixtures.usage.body).fetch }).complete(REQUEST);
       expect(result.usage).toBeDefined();
       expect(result.usage?.inputTokens).toBe(fixtures.usage.expect.inputTokens);
       expect(result.usage?.outputTokens).toBe(fixtures.usage.expect.outputTokens);
@@ -160,14 +174,19 @@ export function runProviderConformance(name: string, opts: ConformanceOptions): 
     });
 
     it("maps a non-2xx response to a ProviderError", async () => {
-      const provider = makeProvider(jsonFetch({ error: "boom" }, { status: 500 }).fetch);
+      // Use a no-retry pipeline: a 500 would otherwise be retried 3× through the
+      // adapter's default resilience, adding seconds of backoff to every run.
+      const provider = makeProvider({
+        fetch: jsonFetch({ error: "boom" }, { status: 500 }).fetch,
+        resilience: NO_RETRY,
+      });
       await expect(provider.complete(REQUEST)).rejects.toBeInstanceOf(ProviderError);
     });
 
     const streamFixture = fixtures.stream;
     if (streamFixture !== undefined) {
       it("streams text deltas bracketed by message_start and finish", async () => {
-        const events = await collect(makeProvider(sseFetch(streamFixture.sse).fetch).stream(REQUEST));
+        const events = await collect(makeProvider({ fetch: sseFetch(streamFixture.sse).fetch }).stream(REQUEST));
 
         expect(events[0]?.type).toBe("message_start");
         expect(events[events.length - 1]?.type).toBe("finish");

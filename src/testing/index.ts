@@ -15,7 +15,10 @@ import type {
   CompletionResult,
   Provider,
   ProviderCapabilities,
+  ToolCall,
+  Usage,
 } from "../providers/types";
+import { InMemorySessionStore } from "../session/index";
 import { collectStream } from "../providers/stream";
 import type { StreamEvent } from "../providers/stream";
 
@@ -183,4 +186,60 @@ export function sseFetch(sse: string): RecordingFetch {
     });
   }) as typeof fetch;
   return { fetch: fetchImpl, calls };
+}
+
+// --- scripted `CompletionResult` builders ---------------------------------
+
+const SCRIPTED_MODEL = "mock-model";
+
+/**
+ * Build a buffered text {@link CompletionResult} (`finishReason: "stop"`) for
+ * scripting a {@link mockProvider} or {@link scriptedProvider} turn.
+ */
+export function textResult(text: string, usage?: Usage): CompletionResult {
+  return {
+    message: { role: "assistant", content: [{ type: "text", text }] },
+    toolCalls: [],
+    finishReason: "stop",
+    model: SCRIPTED_MODEL,
+    raw: {},
+    ...(usage !== undefined ? { usage } : {}),
+  };
+}
+
+/**
+ * Build a tool-call {@link CompletionResult} (`finishReason: "tool_calls"`),
+ * mirroring each {@link ToolCall} as a `tool_call` message part.
+ */
+export function toolCallResult(calls: ToolCall[], usage?: Usage): CompletionResult {
+  return {
+    message: {
+      role: "assistant",
+      content: calls.map((c) => ({ type: "tool_call", id: c.id, name: c.name, arguments: c.arguments })),
+    },
+    toolCalls: calls,
+    finishReason: "tool_calls",
+    model: SCRIPTED_MODEL,
+    raw: {},
+    ...(usage !== undefined ? { usage } : {}),
+  };
+}
+
+/**
+ * A {@link Provider} that returns each scripted result in turn; the last
+ * result repeats once the script is exhausted. Handy for multi-turn run-loop
+ * tests (e.g. a tool call followed by a final answer).
+ */
+export function scriptedProvider(results: readonly CompletionResult[], opts?: MockProviderOptions): Provider {
+  let i = 0;
+  return mockProvider({ ...opts, result: () => results[Math.min(i++, results.length - 1)]! });
+}
+
+// --- session-store double --------------------------------------------------
+
+export { InMemorySessionStore } from "../session/index";
+
+/** Construct a fresh in-memory {@link SessionStore} double. */
+export function inMemorySessionStore(): InMemorySessionStore {
+  return new InMemorySessionStore();
 }
