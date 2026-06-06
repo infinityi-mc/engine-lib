@@ -67,11 +67,15 @@
     "./testing/conformance": {
       "import": "./dist/testing/conformance.js",
       "types": "./dist/testing/conformance.d.ts"
+    },
+    "./lifecycle": {
+      "import": "./dist/lifecycle/index.js",
+      "types": "./dist/lifecycle/index.d.ts"
     }
   },
   "scripts": {
     "clean": "bun -e \"const fs = require('fs'); fs.rmSync('dist', { recursive: true, force: true });\"",
-    "build:js": "bun build src/index.ts src/schema/index.ts src/messages/index.ts src/errors.ts src/runtime/index.ts src/providers/index.ts src/tools/index.ts src/agent/index.ts src/execution/index.ts src/session/index.ts src/context/index.ts src/events/index.ts src/testing/index.ts src/testing/conformance.ts --outdir dist --root src --splitting --external bun:test --target node",
+    "build:js": "bun build src/index.ts src/schema/index.ts src/messages/index.ts src/errors.ts src/runtime/index.ts src/providers/index.ts src/tools/index.ts src/agent/index.ts src/execution/index.ts src/session/index.ts src/context/index.ts src/events/index.ts src/testing/index.ts src/testing/conformance.ts src/lifecycle/index.ts --outdir dist --root src --splitting --external bun:test --target node",
     "build:types": "tsc -p tsconfig.build.json",
     "build": "bun run clean && bun run build:js && bun run build:types",
     "check": "tsc --noEmit",
