@@ -1,5 +1,5 @@
 /**
- * `engine-lib/lifecycle` — Forge lifecycle integration (Phase 8).
+ * `@infinityi/engine-lib/lifecycle` — Forge lifecycle integration (Phase 8).
  *
  * Opt-in subpath that adapts the engine-lib runtime to a
  * `@infinityi/forge/lifecycle` {@link Component} via {@link agentRuntimeComponent},

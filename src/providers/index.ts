@@ -1,5 +1,5 @@
 /**
- * `engine-lib/providers` — the unified LLM provider surface.
+ * `@infinityi/engine-lib/providers` — the unified LLM provider surface.
  *
  * Re-exports the normalized {@link Provider} contract, the streaming model, the
  * four shipped adapters ({@link createOpenAI}, {@link createAnthropic},

@@ -21,7 +21,7 @@
  * @example
  * ```ts
  * import { forge } from "@infinityi/forge/lifecycle";
- * import { agentRuntimeComponent } from "engine-lib/lifecycle";
+ * import { agentRuntimeComponent } from "@infinityi/engine-lib/lifecycle";
  *
  * const app = await forge.boot({
  *   components: [

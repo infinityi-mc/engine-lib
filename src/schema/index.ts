@@ -1,5 +1,5 @@
 /**
- * `engine-lib/schema` — the schema contract used to describe and validate
+ * `@infinityi/engine-lib/schema` — the schema contract used to describe and validate
  * tool parameters and structured outputs.
  *
  * Providers read `Schema.jsonSchema`; the runtime calls `Schema.parse` to

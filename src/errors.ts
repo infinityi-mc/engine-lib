@@ -1,5 +1,5 @@
 /**
- * Typed error taxonomy for `engine-lib`.
+ * Typed error taxonomy for `@infinityi/engine-lib`.
  *
  * Every error the library throws is a subclass of {@link AgentError},
  * so consumers can branch with a single `instanceof AgentError` check
@@ -21,7 +21,7 @@ export interface SchemaIssue {
 }
 
 /**
- * Base class for every error thrown by `engine-lib`.
+ * Base class for every error thrown by `@infinityi/engine-lib`.
  * `instanceof AgentError` catches the entire family.
  */
 export class AgentError extends Error {

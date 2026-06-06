@@ -133,23 +133,23 @@ bun run build    # emit dist/ (JS + .d.ts)
 Public entry points:
 
 ```ts
-import { s, user, system, AgentError, createOpenAI, defineTool, defineAgent, runAgent, createSession, staticContext, createAgentRegistry, asTool } from "engine-lib";
+import { s, user, system, AgentError, createOpenAI, defineTool, defineAgent, runAgent, createSession, staticContext, createAgentRegistry, asTool } from "@infinityi/engine-lib";
 // or via subpaths:
-import { s } from "engine-lib/schema";
-import { user } from "engine-lib/messages";
-import { AgentError } from "engine-lib/errors";
-import { resolveSecret } from "engine-lib/runtime";
-import { createOpenAI } from "engine-lib/providers";
-import { defineTool } from "engine-lib/tools";
-import { defineAgent, createAgentRegistry, asTool } from "engine-lib/agent";
-import { runAgent } from "engine-lib/execution";
-import { createSession } from "engine-lib/session";
-import { staticContext, truncateOldest } from "engine-lib/context";
-import { createEventHub, loggingSubscriber, messageBusSubscriber } from "engine-lib/events";
-import { agentRuntimeComponent } from "engine-lib/lifecycle";
+import { s } from "@infinityi/engine-lib/schema";
+import { user } from "@infinityi/engine-lib/messages";
+import { AgentError } from "@infinityi/engine-lib/errors";
+import { resolveSecret } from "@infinityi/engine-lib/runtime";
+import { createOpenAI } from "@infinityi/engine-lib/providers";
+import { defineTool } from "@infinityi/engine-lib/tools";
+import { defineAgent, createAgentRegistry, asTool } from "@infinityi/engine-lib/agent";
+import { runAgent } from "@infinityi/engine-lib/execution";
+import { createSession } from "@infinityi/engine-lib/session";
+import { staticContext, truncateOldest } from "@infinityi/engine-lib/context";
+import { createEventHub, loggingSubscriber, messageBusSubscriber } from "@infinityi/engine-lib/events";
+import { agentRuntimeComponent } from "@infinityi/engine-lib/lifecycle";
 // test-only doubles + the cross-provider conformance battery:
-import { mockProvider, scriptedProvider, textResult, toolCallResult } from "engine-lib/testing";
-import { runProviderConformance } from "engine-lib/testing/conformance";
+import { mockProvider, scriptedProvider, textResult, toolCallResult } from "@infinityi/engine-lib/testing";
+import { runProviderConformance } from "@infinityi/engine-lib/testing/conformance";
 ```
 
 ### Stable public API
@@ -167,9 +167,9 @@ root barrel is intentionally focused on the stable, ergonomic surface:
   `messageBusSubscriber`)
 
 Advanced adapter plumbing remains available from subpaths for custom providers
-and tests. For example, `engine-lib/providers` exports `createProvider`,
+and tests. For example, `@infinityi/engine-lib/providers` exports `createProvider`,
 `createProviderHttp`, `parseSse`, and stream accumulation helpers, while
-`engine-lib/events` exports event projection and telemetry helpers. Treat those
+`@infinityi/engine-lib/events` exports event projection and telemetry helpers. Treat those
 as lower-level extension APIs rather than the common application surface.
 
 ### Providers
@@ -201,7 +201,7 @@ native response themselves. `ProviderCapabilities` should be treated as adapter
 truth; callers can degrade based on those flags, and the conformance suite
 checks the built-in adapters for capability honesty.
 
-`engine-lib/providers` also exports advanced extension helpers such as
+`@infinityi/engine-lib/providers` also exports advanced extension helpers such as
 `createProvider`, `AdapterSpec`, HTTP/SSE utilities, `StreamAccumulator`, and
 `collectStream`. Use those for custom adapters and conformance tests, not for
 ordinary application wiring.
@@ -384,14 +384,14 @@ slots are ignored.
 
 `loggingSubscriber()` writes compact fields from `eventFields()`.
 `messageBusSubscriber()` publishes a serializable `eventPayload()` projection.
-Those projection helpers are stable on `engine-lib/events` for custom
+Those projection helpers are stable on `@infinityi/engine-lib/events` for custom
 subscribers, but they are intentionally not root exports.
 
 For telemetry, the stable application path is passing a Forge telemetry handle
 to `runAgent`. That enables `agent.run`, `agent.provider.call`, and
 `agent.tool.execute` spans plus `agent.run.duration`, `agent.tool.duration`,
 `agent.tokens`, and `agent.runs` metrics. `createRunTelemetry()` and the span
-constants are available from `engine-lib/events` for advanced integrations and
+constants are available from `@infinityi/engine-lib/events` for advanced integrations and
 tests.
 
 ### Multi-agent coordination
@@ -410,7 +410,7 @@ directly as an `AgentDefinition`, or by name as a `string` resolved through an
 `AgentRegistry` passed in `RunOptions.registry`.
 
 ```ts
-import { defineAgent, runAgent, createAgentRegistry } from "engine-lib";
+import { defineAgent, runAgent, createAgentRegistry } from "@infinityi/engine-lib";
 
 const billing = defineAgent({ name: "billing", provider, instructions: "Handle billing." });
 const triage = defineAgent({
@@ -437,7 +437,7 @@ is folded into the parent's total and its events surface to the parent as
 `agent.child` events (with `depth` tracking nesting).
 
 ```ts
-import { asTool, defineAgent } from "engine-lib";
+import { asTool, defineAgent } from "@infinityi/engine-lib";
 
 const researcher = defineAgent({ name: "researcher", provider, instructions: "Research deeply." });
 const lead = defineAgent({
@@ -453,18 +453,19 @@ const lead = defineAgent({
 Three things make the library trustworthy to adopt:
 
 - **Provider conformance suite** — a fixture-driven battery, shipped from
-  `engine-lib/testing/conformance`, that every adapter must pass (buffered
+  `@infinityi/engine-lib/testing/conformance`, that every adapter must pass (buffered
   completion, streaming, tool calling, usage, capability honesty, error
   mapping). Each adapter supplies its native wire fixtures plus the canonical
   normalized values; the battery drives the public `Provider` seam through an
   injected fake `fetch`, so third-party adapters can prove parity with the
-  in-house ones. All four built-in adapters are wired through it.
-- **Lifecycle adapter** — `agentRuntimeComponent()` (from `engine-lib/lifecycle`)
+  in-house ones. Pass Bun's `{ describe, expect, it }` as `testApi` when
+  registering the battery. All four built-in adapters are wired through it.
+- **Lifecycle adapter** — `agentRuntimeComponent()` (from `@infinityi/engine-lib/lifecycle`)
   adapts the runtime to a `forge/lifecycle` `Component`: `start()` fail-fast
   validates providers (and optionally probes them so a bad deploy rolls back in
   `forge.boot`), `healthcheck()` maps provider probes to a forge `HealthResult`,
   and `stop()` runs an `onStop` hook (e.g. flush/close a durable session store).
-- **Test doubles & examples** — network-free helpers in `engine-lib/testing`
+- **Test doubles & examples** — network-free helpers in `@infinityi/engine-lib/testing`
   (`mockProvider`, `scriptedProvider`, `textResult`/`toolCallResult`,
   `jsonFetch`/`sseFetch`, `inMemorySessionStore`) let consumers unit-test agents
   deterministically, and [`examples/`](./examples/) holds runnable versions of
@@ -472,7 +473,7 @@ Three things make the library trustworthy to adopt:
 
 ```ts
 import { boot } from "@infinityi/forge/lifecycle";
-import { agentRuntimeComponent } from "engine-lib/lifecycle";
+import { agentRuntimeComponent } from "@infinityi/engine-lib/lifecycle";
 
 const app = await boot({
   components: [agentRuntimeComponent({ providers: [provider], sessionStore, probeOnStart: true })],

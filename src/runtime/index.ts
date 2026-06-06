@@ -1,5 +1,5 @@
 /**
- * `engine-lib/runtime` — the forge integration surface.
+ * `@infinityi/engine-lib/runtime` — the forge integration surface.
  *
  * Re-exports forge's `Secret` helpers so hosts wiring config-sourced
  * credentials don't need to dual-import from `@infinityi/forge/config`.

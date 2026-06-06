@@ -1,5 +1,5 @@
 /**
- * `engine-lib` — agent infrastructure for TypeScript, built on
+ * `@infinityi/engine-lib` — agent infrastructure for TypeScript, built on
  * `@infinityi/forge`.
  *
  * This root barrel re-exports the stable, ergonomic public surface: schemas,
@@ -9,12 +9,12 @@
  * Lower-level adapter and transport helpers are intentionally kept off the root
  * import. Every domain is importable from its own subpath for tree-shaking and
  * for advanced integrations:
- * `engine-lib/schema`, `engine-lib/messages`, `engine-lib/errors`,
- * `engine-lib/runtime`, `engine-lib/providers`, `engine-lib/tools`,
- * `engine-lib/agent`, `engine-lib/execution`, `engine-lib/session`,
- * `engine-lib/context`, `engine-lib/events`, and `engine-lib/lifecycle`
- * (forge lifecycle adapter). Test-only helpers live on `engine-lib/testing`,
- * and the fixture-driven provider battery on `engine-lib/testing/conformance`
+ * `@infinityi/engine-lib/schema`, `@infinityi/engine-lib/messages`, `@infinityi/engine-lib/errors`,
+ * `@infinityi/engine-lib/runtime`, `@infinityi/engine-lib/providers`, `@infinityi/engine-lib/tools`,
+ * `@infinityi/engine-lib/agent`, `@infinityi/engine-lib/execution`, `@infinityi/engine-lib/session`,
+ * `@infinityi/engine-lib/context`, `@infinityi/engine-lib/events`, and `@infinityi/engine-lib/lifecycle`
+ * (forge lifecycle adapter). Test-only helpers live on `@infinityi/engine-lib/testing`,
+ * and the fixture-driven provider battery on `@infinityi/engine-lib/testing/conformance`
  * (the only subpath that imports a test runner).
  *
  * @module

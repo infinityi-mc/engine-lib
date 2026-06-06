@@ -1,5 +1,5 @@
 /**
- * `engine-lib/session` — durable conversation state: the {@link SessionStore}
+ * `@infinityi/engine-lib/session` — durable conversation state: the {@link SessionStore}
  * persistence contract, the built-in {@link InMemorySessionStore}, and the
  * {@link createSession} handle threaded into a run.
  *

@@ -13,7 +13,7 @@
  *
  * @example
  * ```ts
- * import { asTool, defineAgent } from "engine-lib/agent";
+ * import { asTool, defineAgent } from "@infinityi/engine-lib/agent";
  *
  * const researcher = defineAgent({ name: "researcher", provider, instructions: "…" });
  * const lead = defineAgent({

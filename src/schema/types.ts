@@ -1,5 +1,5 @@
 /**
- * Core types for the `engine-lib` schema layer.
+ * Core types for the `@infinityi/engine-lib` schema layer.
  *
  * The {@link Schema} contract is the seam between engine-lib and LLM
  * providers: providers read `.jsonSchema` (to advertise tool parameters /

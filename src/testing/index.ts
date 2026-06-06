@@ -1,5 +1,5 @@
 /**
- * `engine-lib/testing` — in-memory helpers and assertions for tests.
+ * `@infinityi/engine-lib/testing` — in-memory helpers and assertions for tests.
  *
  * Phase 1 ships only the helpers relevant to the foundation layer;
  * provider and session doubles arrive with Phases 2 and 5.
