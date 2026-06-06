@@ -56,7 +56,10 @@ async function onUserPrompt(prompt: string) {
     if (event.type === "tool.call") process.stdout.write(`\n  ↻ ${event.name}\n`); // tool spinner
   }
   const result = await stream.completed;
-  process.stdout.write(`\n  (turn done — ${result.messages.length} messages persisted)\n`);
+  // `result.messages` is the full run history (incl. the system instruction);
+  // the session persists the new turn's messages, which `session.messages()` replays.
+  const persisted = await session.messages();
+  process.stdout.write(`\n  (turn done — ${result.messages.length} messages in history, ${persisted.length} persisted)\n`);
 }
 
 await onUserPrompt("What does src/index.ts export?");
