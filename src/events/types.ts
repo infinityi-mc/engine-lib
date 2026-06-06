@@ -10,6 +10,7 @@
  * are dispatched by an {@link EventHub} (see {@link createEventHub}) in
  * declaration order, awaited, and isolated: a subscriber that throws or rejects
  * is reported but never aborts the run nor starves the other subscribers.
+ * `runAgent` registers `onEvent` first, then entries from `subscribers`.
  *
  * @module
  */
@@ -33,6 +34,10 @@ export interface EventHub {
 export interface EventHubOptions {
   /** Subscribers, dispatched in array order. `undefined` entries are ignored. */
   readonly subscribers?: ReadonlyArray<RunSubscriber | undefined>;
-  /** Invoked when a subscriber throws/rejects (the run continues regardless). */
+  /**
+   * Invoked when a subscriber throws/rejects (the run continues regardless).
+   * If this callback throws, that failure is swallowed so isolation is
+   * preserved.
+   */
   readonly onSubscriberError?: (error: unknown, event: RunEvent, index: number) => void;
 }

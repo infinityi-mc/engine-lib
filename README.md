@@ -121,167 +121,6 @@ contracts.
 
 ---
 
-## Usage Examples
-
-> The APIs below illustrate the intended surface. See [`ROADMAP.md`](./ROADMAP.md)
-> for what is built in each phase.
-
-### Example 1 — Server crash detected, agent launched to analyze the incident
-
-A monitoring component detects a crash and asks an "incident analyst" agent to
-investigate. Logs are injected as context, and the agent is given read-only tools.
-
-```typescript
-import { defineConfig, t } from "@infinityi/forge/config";
-import { initTelemetry } from "@infinityi/forge/telemetry";
-import { stdoutLogExporter } from "@infinityi/forge/telemetry/log/exporters/stdout";
-
-import {
-  createAnthropic,
-  defineTool,
-  defineAgent,
-  runAgent,
-  staticContext,
-} from "engine-lib";
-
-// Secrets + observability come from Forge.
-const config = defineConfig({
-  anthropicApiKey: t.secret(t.string()),
-});
-const telemetry = initTelemetry({
-  resource: { serviceName: "incident-responder", serviceVersion: "1.0.0" },
-  log: { exporter: stdoutLogExporter(), level: "info" },
-});
-
-const provider = createAnthropic({
-  apiKey: config.anthropicApiKey,
-  model: "claude-sonnet-4",
-});
-
-// A read-only tool the agent may call.
-const fetchRecentLogs = defineTool({
-  name: "fetch_recent_logs",
-  description: "Fetch the last N log lines for a service.",
-  parameters: t.object({
-    service: t.string(),
-    lines: t.number().default(200),
-  }),
-  execute: async ({ service, lines }) => {
-    const logs = await logStore.tail(service, lines);
-    return { ok: true, content: logs };
-  },
-});
-
-const incidentAnalyst = defineAgent({
-  name: "incident-analyst",
-  provider,
-  instructions:
-    "You are an SRE assistant. Diagnose the likely root cause of the crash " +
-    "and propose concrete next steps. Cite the log lines you relied on.",
-  tools: [fetchRecentLogs],
-});
-
-// Triggered when a crash is detected.
-async function onServerCrash(event: CrashEvent) {
-  const result = await runAgent(incidentAnalyst, {
-    input: `Service "${event.service}" crashed with exit code ${event.exitCode}.`,
-    context: [
-      staticContext({
-        crashedAt: event.timestamp,
-        stackTrace: event.stackTrace,
-        deployedVersion: event.version,
-      }),
-    ],
-    telemetry,
-    onEvent: (e) => {
-      if (e.type === "tool.call") telemetry.log?.info("agent tool call", { tool: e.name });
-    },
-  });
-
-  await incidentChannel.post(result.output); // result.output: final analysis
-}
-```
-
-### Example 2 — User sends a prompt in a coding terminal
-
-The terminal streams tokens to the screen, persists the conversation in a session,
-and lets the agent call file/command tools.
-
-```typescript
-import {
-  createOpenAI,
-  defineTool,
-  defineAgent,
-  runAgent,
-  createSession,
-} from "engine-lib";
-
-const provider = createOpenAI({ apiKey: config.openaiApiKey, model: "gpt-5" });
-
-const readFile = defineTool({
-  name: "read_file",
-  description: "Read a file from the workspace.",
-  parameters: t.object({ path: t.string() }),
-  execute: async ({ path }) => ({ ok: true, content: await workspace.read(path) }),
-});
-
-const runCommand = defineTool({
-  name: "run_command",
-  description: "Run a shell command in the workspace.",
-  parameters: t.object({ command: t.string() }),
-  execute: async ({ command }) => {
-    const { stdout, stderr, code } = await workspace.exec(command);
-    return code === 0
-      ? { ok: true, content: stdout }
-      : { ok: false, error: stderr };
-  },
-});
-
-const coder = defineAgent({
-  name: "terminal-coder",
-  provider,
-  instructions: "You are a coding assistant operating inside the user's terminal.",
-  tools: [readFile, runCommand],
-});
-
-// One terminal tab = one session, so history persists across prompts.
-const session = createSession({ id: terminalTabId });
-
-async function onUserPrompt(prompt: string) {
-  const stream = runAgent(coder, { input: prompt, session, stream: true });
-
-  for await (const event of stream) {
-    if (event.type === "token") terminal.write(event.delta);          // live output
-    if (event.type === "tool.call") terminal.status(`↻ ${event.name}`); // tool spinner
-  }
-}
-```
-
----
-
-## Relationship to Forge
-
-engine-lib depends on `@infinityi/forge` and reuses it directly:
-
-| Need | Forge module |
-| :--- | :--- |
-| API keys, model config, fail-fast validation, redacted secrets | `forge/config` |
-| Traces/metrics/logs for runs, provider calls, tool calls | `forge/telemetry` |
-| Timeout / retry / circuit breaking around provider HTTP calls | `forge/resilience` |
-| Booting the agent runtime as a managed component, graceful shutdown | `forge/lifecycle` |
-| (Optional) durable session/event persistence | `forge/data`, `forge/messaging` |
-
----
-
-## Status
-
-**All eight roadmap phases are implemented** — see [`ROADMAP.md`](./ROADMAP.md).
-The runtime, provider adapters, multi-agent coordination, the Forge lifecycle
-adapter, the cross-provider conformance suite, and runnable examples are all in
-place. APIs may still be refined before a stable release.
-
----
-
 ## Getting Started
 
 ```bash
@@ -291,10 +130,7 @@ bun test         # run the test suite
 bun run build    # emit dist/ (JS + .d.ts)
 ```
 
-Phases 1–8 (Foundation & Contracts, Provider Abstraction, Agent & Tool
-Contracts, Execution Flow, Context & Session Management, Event System &
-Lifecycle Hooks, Multi-Agent Coordination & Registry, and Developer Experience
-& Conformance) are implemented. Public entry points:
+Public entry points:
 
 ```ts
 import { s, user, system, AgentError, createOpenAI, defineTool, defineAgent, runAgent, createSession, staticContext, createAgentRegistry, asTool } from "engine-lib";
@@ -527,33 +363,38 @@ canonical history returned from `runAgent` or stored in the session.
 messages while retaining system messages. `summarizeOldest()` is public, but it
 performs an additional provider call and should be chosen deliberately.
 
-Every run is observable. Beyond the single `onEvent` callback (and the streaming
-async-iterable), pass `subscribers: RunSubscriber[]` to fan a run's `RunEvent`s
-out to multiple independent sinks — they are dispatched in order, awaited, and
-isolated (a subscriber that throws neither aborts the run nor starves the
-others). `loggingSubscriber(logger)` and `messageBusSubscriber(bus)` bridge a
-run to a forge `Logger` and `MessageBus`:
+### Events, subscribers, and telemetry
+
+Use `onEvent` for a single callback and `subscribers` for fan-out:
 
 ```ts
-import { loggingSubscriber, messageBusSubscriber } from "engine-lib/events";
-
 await runAgent(agent, {
   input: "go",
-  telemetry, // forge Telemetry handle → automatic run/provider/tool spans + metrics
-  subscribers: [
-    loggingSubscriber(logger),       // one structured log line per event
-    messageBusSubscriber(messageBus) // republish as agent.run.start, agent.tool.call, …
-  ],
+  onEvent: (event) => ui.observe(event),
+  subscribers: [loggingSubscriber(logger), messageBusSubscriber(messageBus)],
 });
 ```
 
-Supplying a `telemetry` handle enables the `forge/telemetry` bridge with no
-further wiring: an `agent.run` span wraps the run, nested `agent.provider.call`
-and `agent.tool.execute` spans cover each provider turn and tool execution, and
-`agent.run.duration` / `agent.tool.duration` / `agent.tokens` / `agent.runs`
-metrics are recorded.
+`onEvent` is registered first, followed by `subscribers` in array order. Each
+subscriber may be sync or async; subscribers are awaited in order, so slow sinks
+apply back-pressure. Subscriber failures are isolated: a thrown/rejected
+subscriber is reported to the hub's error reporter/logger and does not abort the
+run or prevent later subscribers from seeing the event. Undefined subscriber
+slots are ignored.
 
-### Multi-agent coordination (Phase 7)
+`loggingSubscriber()` writes compact fields from `eventFields()`.
+`messageBusSubscriber()` publishes a serializable `eventPayload()` projection.
+Those projection helpers are stable on `engine-lib/events` for custom
+subscribers, but they are intentionally not root exports.
+
+For telemetry, the stable application path is passing a Forge telemetry handle
+to `runAgent`. That enables `agent.run`, `agent.provider.call`, and
+`agent.tool.execute` spans plus `agent.run.duration`, `agent.tool.duration`,
+`agent.tokens`, and `agent.runs` metrics. `createRunTelemetry()` and the span
+constants are available from `engine-lib/events` for advanced integrations and
+tests.
+
+### Multi-agent coordination
 
 Compose agents in two complementary ways. Both reuse the same `runAgent` loop —
 no separate orchestrator.
@@ -607,7 +448,7 @@ const lead = defineAgent({
 // lead's model calls the "researcher" tool → child run executes → output fed back.
 ```
 
-### Developer experience & conformance (Phase 8)
+### Developer experience & conformance
 
 Three things make the library trustworthy to adopt:
 
