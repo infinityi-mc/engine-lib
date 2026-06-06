@@ -9,7 +9,7 @@
  *
  * @example
  * ```ts
- * import { defineAgent } from "engine-lib/agent";
+ * import { defineAgent } from "@infinityi/engine-lib/agent";
  *
  * const coder = defineAgent({
  *   name: "terminal-coder",

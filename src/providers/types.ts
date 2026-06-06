@@ -8,7 +8,7 @@
  * provider's native shape; nothing above this layer knows which vendor is in
  * use. The stable application surface is the {@link Provider} contract, request
  * / result / stream types, capabilities, and the built-in provider factories.
- * Adapter scaffolding lives on `engine-lib/providers` as an advanced extension
+ * Adapter scaffolding lives on `@infinityi/engine-lib/providers` as an advanced extension
  * surface.
  *
  * @module

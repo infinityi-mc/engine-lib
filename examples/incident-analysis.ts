@@ -7,24 +7,31 @@
  *
  * Run it:  `bun examples/incident-analysis.ts`
  *
- * In your own app you'd `import { ... } from "engine-lib"` and pass a real
- * provider (`createAnthropic({ apiKey, model })`). Here we import from `../src`
- * and use a scripted provider so the example runs offline, with no API key.
+ * In your own app, swap in a real provider such as
+ * `createAnthropic({ apiKey, model })`. This example uses a scripted provider so
+ * it runs offline, with no API key.
  */
 
-import { defineAgent } from "../src/agent/index";
-import { runAgent } from "../src/execution/index";
-import { staticContext } from "../src/context/index";
-import { defineTool } from "../src/tools/index";
-import { s } from "../src/schema/index";
-import { scriptedProvider, textResult, toolCallResult } from "../src/testing/index";
+import { defineAgent } from "@infinityi/engine-lib/agent";
+import { runAgent } from "@infinityi/engine-lib/execution";
+import { staticContext } from "@infinityi/engine-lib/context";
+import { defineTool } from "@infinityi/engine-lib/tools";
+import { s } from "@infinityi/engine-lib/schema";
+import {
+  scriptedProvider,
+  textResult,
+  toolCallResult,
+} from "@infinityi/engine-lib/testing";
 
 // A read-only tool the agent may call. In a real deployment `execute` would hit
 // your log store; here it returns a fixed slice.
 const fetchRecentLogs = defineTool({
   name: "fetch_recent_logs",
   description: "Fetch the last N log lines for a service.",
-  parameters: s.object({ service: s.string(), lines: s.optional(s.number({ int: true })) }),
+  parameters: s.object({
+    service: s.string(),
+    lines: s.optional(s.number({ int: true })),
+  }),
   execute: ({ service, lines }) => ({
     ok: true,
     content: [
@@ -35,11 +42,17 @@ const fetchRecentLogs = defineTool({
 });
 
 // Real provider (swap in for production):
-//   import { createAnthropic } from "../src/providers/index";
+//   import { createAnthropic } from "@infinityi/engine-lib/providers";
 //   const provider = createAnthropic({ apiKey, model: "claude-sonnet-4" });
 // Scripted provider: turn 1 calls the tool, turn 2 produces the analysis.
 const provider = scriptedProvider([
-  toolCallResult([{ id: "c1", name: "fetch_recent_logs", arguments: { service: "checkout", lines: 200 } }]),
+  toolCallResult([
+    {
+      id: "c1",
+      name: "fetch_recent_logs",
+      arguments: { service: "checkout", lines: 200 },
+    },
+  ]),
   textResult(
     "Root cause: the checkout service ran out of heap (OutOfMemoryError), confirmed " +
       "by the GC overhead messages in the logs. Next steps: raise -Xmx, capture a heap " +
@@ -56,11 +69,19 @@ const incidentAnalyst = defineAgent({
   tools: [fetchRecentLogs],
 });
 
-async function onServerCrash(event: { service: string; exitCode: number; timestamp: string; version: string }) {
+async function onServerCrash(event: {
+  service: string;
+  exitCode: number;
+  timestamp: string;
+  version: string;
+}) {
   const result = await runAgent(incidentAnalyst, {
     input: `Service "${event.service}" crashed with exit code ${event.exitCode}.`,
     context: [
-      staticContext({ crashedAt: event.timestamp, deployedVersion: event.version }),
+      staticContext({
+        crashedAt: event.timestamp,
+        deployedVersion: event.version,
+      }),
     ],
     onEvent: (e) => {
       if (e.type === "tool.call") console.log(`  ↻ tool call: ${e.name}`);

@@ -1,5 +1,5 @@
 /**
- * `engine-lib/agent` — the agent contract: declarative {@link AgentDefinition}s,
+ * `@infinityi/engine-lib/agent` — the agent contract: declarative {@link AgentDefinition}s,
  * the {@link defineAgent} constructor, and the per-agent {@link ToolRegistry}.
  *
  * Re-exports the tool contract too, so the common path (define a tool, define an

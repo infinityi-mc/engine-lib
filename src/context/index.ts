@@ -1,5 +1,5 @@
 /**
- * `engine-lib/context` — run-time context injection ({@link staticContext},
+ * `@infinityi/engine-lib/context` — run-time context injection ({@link staticContext},
  * {@link dynamicContext}) and context-window management ({@link truncateOldest},
  * {@link summarizeOldest}, {@link estimateTokens}). engine-lib injects context and
  * keeps history within budget; the host owns the content and retrieval.

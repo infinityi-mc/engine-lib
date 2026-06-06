@@ -1,5 +1,5 @@
 /**
- * `engine-lib/messages` — the provider-neutral conversation model and its
+ * `@infinityi/engine-lib/messages` — the provider-neutral conversation model and its
  * constructors.
  *
  * @module

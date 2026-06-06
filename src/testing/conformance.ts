@@ -15,17 +15,19 @@
  * normalized {@link CompletionResult} / {@link StreamEvent} shape — never the
  * vendor wire format.
  *
- * Shipped from its own subpath (`engine-lib/testing/conformance`) rather than
- * the main `engine-lib/testing` barrel, because it imports `bun:test`; keeping
- * it separate lets `engine-lib/testing` (mocks, fake `fetch`) stay importable
- * outside a test runner.
+ * Shipped from its own subpath (`@infinityi/engine-lib/testing/conformance`)
+ * rather than the main `@infinityi/engine-lib/testing` barrel. It registers
+ * tests against Bun's test-runner API when called, while remaining safe to
+ * import in non-Bun runtimes.
  *
  * @example
  * ```ts
- * import { runProviderConformance } from "engine-lib/testing/conformance";
- * import { createOpenAICompatible } from "engine-lib/providers";
+ * import { describe, expect, it } from "bun:test";
+ * import { runProviderConformance } from "@infinityi/engine-lib/testing/conformance";
+ * import { createOpenAICompatible } from "@infinityi/engine-lib/providers";
  *
  * runProviderConformance("openai-compatible", {
+ *   testApi: { describe, expect, it },
  *   makeProvider: ({ fetch }) => createOpenAICompatible({ baseUrl: "https://h/v1", model: "m", fetch }),
  *   expectPath: "/chat/completions",
  *   fixtures: {
@@ -38,7 +40,11 @@
  * @module
  */
 
-import { describe, expect, it } from "bun:test";
+import type {
+  describe as bunDescribe,
+  expect as bunExpect,
+  it as bunIt,
+} from "bun:test";
 
 import { combine } from "@infinityi/forge/resilience";
 import type { PipelineLike } from "@infinityi/forge/http/client";
@@ -50,6 +56,52 @@ import { jsonFetch, sseFetch } from "./index";
 
 /** A `fetch`-compatible function. */
 type FetchFn = typeof globalThis.fetch;
+
+export interface ConformanceTestApi {
+  readonly describe: typeof bunDescribe;
+  readonly expect: typeof bunExpect;
+  readonly it: typeof bunIt;
+}
+
+function getTestApi(): ConformanceTestApi {
+  const globals = globalThis as typeof globalThis & Partial<ConformanceTestApi>;
+  if (
+    typeof globals.describe === "function" &&
+    typeof globals.expect === "function" &&
+    typeof globals.it === "function"
+  ) {
+    return {
+      describe: globals.describe,
+      expect: globals.expect,
+      it: globals.it,
+    };
+  }
+
+  try {
+    const requireFn = (0, eval)("require") as
+      | ((id: string) => Partial<ConformanceTestApi>)
+      | undefined;
+    const api =
+      typeof requireFn === "function" ? requireFn("bun:test") : undefined;
+    if (
+      typeof api?.describe === "function" &&
+      typeof api.expect === "function" &&
+      typeof api.it === "function"
+    ) {
+      return {
+        describe: api.describe,
+        expect: api.expect,
+        it: api.it,
+      };
+    }
+  } catch {
+    // Fall through to the explicit error below.
+  }
+
+  throw new Error(
+    "runProviderConformance requires Bun's test runner; call it from a Bun test file.",
+  );
+}
 
 /** The transport seams the battery injects into the adapter under test. */
 export interface ProviderIO {
@@ -94,11 +146,15 @@ export interface ConformanceOptions {
   readonly fixtures: ConformanceFixtures;
   /** Substring asserted to appear in the request URL (e.g. `/messages`). */
   readonly expectPath?: string;
+  /** Test-runner API. Pass Bun's `{ describe, expect, it }` from a test file. */
+  readonly testApi?: ConformanceTestApi;
 }
 
 const REQUEST: CompletionRequest = { messages: [user("hi")] };
 
-async function collect(events: AsyncIterable<StreamEvent>): Promise<StreamEvent[]> {
+async function collect(
+  events: AsyncIterable<StreamEvent>,
+): Promise<StreamEvent[]> {
   const out: StreamEvent[] = [];
   for await (const event of events) out.push(event);
   return out;
@@ -108,12 +164,18 @@ async function collect(events: AsyncIterable<StreamEvent>): Promise<StreamEvent[
  * Register a `describe()` block of shared assertions the `Provider` adapter
  * `name` must satisfy. Call it from a `*.test.ts` file (it uses `bun:test`).
  */
-export function runProviderConformance(name: string, opts: ConformanceOptions): void {
+export function runProviderConformance(
+  name: string,
+  opts: ConformanceOptions,
+): void {
+  const { describe, expect, it } = opts.testApi ?? getTestApi();
   const { makeProvider, fixtures, expectPath } = opts;
 
   describe(`provider conformance — ${name}`, () => {
     it("declares honest, well-formed capabilities and identity", () => {
-      const provider = makeProvider({ fetch: jsonFetch(fixtures.text.body).fetch });
+      const provider = makeProvider({
+        fetch: jsonFetch(fixtures.text.body).fetch,
+      });
       expect(typeof provider.name).toBe("string");
       expect(provider.name.length).toBeGreaterThan(0);
       expect(typeof provider.defaultModel).toBe("string");
@@ -150,7 +212,9 @@ export function runProviderConformance(name: string, opts: ConformanceOptions): 
     });
 
     it("surfaces a tool call with an id, name, and parsed arguments", async () => {
-      const result = await makeProvider({ fetch: jsonFetch(fixtures.toolCall.body).fetch }).complete(REQUEST);
+      const result = await makeProvider({
+        fetch: jsonFetch(fixtures.toolCall.body).fetch,
+      }).complete(REQUEST);
 
       expect(result.finishReason).toBe("tool_calls");
       expect(result.toolCalls.length).toBeGreaterThan(0);
@@ -162,14 +226,20 @@ export function runProviderConformance(name: string, opts: ConformanceOptions): 
         expect(call.arguments).toEqual(fixtures.toolCall.expectArgs);
       }
       // The tool call is also present as a message part (Phase-1 model).
-      expect(result.message.content.some((p) => p.type === "tool_call")).toBe(true);
+      expect(result.message.content.some((p) => p.type === "tool_call")).toBe(
+        true,
+      );
     });
 
     it("normalizes token usage", async () => {
-      const result = await makeProvider({ fetch: jsonFetch(fixtures.usage.body).fetch }).complete(REQUEST);
+      const result = await makeProvider({
+        fetch: jsonFetch(fixtures.usage.body).fetch,
+      }).complete(REQUEST);
       expect(result.usage).toBeDefined();
       expect(result.usage?.inputTokens).toBe(fixtures.usage.expect.inputTokens);
-      expect(result.usage?.outputTokens).toBe(fixtures.usage.expect.outputTokens);
+      expect(result.usage?.outputTokens).toBe(
+        fixtures.usage.expect.outputTokens,
+      );
       expect(result.usage?.totalTokens).toBe(fixtures.usage.expect.totalTokens);
     });
 
@@ -180,18 +250,27 @@ export function runProviderConformance(name: string, opts: ConformanceOptions): 
         fetch: jsonFetch({ error: "boom" }, { status: 500 }).fetch,
         resilience: NO_RETRY,
       });
-      await expect(provider.complete(REQUEST)).rejects.toBeInstanceOf(ProviderError);
+      await expect(provider.complete(REQUEST)).rejects.toBeInstanceOf(
+        ProviderError,
+      );
     });
 
     const streamFixture = fixtures.stream;
     if (streamFixture !== undefined) {
       it("streams text deltas bracketed by message_start and finish", async () => {
-        const events = await collect(makeProvider({ fetch: sseFetch(streamFixture.sse).fetch }).stream(REQUEST));
+        const events = await collect(
+          makeProvider({ fetch: sseFetch(streamFixture.sse).fetch }).stream(
+            REQUEST,
+          ),
+        );
 
         expect(events[0]?.type).toBe("message_start");
         expect(events[events.length - 1]?.type).toBe("finish");
         const text = events
-          .filter((e): e is Extract<StreamEvent, { type: "text_delta" }> => e.type === "text_delta")
+          .filter(
+            (e): e is Extract<StreamEvent, { type: "text_delta" }> =>
+              e.type === "text_delta",
+          )
           .map((e) => e.text)
           .join("");
         expect(text).toBe(streamFixture.expectText);

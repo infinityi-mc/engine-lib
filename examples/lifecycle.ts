@@ -14,9 +14,11 @@
 
 import { boot } from "@infinityi/forge/lifecycle";
 
-import { agentRuntimeComponent } from "../src/lifecycle/index";
-import { inMemorySessionStore } from "../src/testing/index";
-import { mockProvider } from "../src/testing/index";
+import { agentRuntimeComponent } from "@infinityi/engine-lib/lifecycle";
+import {
+  inMemorySessionStore,
+  mockProvider,
+} from "@infinityi/engine-lib/testing";
 
 const store = inMemorySessionStore();
 const runtime = agentRuntimeComponent({
@@ -28,10 +30,22 @@ const runtime = agentRuntimeComponent({
   onStop: () => console.log("  onStop: flushing session store"),
 });
 
-const app = await boot({ components: [runtime], installSignals: false, exit: () => {} });
-console.log("booted — ready:", app.ready, "| components:", app.components.map((c) => c.name));
+const app = await boot({
+  components: [runtime],
+  installSignals: false,
+  exit: () => {},
+});
+console.log(
+  "booted — ready:",
+  app.ready,
+  "| components:",
+  app.components.map((c) => c.name),
+);
 
-const health = await runtime.healthcheck?.({ signal: new AbortController().signal, logger: console });
+const health = await runtime.healthcheck?.({
+  signal: new AbortController().signal,
+  logger: console,
+});
 console.log("healthcheck:", health?.status, health?.data);
 
 await app.stop("example-complete");

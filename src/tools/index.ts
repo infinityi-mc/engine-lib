@@ -1,5 +1,5 @@
 /**
- * `engine-lib/tools` — the tool contract: declarative tool definitions, the
+ * `@infinityi/engine-lib/tools` — the tool contract: declarative tool definitions, the
  * structured tool-result model, and the mappers that connect tools to the
  * conversation model (Phase 1) and the provider toolset (Phase 2).
  *

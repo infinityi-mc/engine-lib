@@ -1,5 +1,5 @@
 /**
- * `engine-lib/events` — the event system & telemetry bridge (Phase 6).
+ * `@infinityi/engine-lib/events` — the event system & telemetry bridge (Phase 6).
  *
  * The run loop already emits a typed {@link RunEvent} stream (Phase 4). This
  * module adds:

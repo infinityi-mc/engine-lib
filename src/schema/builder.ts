@@ -10,7 +10,7 @@
  *
  * @example
  * ```ts
- * import { s, type Infer } from "engine-lib/schema";
+ * import { s, type Infer } from "@infinityi/engine-lib/schema";
  *
  * const Params = s.object({
  *   service: s.string(),

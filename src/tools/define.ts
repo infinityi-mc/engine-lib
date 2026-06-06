@@ -8,8 +8,8 @@
  *
  * @example
  * ```ts
- * import { s } from "engine-lib/schema";
- * import { defineTool } from "engine-lib/tools";
+ * import { s } from "@infinityi/engine-lib/schema";
+ * import { defineTool } from "@infinityi/engine-lib/tools";
  *
  * const readFile = defineTool({
  *   name: "read_file",

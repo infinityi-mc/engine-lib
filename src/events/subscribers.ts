@@ -4,7 +4,7 @@
  * These are optional conveniences for the common external sinks. They depend
  * only on forge contracts (`Logger`, `MessageBus`) the host already owns, so
  * engine-lib never forces a transport or a logging backend on you.
- * `eventFields` and `eventPayload` are stable on the `engine-lib/events`
+ * `eventFields` and `eventPayload` are stable on the `@infinityi/engine-lib/events`
  * subpath for custom subscribers, but intentionally not exported from the root
  * barrel.
  *

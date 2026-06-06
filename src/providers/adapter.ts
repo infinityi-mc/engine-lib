@@ -6,7 +6,7 @@
  * to translate the SSE stream) into a full {@link Provider}, centralizing the
  * forge HTTP/resilience plumbing so each adapter stays focused on mapping.
  *
- * This is an advanced extension surface exported from `engine-lib/providers`;
+ * This is an advanced extension surface exported from `@infinityi/engine-lib/providers`;
  * ordinary application code should prefer the built-in provider factories.
  *
  * @module

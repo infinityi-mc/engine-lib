@@ -5,7 +5,7 @@
  * forge's `Telemetry` handle — engine-lib never invents its own observability
  * surface. The stable application path is passing `telemetry` to `runAgent`.
  * `createRunTelemetry`, span constants, and telemetry handle types are exported
- * from `engine-lib/events` for advanced integrations and tests. Everything here
+ * from `@infinityi/engine-lib/events` for advanced integrations and tests. Everything here
  * is a no-op when no telemetry handle (or no tracer/meter) is supplied, so the
  * library stays usable with zero wiring.
  *

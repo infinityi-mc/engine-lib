@@ -1,5 +1,5 @@
 /**
- * `engine-lib/execution` — the agent run loop.
+ * `@infinityi/engine-lib/execution` — the agent run loop.
  *
  * {@link runAgent} executes an {@link AgentDefinition} against its provider
  * using provider-native tool calling, in buffered or streaming mode.
