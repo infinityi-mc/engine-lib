@@ -2,9 +2,9 @@
  * The unified streaming model shared by every provider adapter.
  *
  * Each adapter translates its vendor's SSE events into this {@link StreamEvent}
- * union; {@link StreamAccumulator} folds a stream back into a
- * {@link CompletionResult} so `complete()` semantics and Phase-4's run loop can
- * consume streaming and buffered providers identically.
+ * union. The stable application contract is the `StreamEvent` union itself;
+ * {@link StreamAccumulator} and {@link collectStream} are advanced helpers for
+ * adapter authors, tests, and provider-subpath users.
  *
  * The shape follows the rule every provider doc calls out: assemble tool-call
  * arguments by **index**, never assume one flat string.
@@ -16,7 +16,17 @@ import type { ProviderError } from "../errors";
 import type { ContentPart, Message, ToolCallPart } from "../messages/types";
 import type { CompletionResult, FinishReason, ToolCall, Usage } from "./types";
 
-/** A single normalized streaming event. */
+/**
+ * A single normalized streaming event.
+ *
+ * A well-formed stream starts with `message_start`, then yields zero or more
+ * text/tool-call delta events, and ends with `finish`. `error` may appear when
+ * a provider reports a recoverable stream error; thrown stream failures surface
+ * as `ProviderError`.
+ *
+ * Tool-call argument chunks are keyed by `index`: consumers must assemble
+ * `tool_call_delta` events by index and wait for `tool_call_end`.
+ */
 export type StreamEvent =
   | { readonly type: "message_start"; readonly model: string }
   | { readonly type: "text_delta"; readonly text: string }

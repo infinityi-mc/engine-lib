@@ -39,7 +39,13 @@ const CAPABILITIES: ProviderCapabilities = {
   structuredOutput: true,
 };
 
-/** Create an OpenAI (Responses API) {@link Provider}. */
+/**
+ * Create an OpenAI (Responses API) {@link Provider}.
+ *
+ * `apiKey` may be a raw string or Forge `Secret`. `model` becomes the
+ * provider's `defaultModel`; callers can still override `CompletionRequest.model`
+ * per request.
+ */
 export function createOpenAI(opts: OpenAIOptions): Provider {
   const apiKey = resolveSecret(opts.apiKey);
   return createProvider({

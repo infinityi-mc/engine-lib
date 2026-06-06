@@ -336,6 +336,40 @@ and tests. For example, `engine-lib/providers` exports `createProvider`,
 `engine-lib/events` exports event projection and telemetry helpers. Treat those
 as lower-level extension APIs rather than the common application surface.
 
+### Providers
+
+Use the built-in factories for application code:
+
+```ts
+const openai = createOpenAI({ apiKey: config.openaiApiKey, model: "gpt-5" });
+const anthropic = createAnthropic({ apiKey: config.anthropicApiKey, model: "claude-opus-4-7" });
+const google = createGoogle({ apiKey: config.googleApiKey, model: "gemini-2.5-pro" });
+const local = createOpenAICompatible({ baseUrl: "http://localhost:1234/v1", model: "local-model" });
+```
+
+Provider API keys accept raw strings or Forge `Secret<string>` values. Factory
+`model` options become the provider's `defaultModel`; `CompletionRequest.model`
+can override the model per request.
+
+The stable provider contract is `Provider`, `CompletionRequest`,
+`CompletionResult`, `StreamEvent`, `Usage`, `ProviderCapabilities`, and the
+factory option types. `CompletionRequest` contains normalized generation fields
+(`temperature`, `topP`, `maxOutputTokens`, `stopSequences`), tool fields
+(`tools`, `toolChoice`, `responseSchema`), optional `metadata`, and
+`providerOptions` for vendor-specific request body fields that are not yet
+first-classed.
+
+`CompletionResult.raw` intentionally remains `unknown`: engine-lib keeps the
+portable normalized fields stable, while adapter-aware consumers may narrow the
+native response themselves. `ProviderCapabilities` should be treated as adapter
+truth; callers can degrade based on those flags, and the conformance suite
+checks the built-in adapters for capability honesty.
+
+`engine-lib/providers` also exports advanced extension helpers such as
+`createProvider`, `AdapterSpec`, HTTP/SSE utilities, `StreamAccumulator`, and
+`collectStream`. Use those for custom adapters and conformance tests, not for
+ordinary application wiring.
+
 Runnable, offline examples live in [`examples/`](./examples/) (`bun examples/incident-analysis.ts`),
 and the generated API reference is described in [`docs/`](./docs/README.md) (`bun run docs`).
 

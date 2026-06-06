@@ -1,10 +1,13 @@
 /**
- * Shared adapter scaffolding.
+ * Shared adapter scaffolding for custom providers.
  *
  * {@link createProvider} turns a small per-vendor {@link AdapterSpec} (how to
  * build the request body, where to POST it, how to parse the response, and how
  * to translate the SSE stream) into a full {@link Provider}, centralizing the
  * forge HTTP/resilience plumbing so each adapter stays focused on mapping.
+ *
+ * This is an advanced extension surface exported from `engine-lib/providers`;
+ * ordinary application code should prefer the built-in provider factories.
  *
  * @module
  */
@@ -41,7 +44,12 @@ export interface AdapterSpec {
   translateStream(messages: AsyncIterable<SseMessage>, model: string): AsyncIterable<StreamEvent>;
 }
 
-/** Build a {@link Provider} from an {@link AdapterSpec}. */
+/**
+ * Build a {@link Provider} from an {@link AdapterSpec}.
+ *
+ * Use this for third-party adapters that want engine-lib's normalized
+ * completion/streaming shape plus Forge-backed HTTP, resilience, and telemetry.
+ */
 export function createProvider(spec: AdapterSpec): Provider {
   return {
     name: spec.name,
