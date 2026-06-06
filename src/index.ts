@@ -115,12 +115,13 @@ export type {
 } from "./agent/index";
 
 // Multi-agent coordination (Phase 7)
-export { createAgentRegistry } from "./agent/index";
-export type { AgentRegistry } from "./agent/index";
+export { asTool, createAgentRegistry } from "./agent/index";
+export type { AgentRegistry, AsToolOptions } from "./agent/index";
 
 // Execution (Phase 4)
 export { addUsage, DEFAULT_MAX_STEPS, emptyUsage, runAgent } from "./execution/index";
 export type {
+  RunBridge,
   RunEvent,
   RunHandle,
   RunInput,

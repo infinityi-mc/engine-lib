@@ -28,7 +28,7 @@ import {
 } from "../errors";
 import { system, user } from "../messages/factory";
 import type { Message, TextPart } from "../messages/types";
-import type { CompletionRequest, CompletionResult, FinishReason } from "../providers/types";
+import type { CompletionRequest, CompletionResult, FinishReason, Usage } from "../providers/types";
 import { StreamAccumulator } from "../providers/stream";
 import type { EngineContext } from "../runtime/types";
 import { resolveContext } from "../context/providers";
@@ -39,7 +39,7 @@ import { createEventHub } from "../events/hub";
 import type { EventHub } from "../events/types";
 import { createRunTelemetry, SPAN_PROVIDER, SPAN_RUN, SPAN_TOOL } from "../events/telemetry";
 import type { RunTelemetry } from "../events/telemetry";
-import type { RunEvent, RunHandle, RunInput, RunOptions, RunResult } from "./types";
+import type { RunBridge, RunEvent, RunHandle, RunInput, RunOptions, RunResult } from "./types";
 import { addUsage, emptyUsage } from "./usage";
 
 /** Default cap on provider turns when {@link RunOptions.maxSteps} is omitted. */
@@ -132,38 +132,69 @@ async function* executeAgent(
 
   const providerTools = registry.size > 0 ? registry.toProviderTools() : undefined;
 
+  /** The outcome of one tool call: its result plus anything it bridged to the parent run. */
+  interface ToolOutcome {
+    readonly result: ToolResult;
+    /** Nested events the tool forwarded (e.g. a sub-agent's run events). */
+    readonly events: RunEvent[];
+    /** Token usage the tool reported (e.g. a sub-agent's run usage). */
+    readonly usage: Usage;
+  }
+
   /** Run a single tool call with full error isolation (never throws). */
   const runOneTool = async (
     call: { id: string; name: string; arguments: unknown },
-  ): Promise<ToolResult> => {
+  ): Promise<ToolOutcome> => {
+    const events: RunEvent[] = [];
+    let usage = emptyUsage();
+    const bridge: RunBridge = {
+      emit: (event) => events.push(event),
+      reportUsage: (u) => {
+        usage = addUsage(usage, u);
+      },
+    };
+
     const tool: ToolDefinition | undefined = registry.get(call.name);
     if (tool === undefined) {
-      return { ok: false, error: `unknown tool: "${call.name}"` };
+      return { result: { ok: false, error: `unknown tool: "${call.name}"` }, events, usage };
     }
     const parsed = tool.parameters.safeParse(call.arguments);
     if (!parsed.success) {
       const detail = parsed.error.issues
         .map((issue) => `${issue.path.join(".") || "<root>"}: ${issue.message}`)
         .join("; ");
-      return { ok: false, error: `invalid arguments for "${call.name}": ${detail}` };
+      return {
+        result: { ok: false, error: `invalid arguments for "${call.name}": ${detail}` },
+        events,
+        usage,
+      };
     }
-    const toolCtx: ToolContext = { ...engineCtx, toolCallId: call.id, agentName: agent.name };
+    const toolCtx: ToolContext = {
+      ...engineCtx,
+      toolCallId: call.id,
+      agentName: agent.name,
+      run: bridge,
+    };
     const span = tel.startSpan(SPAN_TOOL, { "tool.name": call.name, "tool.call_id": call.id });
     const startedAt = Date.now();
     try {
       const result = await tool.execute(parsed.data, toolCtx);
       span.setAttributes({ "tool.ok": result.ok });
       span.ok();
-      return result;
+      return { result, events, usage };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       span.fail(message);
-      return { ok: false, error: message };
+      return { result: { ok: false, error: message }, events, usage };
     } finally {
       span.end();
       tel.recordTool({ "tool.name": call.name, "agent.name": agent.name }, Date.now() - startedAt);
     }
   };
+
+  // Hoisted above the try so the catch can stamp tokens-consumed-so-far onto
+  // the error it throws.
+  let usage = emptyUsage();
 
   try {
     throwIfAborted(opts.signal);
@@ -192,7 +223,6 @@ async function* executeAgent(
 
     await hooks?.onStart?.({ agent, messages: [...messages] }, engineCtx);
 
-    let usage = emptyUsage();
     let finishReason: FinishReason = "stop";
     let finalMessage: Message = { role: "assistant", content: [] };
     let steps = 0;
@@ -281,16 +311,25 @@ async function* executeAgent(
       }
 
       const settled = await Promise.all(
-        calls.map(async (call) => ({ call, result: await runOneTool(call) })),
+        calls.map(async (call) => ({ call, outcome: await runOneTool(call) })),
       );
+
+      // Fold each tool's bridged usage (e.g. a sub-agent's tokens) before the
+      // abort check, so a cancellation detected here still accounts for tokens
+      // already spent by the tools that just ran.
+      for (const { outcome } of settled) usage = addUsage(usage, outcome.usage);
       throwIfAborted(opts.signal);
 
-      for (const { call, result: toolResult } of settled) {
+      for (const { call, outcome } of settled) {
+        // Surface anything a tool bridged to the parent run: nested events
+        // (e.g. a sub-agent's run events) before the tool's own result.
+        for (const childEvent of outcome.events) yield childEvent;
+        const toolResult = outcome.result;
         yield { type: "tool.result", id: call.id, name: call.name, result: toolResult };
         await hooks?.onToolResult?.({ call, result: toolResult }, engineCtx);
       }
-      for (const { call, result: toolResult } of settled) {
-        const message = toToolResultMessage(call.id, toolResult);
+      for (const { call, outcome } of settled) {
+        const message = toToolResultMessage(call.id, outcome.result);
         messages.push(message);
         newMessages.push(message);
         yield { type: "message", message };
@@ -300,6 +339,10 @@ async function* executeAgent(
     throw new MaxStepsExceededError(`exceeded max steps (${maxSteps})`, { steps: maxSteps });
   } catch (err) {
     const agentError = toAgentError(err);
+    // Surface the tokens consumed before the failure so callers (and a parent
+    // run, via asTool) don't lose them. Don't clobber a usage already stamped
+    // by a nested run.
+    if (agentError.usage === undefined) agentError.usage = usage;
     yield { type: "error", error: agentError };
     try {
       await hooks?.onError?.({ error: agentError }, engineCtx);
@@ -308,6 +351,11 @@ async function* executeAgent(
     }
     throw agentError;
   }
+}
+
+/** Token usage stamped on a failed run's error, or zero when unknown. */
+function usageOfError(err: unknown): Usage {
+  return err instanceof AgentError && err.usage !== undefined ? err.usage : emptyUsage();
 }
 
 /** Set the run span's outcome attributes from the final result. */
@@ -348,7 +396,7 @@ async function driveToCompletion(
     tel.recordRun(
       { "agent.name": agentName, "agent.outcome": "error" },
       Date.now() - startedAt,
-      emptyUsage(),
+      usageOfError(err),
     );
     throw err;
   }
@@ -402,7 +450,7 @@ function makeHandle(
       tel.recordRun(
         { "agent.name": agentName, "agent.outcome": "error" },
         Date.now() - startedAt,
-        emptyUsage(),
+        usageOfError(err),
       );
       rejectCompleted(err);
       throw err;

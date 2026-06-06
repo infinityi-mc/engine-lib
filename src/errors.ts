@@ -12,6 +12,8 @@
  * @module
  */
 
+import type { Usage } from "./providers/types";
+
 /** Structured validation issue attached to {@link SchemaValidationError}. */
 export interface SchemaIssue {
   readonly path: ReadonlyArray<string | number>;
@@ -23,6 +25,14 @@ export interface SchemaIssue {
  * `instanceof AgentError` catches the entire family.
  */
 export class AgentError extends Error {
+  /**
+   * Token usage accumulated before the run failed, when known. The run loop
+   * stamps this onto the error it throws so a failed `runAgent` (or a failed
+   * sub-agent invoked via `asTool`) still surfaces the tokens it consumed
+   * rather than silently dropping them.
+   */
+  usage?: Usage;
+
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
     this.name = "AgentError";

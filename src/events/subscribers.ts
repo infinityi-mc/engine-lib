@@ -81,6 +81,8 @@ export function eventFields(event: RunEvent): Record<string, string | number | b
       };
     case "error":
       return { name: event.error.name, message: event.error.message };
+    case "agent.child":
+      return { agent: event.agent, depth: event.depth, child: event.event.type };
   }
 }
 
@@ -107,5 +109,7 @@ export function eventPayload(event: RunEvent): Record<string, unknown> {
       };
     case "error":
       return { name: event.error.name, message: event.error.message };
+    case "agent.child":
+      return { agent: event.agent, depth: event.depth, event: eventPayload(event.event) };
   }
 }

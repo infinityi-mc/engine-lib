@@ -34,7 +34,29 @@ export type RunEvent =
   | { readonly type: "tool.call"; readonly id: string; readonly name: string; readonly arguments: unknown }
   | { readonly type: "tool.result"; readonly id: string; readonly name: string; readonly result: ToolResult }
   | { readonly type: "run.finish"; readonly result: RunResult }
-  | { readonly type: "error"; readonly error: AgentError };
+  | { readonly type: "error"; readonly error: AgentError }
+  /**
+   * An event from a nested child run (e.g. a sub-agent invoked through
+   * {@link RunBridge}). `agent` is the child's name and `depth` is its nesting
+   * level relative to this run (1 for a direct child). Parent subscribers that
+   * don't care about nesting can ignore this variant; those that do can recurse
+   * into `event`.
+   */
+  | { readonly type: "agent.child"; readonly agent: string; readonly depth: number; readonly event: RunEvent };
+
+/**
+ * A handle the run loop hands to a tool so it can participate in its parent run:
+ * forward nested {@link RunEvent}s onto the parent's event stream and fold
+ * nested token {@link Usage} into the parent run's aggregate. Used by
+ * sub-agent-as-tool (`asTool`) to propagate a child run's events and usage
+ * upward. Tools that ignore it behave exactly as before.
+ */
+export interface RunBridge {
+  /** Forward a nested event onto the parent run's event stream. */
+  emit(event: RunEvent): void;
+  /** Add token usage from nested work into the parent run's running total. */
+  reportUsage(usage: Usage): void;
+}
 
 /** Options for a single {@link runAgent} call. */
 export interface RunOptions {

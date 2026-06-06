@@ -14,6 +14,7 @@
 
 import type { EngineContext } from "../runtime/types";
 import type { Schema } from "../schema/types";
+import type { RunBridge } from "../execution/types";
 
 /**
  * Per-invocation context handed to a tool's {@link ToolDefinition.execute}.
@@ -28,6 +29,13 @@ export interface ToolContext extends EngineContext {
   readonly toolCallId: string;
   /** Name of the agent that owns this tool, when run inside one. */
   readonly agentName?: string;
+  /**
+   * Bridge to the surrounding run, present when the tool is dispatched by the
+   * Phase-4 loop. Lets a tool forward nested events and report token usage to
+   * the parent run (used by sub-agent-as-tool); absent when a tool is invoked
+   * outside `runAgent`.
+   */
+  readonly run?: RunBridge;
 }
 
 /**
