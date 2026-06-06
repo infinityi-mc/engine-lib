@@ -5,8 +5,9 @@
  * (triage → specialist) while keeping the message history intact. Rather than
  * inventing a new protocol, each declared {@link AgentDefinition.handoffs}
  * target is surfaced to the model as a synthetic `transfer_to_<name>` tool
- * (Principle 1, provider-native): when the model calls it, the run loop switches
- * the *active agent* instead of dispatching a normal tool.
+ * (Principle 1, provider-native): when the model calls it, the run loop
+ * acknowledges the tool call, emits `agent.handoff`, and switches the *active
+ * agent* instead of dispatching a normal tool.
  *
  * This module only computes the synthetic toolset and resolves targets; the
  * active-agent switch lives in the run loop (`executeAgent`).
@@ -37,7 +38,9 @@ const HANDOFF_PARAMETERS = s.object({}).jsonSchema;
  * resolved through `registry`.
  *
  * @throws {ExecutionError} if a string target is declared without a registry,
- *   the target name is unknown, or two targets resolve to the same name.
+ *   the target name is unknown, or two targets resolve to the same name. The
+ *   run loop also rejects synthetic handoff tool names that collide with a real
+ *   tool on the same agent.
  */
 export function resolveHandoffTargets(
   agent: AgentDefinition,

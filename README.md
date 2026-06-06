@@ -414,6 +414,44 @@ shape, and `s.optional(...)` makes an object key optional in both TypeScript and
 runtime validation. Use `asSchema()` / `fromJsonSchema()` when adapting an
 external schema library or raw JSON Schema.
 
+### Agents and composition
+
+Use `defineAgent()` for application agents. An agent definition is plain data:
+the provider to call, optional instructions, tools, default generation settings,
+hooks, and optional handoff targets. Construction validates the agent name and
+duplicate tool names, but does not call the provider or resolve handoff targets.
+
+Instructions may be a string or a function:
+
+```ts
+const coder = defineAgent({
+  name: "coder",
+  provider,
+  instructions: (ctx) => `You are ${ctx.agent.name}. Be precise.`,
+  tools: [readFile],
+  generation: { temperature: 0.2 },
+});
+```
+
+Resolved instructions are injected into the provider request as system context.
+They are rebuilt every run and are not persisted to sessions.
+
+Hooks are awaited and receive the shared engine context. Public run events are
+emitted before the corresponding hook is invoked. Hook failures fail the run and
+flow through `onError`; if `onError` throws, the original run failure is
+preserved.
+
+Agent registries are explicit and host-owned. There is no global registry.
+String-named handoff targets require passing `registry` to `runAgent`; direct
+`AgentDefinition` handoff targets do not. Each handoff target is advertised as a
+synthetic `transfer_to_<agent>` tool, and a real tool with the same name is a
+configuration error.
+
+`asTool(agent)` wraps a child agent as a normal tool. The child runs to
+completion, its output is returned as the tool result, its usage is folded into
+the parent run, and its events surface as `agent.child` events. A failing child
+run becomes a tool error so the parent model can recover.
+
 Durable conversation state and run-time context injection are wired into the
 loop. Pass `session` (from `createSession({ id })`, backed by a `SessionStore` —
 `InMemorySessionStore` ships built-in) to resume a conversation: prior history is
