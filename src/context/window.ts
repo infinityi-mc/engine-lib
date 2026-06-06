@@ -4,6 +4,10 @@
  * {@link applyContextWindow} which produces the (possibly trimmed) message view
  * sent to the provider without mutating the canonical history.
  *
+ * {@link truncateOldest} is the stable default. {@link summarizeOldest} is also
+ * public, but it performs an additional provider call and should be chosen
+ * deliberately when summarization is acceptable.
+ *
  * @module
  */
 
@@ -64,7 +68,8 @@ function transcript(messages: readonly Message[]): string {
 /**
  * Drop the oldest non-`system` messages until the history fits `maxTokens`.
  * System messages are always retained; if they alone exceed the budget the
- * history is irreducible and {@link ContextWindowError} is thrown.
+ * history is irreducible and {@link ContextWindowError} is thrown. This is the
+ * default stable context-window strategy.
  */
 export function truncateOldest(): ContextStrategy {
   return {
@@ -145,7 +150,8 @@ export function summarizeOldest(opts: { keepRecent?: number } = {}): ContextStra
 /**
  * Produce the message view to send to the provider. Returns `messages` unchanged
  * when no `window` is configured or the history already fits; otherwise applies
- * the configured (or default `truncateOldest`) strategy. Never mutates the input.
+ * the configured (or default `truncateOldest`) strategy. Never mutates the input
+ * or persisted session history.
  */
 export async function applyContextWindow(
   messages: Message[],

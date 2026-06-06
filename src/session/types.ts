@@ -23,10 +23,11 @@ export interface SessionState {
 /**
  * Pluggable persistence for session history.
  *
- * Implementations must preserve message order and treat {@link append} as an
- * atomic add to the tail. The built-in {@link InMemorySessionStore} is the
- * reference double; a `forge/data`-backed store can be layered on later behind
- * this same contract.
+ * Implementations must preserve message order, treat {@link append} as an
+ * atomic add to the tail, and return snapshots that callers cannot mutate to
+ * alter stored history by reference. The built-in {@link InMemorySessionStore}
+ * is the reference double; a `forge/data`-backed store can be layered on later
+ * behind this same contract.
  */
 export interface SessionStore {
   /** Load the full state for `id`, or `undefined` if none exists yet. */
@@ -43,7 +44,8 @@ export interface SessionStore {
  * A per-conversation handle passed to `runAgent`.
  *
  * Created synchronously by {@link createSession}; history is resolved lazily
- * (on the first {@link Session.messages} call) so construction never blocks on I/O.
+ * (on the first {@link Session.messages}, {@link Session.append}, or
+ * {@link Session.clear} call) so construction never blocks on I/O.
  */
 export interface Session {
   readonly id: string;

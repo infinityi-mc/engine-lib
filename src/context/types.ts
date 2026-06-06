@@ -5,8 +5,10 @@
  * documents, environment) that engine-lib merges into the system layer of a run —
  * the library *injects*; the host decides the content (no RAG engine). A
  * {@link ContextStrategy} keeps the growing history within the model's window via
- * pluggable token-budgeting (truncate / summarize), raising `ContextWindowError`
- * only when the history is irreducible.
+ * pluggable token-budgeting (truncate / summarize), raising
+ * `ContextWindowError` only when the history is irreducible. Window strategies
+ * reduce the request view sent to the provider; they must not mutate persisted
+ * or returned session history.
  *
  * @module
  */
@@ -23,7 +25,10 @@ export interface ContextItem {
   readonly content: unknown;
 }
 
-/** A host-supplied context source, resolved once per run. */
+/**
+ * A host-supplied context source, resolved once per run before the first
+ * provider call. Results are injected as system context and are not persisted.
+ */
 export interface ContextProvider {
   readonly name: string;
   resolve(ctx: EngineContext): ContextItem[] | Promise<ContextItem[]>;
@@ -42,13 +47,14 @@ export interface ContextStrategyContext {
   readonly engine: EngineContext;
 }
 
-/** A pluggable history-reduction policy. */
+/** A pluggable history-reduction policy for the provider request view. */
 export interface ContextStrategy {
   readonly name: string;
   /**
    * Reduce `messages` so `countTokens(result) <= maxTokens`. Must preserve
-   * conversational validity (e.g. keep system messages). Throw
-   * `ContextWindowError` when the history cannot be reduced to fit.
+   * conversational validity (for example, keep required system messages).
+   * Return a new request view and throw `ContextWindowError` when the history
+   * cannot be reduced to fit.
    */
   reduce(
     messages: Message[],

@@ -6,6 +6,9 @@
  * store already holds history for the id, that history is resumed; otherwise any
  * `messages` seed is written through on first access.
  *
+ * `runAgent` appends to a session only after a successful run. Instructions and
+ * injected context are request-time system messages and are never persisted.
+ *
  * @module
  */
 
@@ -19,7 +22,7 @@ export interface CreateSessionOptions {
   readonly id?: string;
   /** Backing store; defaults to a fresh {@link InMemorySessionStore}. */
   readonly store?: SessionStore;
-  /** Seed history, written through only if the store has none for this id. */
+  /** Seed history, written through only once and only if the store has no history for this id. */
   readonly messages?: readonly Message[];
   /** Free-form metadata attached to the session handle. */
   readonly metadata?: Record<string, unknown>;

@@ -497,6 +497,36 @@ within budget via `truncateOldest()` or `summarizeOldest()`, raising
 `ContextWindowError` only when history is irreducible; trimming never mutates the
 persisted/returned history.
 
+### Sessions and context
+
+`createSession()` is synchronous. If no `id` is supplied it generates one; if an
+`id` is supplied with a shared store, the session resumes that history lazily on
+first use. Seed `messages` are written once and only when the backing store has
+no existing history for that id. `messages()` returns a snapshot, `append()`
+adds to the tail, and `clear()` deletes the history and prevents the seed from
+being re-applied.
+
+`SessionStore` is the durable persistence contract: `load`, `append`, `save`,
+and `delete`. Store implementations must preserve message order, treat
+`append()` as an atomic tail add, and avoid exposing mutable internal arrays by
+reference.
+
+Successful runs append only conversation messages: user input, assistant turns,
+and tool-result messages. Instructions, injected context, and handoff-injected
+instructions are request-time system messages and are never persisted. Failed
+runs do not append new messages.
+
+Context providers resolve once per run before the first provider call.
+`staticContext()` injects fixed content; `dynamicContext()` computes content from
+the engine context. All provider output is folded into a system message for that
+request only and is never persisted.
+
+`contextWindow` applies only to the provider request view. It never mutates the
+canonical history returned from `runAgent` or stored in the session.
+`truncateOldest()` is the default stable strategy and drops oldest non-system
+messages while retaining system messages. `summarizeOldest()` is public, but it
+performs an additional provider call and should be chosen deliberately.
+
 Every run is observable. Beyond the single `onEvent` callback (and the streaming
 async-iterable), pass `subscribers: RunSubscriber[]` to fan a run's `RunEvent`s
 out to multiple independent sinks — they are dispatched in order, awaited, and
