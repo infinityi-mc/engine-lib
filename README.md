@@ -137,7 +137,7 @@ import { initTelemetry } from "@infinityi/forge/telemetry";
 import { stdoutLogExporter } from "@infinityi/forge/telemetry/log/exporters/stdout";
 
 import {
-  anthropicProvider,
+  createAnthropic,
   defineTool,
   defineAgent,
   runAgent,
@@ -153,7 +153,7 @@ const telemetry = initTelemetry({
   log: { exporter: stdoutLogExporter(), level: "info" },
 });
 
-const provider = anthropicProvider({
+const provider = createAnthropic({
   apiKey: config.anthropicApiKey,
   model: "claude-sonnet-4",
 });
@@ -209,14 +209,14 @@ and lets the agent call file/command tools.
 
 ```typescript
 import {
-  openaiProvider,
+  createOpenAI,
   defineTool,
   defineAgent,
   runAgent,
   createSession,
 } from "engine-lib";
 
-const provider = openaiProvider({ apiKey: config.openaiApiKey, model: "gpt-5" });
+const provider = createOpenAI({ apiKey: config.openaiApiKey, model: "gpt-5" });
 
 const readFile = defineTool({
   name: "read_file",
@@ -297,7 +297,7 @@ Lifecycle Hooks, Multi-Agent Coordination & Registry, and Developer Experience
 & Conformance) are implemented. Public entry points:
 
 ```ts
-import { s, user, system, AgentError, defineTool, defineAgent, runAgent, createSession, staticContext, createAgentRegistry, asTool } from "engine-lib";
+import { s, user, system, AgentError, createOpenAI, defineTool, defineAgent, runAgent, createSession, staticContext, createAgentRegistry, asTool } from "engine-lib";
 // or via subpaths:
 import { s } from "engine-lib/schema";
 import { user } from "engine-lib/messages";
@@ -315,6 +315,26 @@ import { agentRuntimeComponent } from "engine-lib/lifecycle";
 import { mockProvider, scriptedProvider, textResult, toolCallResult } from "engine-lib/testing";
 import { runProviderConformance } from "engine-lib/testing/conformance";
 ```
+
+### Stable public API
+
+For application code, prefer the root import or the domain subpaths above. The
+root barrel is intentionally focused on the stable, ergonomic surface:
+
+- schema, message, and error helpers (`s`, `user`, `system`, `AgentError`, ...)
+- provider factories (`createOpenAI`, `createAnthropic`, `createGoogle`,
+  `createOpenAICompatible`)
+- agent/tool/run/session/context helpers (`defineTool`, `defineAgent`,
+  `runAgent`, `createSession`, `staticContext`, `dynamicContext`)
+- multi-agent helpers (`createAgentRegistry`, `asTool`)
+- run-event subscribers (`createEventHub`, `loggingSubscriber`,
+  `messageBusSubscriber`)
+
+Advanced adapter plumbing remains available from subpaths for custom providers
+and tests. For example, `engine-lib/providers` exports `createProvider`,
+`createProviderHttp`, `parseSse`, and stream accumulation helpers, while
+`engine-lib/events` exports event projection and telemetry helpers. Treat those
+as lower-level extension APIs rather than the common application surface.
 
 Runnable, offline examples live in [`examples/`](./examples/) (`bun examples/incident-analysis.ts`),
 and the generated API reference is described in [`docs/`](./docs/README.md) (`bun run docs`).
