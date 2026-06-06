@@ -18,11 +18,14 @@
 
 import type { AgentDefinition } from "../agent/types";
 import { createToolRegistry } from "../agent/registry";
+import type { ToolRegistry } from "../agent/registry";
+import { handoffProviderTools, resolveHandoffTargets } from "../agent/handoff";
 import type { InstructionContext } from "../agent/types";
 import {
   AgentError,
   CancelledError,
   ExecutionError,
+  MaxHandoffsExceededError,
   MaxStepsExceededError,
   type ProviderError,
 } from "../errors";
@@ -44,6 +47,9 @@ import { addUsage, emptyUsage } from "./usage";
 
 /** Default cap on provider turns when {@link RunOptions.maxSteps} is omitted. */
 export const DEFAULT_MAX_STEPS = 16;
+
+/** Default cap on agent handoffs when {@link RunOptions.maxHandoffs} is omitted. */
+export const DEFAULT_MAX_HANDOFFS = 8;
 
 /** Coerce {@link RunInput} into messages. */
 function normalizeInput(input?: RunInput): Message[] {
@@ -124,13 +130,45 @@ async function* executeAgent(
   tel: RunTelemetry,
 ): AsyncGenerator<RunEvent, RunResult> {
   const maxSteps = opts.maxSteps ?? DEFAULT_MAX_STEPS;
+  const maxHandoffs = opts.maxHandoffs ?? DEFAULT_MAX_HANDOFFS;
   const stream = opts.stream === true;
   const engineCtx = buildEngineContext(opts);
-  const registry = createToolRegistry(agent.tools ?? []);
-  const hooks = agent.hooks;
-  const provider = agent.provider;
 
-  const providerTools = registry.size > 0 ? registry.toProviderTools() : undefined;
+  /**
+   * Per-agent run state: its tool registry, resolved handoff targets (keyed by
+   * synthetic `transfer_to_<name>` tool name), and the toolset advertised to the
+   * model (real tools + synthetic transfer tools).
+   */
+  interface ActiveState {
+    readonly agent: AgentDefinition;
+    readonly registry: ToolRegistry;
+    readonly handoffs: ReadonlyMap<string, AgentDefinition>;
+    readonly providerTools: CompletionRequest["tools"];
+  }
+
+  /** Build the run state for `agentDef`, failing fast on tool/handoff name clashes. */
+  const activate = (agentDef: AgentDefinition): ActiveState => {
+    const registry = createToolRegistry(agentDef.tools ?? []);
+    const handoffs = resolveHandoffTargets(agentDef, opts.registry);
+    for (const toolName of handoffs.keys()) {
+      if (registry.has(toolName)) {
+        throw new ExecutionError(
+          `agent "${agentDef.name}" has a tool named "${toolName}" that collides with a handoff target`,
+        );
+      }
+    }
+    const advertised = [...registry.toProviderTools(), ...handoffProviderTools(handoffs)];
+    return {
+      agent: agentDef,
+      registry,
+      handoffs,
+      providerTools: advertised.length > 0 ? advertised : undefined,
+    };
+  };
+
+  // The active agent is mutable: a handoff swaps it (and its tools/instructions)
+  // while the conversation continues. Starts as the agent passed to runAgent.
+  let active = activate(agent);
 
   /** The outcome of one tool call: its result plus anything it bridged to the parent run. */
   interface ToolOutcome {
@@ -154,7 +192,7 @@ async function* executeAgent(
       },
     };
 
-    const tool: ToolDefinition | undefined = registry.get(call.name);
+    const tool: ToolDefinition | undefined = active.registry.get(call.name);
     if (tool === undefined) {
       return { result: { ok: false, error: `unknown tool: "${call.name}"` }, events, usage };
     }
@@ -172,7 +210,7 @@ async function* executeAgent(
     const toolCtx: ToolContext = {
       ...engineCtx,
       toolCallId: call.id,
-      agentName: agent.name,
+      agentName: active.agent.name,
       run: bridge,
     };
     const span = tel.startSpan(SPAN_TOOL, { "tool.name": call.name, "tool.call_id": call.id });
@@ -188,7 +226,10 @@ async function* executeAgent(
       return { result: { ok: false, error: message }, events, usage };
     } finally {
       span.end();
-      tel.recordTool({ "tool.name": call.name, "agent.name": agent.name }, Date.now() - startedAt);
+      tel.recordTool(
+        { "tool.name": call.name, "agent.name": active.agent.name },
+        Date.now() - startedAt,
+      );
     }
   };
 
@@ -221,17 +262,21 @@ async function* executeAgent(
     // ones appended back to the session. System/context/prior are excluded.
     const newMessages: Message[] = [...inputMessages];
 
-    await hooks?.onStart?.({ agent, messages: [...messages] }, engineCtx);
+    await active.agent.hooks?.onStart?.({ agent: active.agent, messages: [...messages] }, engineCtx);
 
     let finishReason: FinishReason = "stop";
     let finalMessage: Message = { role: "assistant", content: [] };
     let steps = 0;
+    // Ordered trail of agents this run handed off to (Phase 7).
+    const handoffTrail: string[] = [];
 
     while (steps < maxSteps) {
       throwIfAborted(opts.signal);
       steps++;
 
-      const model = (opts.generation?.model ?? agent.generation?.model) ?? provider.defaultModel;
+      const provider = active.agent.provider;
+      const model =
+        (opts.generation?.model ?? active.agent.generation?.model) ?? provider.defaultModel;
       // Trim a *view* of the history to fit the context window; the canonical
       // `messages` (persisted + returned) is never mutated.
       const requestMessages = await applyContextWindow(messages, opts.contextWindow, {
@@ -239,7 +284,7 @@ async function* executeAgent(
         model,
         engine: engineCtx,
       });
-      const req = buildRequest(agent, opts, providerTools, requestMessages);
+      const req = buildRequest(active.agent, opts, active.providerTools, requestMessages);
 
       const useStreaming = stream && provider.capabilities.streaming;
       const providerSpan = tel.startSpan(SPAN_PROVIDER, {
@@ -285,7 +330,7 @@ async function* executeAgent(
       messages.push(result.message);
       newMessages.push(result.message);
       yield { type: "message", message: result.message };
-      await hooks?.onStep?.({ step: steps, result }, engineCtx);
+      await active.agent.hooks?.onStep?.({ step: steps, result }, engineCtx);
 
       const calls = result.toolCalls;
       if (calls.length === 0) {
@@ -297,21 +342,30 @@ async function* executeAgent(
           finishReason,
           steps,
           usage,
+          agent: active.agent.name,
+          handoffs: [...handoffTrail],
         };
         await opts.session?.append(newMessages);
         yield { type: "run.finish", result: runResult };
-        await hooks?.onFinish?.({ output, usage }, engineCtx);
+        await active.agent.hooks?.onFinish?.({ output, usage }, engineCtx);
         return runResult;
       }
 
+      // Partition this turn's calls against the *current* agent's handoff
+      // targets: synthetic `transfer_to_<name>` calls switch the active agent;
+      // everything else dispatches as a normal tool.
+      const handoffTargets = active.handoffs;
+      const regularCalls = calls.filter((call) => !handoffTargets.has(call.name));
+      const handoffCalls = calls.filter((call) => handoffTargets.has(call.name));
+
       for (const call of calls) {
         yield { type: "tool.call", id: call.id, name: call.name, arguments: call.arguments };
-        const tool = registry.get(call.name);
-        if (tool !== undefined) await hooks?.onToolCall?.({ call, tool }, engineCtx);
+        const tool = active.registry.get(call.name);
+        if (tool !== undefined) await active.agent.hooks?.onToolCall?.({ call, tool }, engineCtx);
       }
 
       const settled = await Promise.all(
-        calls.map(async (call) => ({ call, outcome: await runOneTool(call) })),
+        regularCalls.map(async (call) => ({ call, outcome: await runOneTool(call) })),
       );
 
       // Fold each tool's bridged usage (e.g. a sub-agent's tokens) before the
@@ -326,13 +380,51 @@ async function* executeAgent(
         for (const childEvent of outcome.events) yield childEvent;
         const toolResult = outcome.result;
         yield { type: "tool.result", id: call.id, name: call.name, result: toolResult };
-        await hooks?.onToolResult?.({ call, result: toolResult }, engineCtx);
+        await active.agent.hooks?.onToolResult?.({ call, result: toolResult }, engineCtx);
       }
       for (const { call, outcome } of settled) {
         const message = toToolResultMessage(call.id, outcome.result);
         messages.push(message);
         newMessages.push(message);
         yield { type: "message", message };
+      }
+
+      // Process handoffs after this turn's real tools. Each transfer switches
+      // the active agent while preserving the conversation history.
+      for (const call of handoffCalls) {
+        const target = handoffTargets.get(call.name);
+        if (target === undefined) continue; // unreachable: filtered from handoffTargets
+
+        if (handoffTrail.length >= maxHandoffs) {
+          throw new MaxHandoffsExceededError(`exceeded max handoffs (${maxHandoffs})`, {
+            handoffs: maxHandoffs,
+          });
+        }
+
+        // Acknowledge the synthetic tool call so the assistant turn's tool_call
+        // is satisfied for the provider, then announce and perform the switch.
+        const ack: ToolResult = { ok: true, content: `Transferred to "${target.name}".` };
+        const ackMessage = toToolResultMessage(call.id, ack);
+        messages.push(ackMessage);
+        newMessages.push(ackMessage);
+        yield { type: "tool.result", id: call.id, name: call.name, result: ack };
+        yield { type: "message", message: ackMessage };
+
+        const from = active.agent;
+        yield { type: "agent.handoff", from: from.name, to: target.name };
+        await from.hooks?.onHandoff?.({ from, to: target }, engineCtx);
+
+        active = activate(target);
+        handoffTrail.push(target.name);
+
+        // Inject the new agent's instructions as an additional system message so
+        // it steers subsequent turns without rewriting the original system turn
+        // (history-preserving). Like the initial instructions, this is derived
+        // from agent config and not persisted to the session.
+        const nextInstructions = await resolveInstructions(active.agent, engineCtx);
+        if (nextInstructions !== undefined && nextInstructions !== "") {
+          messages.push(system(nextInstructions));
+        }
       }
     }
 
@@ -345,7 +437,7 @@ async function* executeAgent(
     if (agentError.usage === undefined) agentError.usage = usage;
     yield { type: "error", error: agentError };
     try {
-      await hooks?.onError?.({ error: agentError }, engineCtx);
+      await active.agent.hooks?.onError?.({ error: agentError }, engineCtx);
     } catch {
       // Preserve the run failure: onError observes errors, but should not replace them.
     }

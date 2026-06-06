@@ -21,6 +21,7 @@ export {
   CancelledError,
   ContextWindowError,
   ExecutionError,
+  MaxHandoffsExceededError,
   MaxStepsExceededError,
   ProviderError,
   SchemaValidationError,
@@ -116,10 +117,11 @@ export type {
 
 // Multi-agent coordination (Phase 7)
 export { asTool, createAgentRegistry } from "./agent/index";
+export { handoffProviderTools, handoffToolName, resolveHandoffTargets } from "./agent/index";
 export type { AgentRegistry, AsToolOptions } from "./agent/index";
 
 // Execution (Phase 4)
-export { addUsage, DEFAULT_MAX_STEPS, emptyUsage, runAgent } from "./execution/index";
+export { addUsage, DEFAULT_MAX_HANDOFFS, DEFAULT_MAX_STEPS, emptyUsage, runAgent } from "./execution/index";
 export type {
   RunBridge,
   RunEvent,

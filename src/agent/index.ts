@@ -15,6 +15,7 @@ export { createAgentRegistry } from "./agent-registry";
 export type { AgentRegistry } from "./agent-registry";
 export { asTool } from "./as-tool";
 export type { AsToolOptions } from "./as-tool";
+export { handoffProviderTools, handoffToolName, resolveHandoffTargets } from "./handoff";
 
 export type {
   AgentDefinition,

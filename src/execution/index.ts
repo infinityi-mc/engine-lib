@@ -7,7 +7,7 @@
  * @module
  */
 
-export { DEFAULT_MAX_STEPS, runAgent } from "./run";
+export { DEFAULT_MAX_HANDOFFS, DEFAULT_MAX_STEPS, runAgent } from "./run";
 export { addUsage, emptyUsage } from "./usage";
 export type {
   RunBridge,
