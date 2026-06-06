@@ -19,9 +19,10 @@ import type { ToolDefinition, ToolResult } from "./types";
 /**
  * Render a {@link ToolResult}'s payload into `TextPart[]`.
  *
- * Strings pass through unchanged; `undefined`/`null` become empty text; any
- * other value is JSON-encoded so structured results survive into the
- * text-only Phase-1 tool-result part.
+ * This rendering is part of the stable tool contract: strings pass through
+ * unchanged; `undefined`/`null` become empty text; any other value is
+ * JSON-encoded so structured results survive into the text-only Phase-1
+ * tool-result part.
  */
 export function renderToolContent(result: ToolResult): TextPart[] {
   const value = result.ok ? result.content : result.error;

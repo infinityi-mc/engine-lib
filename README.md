@@ -377,6 +377,43 @@ implementations are isolated as `{ ok: false }` tool results so the model can
 recover; provider failures, context/session failures, max-step/max-handoff
 limits, and cancellation fail the run.
 
+### Tools and schemas
+
+Use `defineTool()` for application tools. It infers the `execute(args)` type from
+the parameter schema and keeps the definition shape stable for future releases:
+
+```ts
+const readFile = defineTool({
+  name: "read_file",
+  description: "Read a file from the workspace.",
+  parameters: s.object({
+    path: s.string(),
+    maxBytes: s.optional(s.number({ int: true })),
+  }),
+  execute: async ({ path, maxBytes }) => {
+    const content = await workspace.read(path, { maxBytes });
+    return { ok: true, content };
+  },
+});
+```
+
+Tool results are deliberately small: return `{ ok: true, content }` for success
+and `{ ok: false, error }` for expected/domain failures such as missing files or
+permission denials. Throw only for unexpected implementation faults; `runAgent`
+catches thrown tool errors and feeds them back to the model as recoverable
+tool-result errors.
+
+Tool content is rendered predictably for the model. Strings pass through,
+`null`/`undefined` become empty text, and non-string values are JSON-encoded.
+`error` is a string in the stable contract; use clear, user-actionable messages.
+
+The built-in `s` schema builder covers the JSON-Schema subset engine-lib
+validates and providers need for tool parameters. `s.object()` is strict by
+default (`additionalProperties: false`), required keys are derived from the
+shape, and `s.optional(...)` makes an object key optional in both TypeScript and
+runtime validation. Use `asSchema()` / `fromJsonSchema()` when adapting an
+external schema library or raw JSON Schema.
+
 Durable conversation state and run-time context injection are wired into the
 loop. Pass `session` (from `createSession({ id })`, backed by a `SessionStore` —
 `InMemorySessionStore` ships built-in) to resume a conversation: prior history is

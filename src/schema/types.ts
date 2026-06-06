@@ -2,9 +2,9 @@
  * Core types for the `engine-lib` schema layer.
  *
  * The {@link Schema} contract is the seam between engine-lib and LLM
- * providers: providers read `.jsonSchema` (to advertise tool parameters
- * / structured outputs), while the runtime calls `.parse` to validate
- * model-supplied arguments at the boundary.
+ * providers: providers read `.jsonSchema` (to advertise tool parameters /
+ * structured outputs), while the runtime calls `.parse` or `.safeParse` to
+ * validate model-supplied arguments at the boundary.
  *
  * @module
  */
@@ -12,9 +12,10 @@
 import type { SchemaIssue, SchemaValidationError } from "../errors";
 
 /**
- * A structural subset of JSON Schema (draft 2020-12) sufficient to
- * describe tool parameters and structured outputs for every supported
- * provider. Intentionally minimal and extensible.
+ * A structural subset of JSON Schema (draft 2020-12) sufficient to describe
+ * tool parameters and structured outputs for every supported provider.
+ * Intentionally minimal and extensible; unsupported JSON Schema keywords are
+ * outside the stable validation contract.
  */
 export interface JsonSchema {
   type?: "object" | "array" | "string" | "number" | "integer" | "boolean" | "null";
@@ -23,7 +24,10 @@ export interface JsonSchema {
   properties?: Record<string, JsonSchema>;
   /** Object: required property names. */
   required?: string[];
-  /** Object: whether unknown properties are permitted (default `false`). */
+  /**
+   * Object: whether unknown properties are permitted. Builders created with
+   * `s.object()` set this to `false`, making tool arguments strict by default.
+   */
   additionalProperties?: boolean;
   /** Array: element schema. */
   items?: JsonSchema;
@@ -39,6 +43,9 @@ export type SafeParseResult<T> =
 /**
  * The engine-lib schema contract. A `Schema<T>` couples a provider-facing
  * {@link JsonSchema} with runtime validation that yields a typed `T`.
+ *
+ * The stable surface is intentionally small: `jsonSchema`, `parse`,
+ * `safeParse`, and the type-only `_output` marker used by {@link Infer}.
  */
 export interface Schema<T> {
   /** Provider-facing JSON Schema (consumed by provider adapters in Phase 2+). */
