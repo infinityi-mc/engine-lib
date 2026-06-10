@@ -33,8 +33,6 @@ export interface ExecOptions {
   readonly signal?: AbortSignal;
 }
 
-const decoder = new TextDecoder();
-
 /** Drain a byte stream, capping retained bytes and forwarding chunks. */
 async function collectStream(
   stream: ReadableStream<Uint8Array> | undefined,
@@ -44,6 +42,10 @@ async function collectStream(
 ): Promise<{ text: string; truncated: boolean }> {
   if (stream === undefined) return { text: "", truncated: false };
   const reader = stream.getReader();
+  // A per-call decoder: `{ stream: true }` retains state for multi-byte chars
+  // split across chunks, so it must not be shared with the concurrently-running
+  // sibling stream or with other overlapping execCommand calls.
+  const chunkDecoder = new TextDecoder();
   const kept: Uint8Array[] = [];
   let keptBytes = 0;
   let truncated = false;
@@ -53,7 +55,7 @@ async function collectStream(
       if (done) break;
       if (value === undefined || value.length === 0) continue;
       if (onChunk !== undefined) {
-        onChunk({ stream: which, text: decoder.decode(value, { stream: true }) });
+        onChunk({ stream: which, text: chunkDecoder.decode(value, { stream: true }) });
       }
       if (keptBytes < maxBytes) {
         const remaining = maxBytes - keptBytes;
@@ -68,6 +70,12 @@ async function collectStream(
       } else {
         truncated = true;
       }
+    }
+    // Flush any bytes the streaming decoder buffered for an incomplete trailing
+    // multi-byte sequence, so the onChunk consumer sees the final character.
+    if (onChunk !== undefined) {
+      const tail = chunkDecoder.decode();
+      if (tail.length > 0) onChunk({ stream: which, text: tail });
     }
   } finally {
     reader.releaseLock();

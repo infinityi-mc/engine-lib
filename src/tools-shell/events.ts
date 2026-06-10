@@ -92,3 +92,19 @@ export function emitExecEnd(ctx: ToolContext, result: CommandResult): void {
     stderrTruncated: result.stderrTruncated,
   });
 }
+
+/**
+ * Execution failed before producing a result (the process could not be
+ * spawned). Emits a closing `shell.exec.end` so subscribers that pair
+ * start/end events always see the span close, with `error` set and `exitCode`
+ * null to mark that the command never ran.
+ */
+export function emitExecError(ctx: ToolContext, req: CommandRequest, error: string): void {
+  emit(ctx, SHELL_EVENT.execEnd, {
+    command: req.command,
+    exitCode: null,
+    signal: null,
+    timedOut: false,
+    error,
+  });
+}

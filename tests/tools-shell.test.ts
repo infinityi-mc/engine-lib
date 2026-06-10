@@ -62,6 +62,13 @@ describe("classifyCommand", () => {
     expect(classifyCommand("echo", [], policy).allowed).toBe(true);
     expect(classifyCommand("ls", [], policy).allowed).toBe(false);
   });
+  it("stays denied across repeated calls with a global-flag regex", () => {
+    // `g`/`y` regexes advance lastIndex; a reused deny rule must not alternate.
+    const policy = { deny: [/\brm\b/g] };
+    expect(classifyCommand("rm", ["-rf"], policy).allowed).toBe(false);
+    expect(classifyCommand("rm", ["-rf"], policy).allowed).toBe(false);
+    expect(classifyCommand("rm", ["-rf"], policy).allowed).toBe(false);
+  });
 });
 
 describe("filterEnv", () => {
@@ -156,9 +163,16 @@ describe("run_command", () => {
 
   it("reports a spawn failure for an unknown program", async () => {
     const { runCommand } = shellTools({ allowedCwds: [ROOT] });
-    const { ctx } = captureCtx();
+    const { ctx, events } = captureCtx();
     const res = await run(runCommand, { command: "definitely-not-a-real-binary-xyz" }, ctx);
     expect(res.ok).toBe(false);
+    // The exec lifecycle stays paired even on a spawn failure.
+    expect(customNames(events)).toEqual(["shell.policy", "shell.exec.start", "shell.exec.end"]);
+    const end = events
+      .filter((e): e is Extract<RunEvent, { type: "custom" }> => e.type === "custom")
+      .find((e) => e.name === "shell.exec.end");
+    expect(end?.data.error).toBeDefined();
+    expect(end?.data.exitCode).toBeNull();
   });
 });
 
@@ -216,14 +230,15 @@ describe("spawn_command", () => {
   it("streams output as shell.exec.chunk events", async () => {
     const { spawnCommand } = shellTools({ allowedCwds: [ROOT] });
     const { ctx, events } = captureCtx();
-    const res = await run(spawnCommand, { command: "echo", args: ["streamed"] }, ctx);
+    const res = await run(spawnCommand, { command: "echo", args: ["streamed ✓ café"] }, ctx);
     expect(res.ok).toBe(true);
     const chunks = events
       .filter((e): e is Extract<RunEvent, { type: "custom" }> => e.type === "custom")
       .filter((e) => e.name === "shell.exec.chunk");
     expect(chunks.length).toBeGreaterThan(0);
     const joined = chunks.map((c) => c.data.text as string).join("");
-    expect(joined).toContain("streamed");
+    // Multi-byte characters survive the streaming decoder intact.
+    expect(joined).toContain("streamed ✓ café");
   });
 });
 

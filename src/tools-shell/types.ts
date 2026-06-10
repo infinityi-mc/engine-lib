@@ -91,6 +91,10 @@ export interface ShellToolsConfig {
    * Absolute directory roots a command may run under. A request's `cwd` must
    * resolve to one of these or a descendant. Required and non-empty — there is
    * no implicit default, so a command can never run somewhere unintended.
+   *
+   * Containment is a logical-path check that does not resolve symlinks; in
+   * security-sensitive contexts pre-resolve these with `fs.realpathSync` and
+   * keep outward-pointing symlinks out of the roots.
    */
   readonly allowedCwds: readonly string[];
   /** Inherited-env filtering. Defaults to "no inherited vars". */

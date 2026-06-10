@@ -22,6 +22,7 @@ import {
   emitApproval,
   emitExecChunk,
   emitExecEnd,
+  emitExecError,
   emitExecStart,
   emitPolicy,
 } from "./events";
@@ -153,7 +154,10 @@ export function shellTools(config: ShellToolsConfig): ShellTools {
         } catch (err) {
           // The process could not be spawned at all (e.g. unknown program).
           const message = err instanceof Error ? err.message : String(err);
-          return { ok: false, error: `failed to run "${req.command}": ${message}` };
+          const error = `failed to run "${req.command}": ${message}`;
+          // Close the lifecycle so start/end-pairing subscribers don't leak.
+          emitExecError(ctx, req, error);
+          return { ok: false, error };
         }
         emitExecEnd(ctx, result);
         return { ok: true, content: result };

@@ -41,6 +41,12 @@ export function normalizeAllowedCwds(allowedCwds: readonly string[]): string[] {
  * escapes every root. `requested` is resolved relative to the *first* allowed
  * root when given as a relative path, so a bare `"."` maps into the sandbox
  * rather than the host process cwd.
+ *
+ * Containment is checked on **logical paths only** — symlinks are not resolved.
+ * A symlink placed inside an allowed root that points outside it (e.g.
+ * `/root/link -> /etc`) would pass this check. Hosts in security-sensitive
+ * contexts should pre-resolve their `allowedCwds` with `fs.realpathSync` and
+ * avoid placing outward-pointing symlinks inside their sandbox roots.
  */
 export function resolveCwd(
   requested: string | undefined,
@@ -63,9 +69,13 @@ function matchesPattern(
   commandLine: string,
 ): boolean {
   // Strings match the program (argv[0]) exactly; regexes test the full line.
-  return typeof pattern === "string"
-    ? pattern === command
-    : pattern.test(commandLine);
+  if (typeof pattern === "string") return pattern === command;
+  // Reset `lastIndex`: a `g`/`y`-flagged regex from config is reused across
+  // invocations, and `test()` advances `lastIndex` on those flags — without
+  // this reset the same deny rule would match on alternating calls only,
+  // silently letting a denied command through every other time.
+  pattern.lastIndex = 0;
+  return pattern.test(commandLine);
 }
 
 /**
