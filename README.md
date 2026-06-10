@@ -302,6 +302,10 @@ const coder = defineAgent({
 });
 ```
 
+Because `tools-fs` is optional, its traversal/search helpers are declared as
+optional peer dependencies. Applications that import `@infinityi/engine-lib/tools-fs`
+should install the listed peer packages from `package.json`.
+
 ### Agents and composition
 
 Use `defineAgent()` for application agents. An agent definition is plain data:

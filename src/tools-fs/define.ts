@@ -3,7 +3,6 @@ import { lstat, mkdir, readFile, stat } from "node:fs/promises";
 import { dirname, extname } from "node:path";
 
 import { applyPatch as applyUnifiedPatch, parsePatch } from "diff";
-import type { StructuredPatch } from "diff";
 import Fuse from "fuse.js";
 
 import { defineTool } from "../tools/define";
@@ -207,20 +206,6 @@ function checkExpectedVersion(current: string, expected: string | undefined): To
 function stripPatchPath(path: string | undefined): string | null {
   if (path === undefined || path === "/dev/null") return null;
   return normalizePathForOutput(path).replace(/^a\//, "").replace(/^b\//, "");
-}
-
-async function patchSource(root: string, patch: StructuredPatch): Promise<{
-  readonly relPath: string;
-  readonly absPath: string;
-  readonly source: string;
-  readonly deleting: boolean;
-}> {
-  const relPath = stripPatchPath(patch.newFileName) ?? stripPatchPath(patch.oldFileName);
-  if (relPath === null) throw new FilesystemAccessError("patch does not include a file path");
-  const absPath = `${root}/${relPath}`.replaceAll("/", "\\");
-  const deleting = stripPatchPath(patch.newFileName) === null;
-  const source = existsSync(absPath) ? await readFile(absPath, "utf8") : "";
-  return { relPath, absPath, source, deleting };
 }
 
 export function filesystemTools(config: FilesystemToolsConfig): FilesystemTools {

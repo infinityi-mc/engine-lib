@@ -182,15 +182,28 @@ describe("filesystemTools edits and diff", () => {
     const root = await workspace();
     try {
       await execFileAsync("git", ["init"], { cwd: root, windowsHide: true });
+      await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: root, windowsHide: true });
+      await execFileAsync("git", ["config", "user.name", "Test User"], { cwd: root, windowsHide: true });
     } catch {
       return;
     }
-    await writeFile(join(root, "changed.txt"), "hello");
+    await writeFile(join(root, "a.txt"), "one\n");
+    await writeFile(join(root, "b.txt"), "two\n");
+    await execFileAsync("git", ["add", "a.txt", "b.txt"], { cwd: root, windowsHide: true });
+    await execFileAsync("git", ["commit", "-m", "initial"], { cwd: root, windowsHide: true });
+    await writeFile(join(root, "a.txt"), "ONE\n");
+    await writeFile(join(root, "b.txt"), "TWO\n");
 
     const tools = filesystemTools({ allowedRoots: [root] });
     const status = await run(tools.diffStatus, {});
     expect(status.ok).toBe(true);
-    expect(JSON.stringify((status as { content: unknown }).content)).toContain("changed.txt");
+    const files = (status as { content: { files: Array<{ path: string; diff: string }> } }).content.files;
+    const a = files.find((file) => file.path === "a.txt");
+    const b = files.find((file) => file.path === "b.txt");
+    expect(a?.diff).toContain("diff --git a/a.txt b/a.txt");
+    expect(a?.diff).not.toContain("diff --git a/b.txt b/b.txt");
+    expect(b?.diff).toContain("diff --git a/b.txt b/b.txt");
+    expect(b?.diff).not.toContain("diff --git a/a.txt b/a.txt");
   });
 
   it("reports non-git roots without failing", async () => {

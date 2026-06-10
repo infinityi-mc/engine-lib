@@ -20,6 +20,20 @@ function truncate(text: string, maxChars: number): { text: string; truncated: bo
   return { text: `${text.slice(0, Math.max(0, maxChars - 13))}\n[truncated]`, truncated: true };
 }
 
+function splitGitDiffByFile(diff: string): Map<string, string> {
+  const sections = diff.match(/^diff --git .*?(?=^diff --git |\s*$)/gms) ?? [];
+  const byPath = new Map<string, string>();
+  for (const section of sections) {
+    const header = /^diff --git a\/(.+?) b\/(.+)$/m.exec(section);
+    if (header === null) continue;
+    const oldPath = header[1]?.replaceAll("\\", "/");
+    const newPath = header[2]?.replaceAll("\\", "/");
+    if (oldPath !== undefined) byPath.set(oldPath, section);
+    if (newPath !== undefined) byPath.set(newPath, section);
+  }
+  return byPath;
+}
+
 export async function diffStatus(root: string, options: {
   readonly paths?: readonly string[];
   readonly includeDiff: boolean;
@@ -50,10 +64,16 @@ export async function diffStatus(root: string, options: {
   }
 
   const diff = await git(root, ["diff", `--unified=${options.contextLines}`, ...pathArgs]);
-  const clipped = truncate(diff ?? "", options.maxDiffChars);
+  const diffByFile = splitGitDiffByFile(diff ?? "");
+  let truncated = false;
+  const withDiff = files.map((file) => {
+    const clipped = truncate(diffByFile.get(file.path) ?? "", options.maxDiffChars);
+    truncated = truncated || clipped.truncated;
+    return { ...file, diff: clipped.text };
+  });
   return {
     isGitRepo: true,
-    files: files.map((file) => ({ ...file, diff: clipped.text })),
-    truncated: clipped.truncated,
+    files: withDiff,
+    truncated,
   };
 }

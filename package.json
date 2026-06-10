@@ -103,7 +103,7 @@
   },
   "scripts": {
     "clean": "bun -e \"const fs = require('fs'); fs.rmSync('dist', { recursive: true, force: true });\"",
-    "build:js": "bun build src/index.ts src/schema/index.ts src/messages/index.ts src/errors.ts src/runtime/index.ts src/providers/index.ts src/tools/index.ts src/tools-shell/index.ts src/tools-fs/index.ts src/agent/index.ts src/execution/index.ts src/session/index.ts src/context/index.ts src/events/index.ts src/testing/index.ts src/testing/conformance.ts src/lifecycle/index.ts --outdir dist --root src --splitting --external bun:test --target node",
+    "build:js": "bun build src/index.ts src/schema/index.ts src/messages/index.ts src/errors.ts src/runtime/index.ts src/providers/index.ts src/tools/index.ts src/tools-shell/index.ts src/tools-fs/index.ts src/agent/index.ts src/execution/index.ts src/session/index.ts src/context/index.ts src/events/index.ts src/testing/index.ts src/testing/conformance.ts src/lifecycle/index.ts --outdir dist --root src --splitting --external bun:test --external typescript --external @vscode/ripgrep --external diff --external fuse.js --external glob --external ignore --external minisearch --target node",
     "build:types": "tsc -p tsconfig.build.json",
     "build": "bun run clean && bun run build:js && bun run build:types",
     "check": "tsc --noEmit",
@@ -113,16 +113,32 @@
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",
+    "@vscode/ripgrep": "^1.18.0",
+    "diff": "^9.0.0",
+    "fuse.js": "^7.4.2",
+    "glob": "^13.0.6",
+    "ignore": "^7.0.5",
+    "minisearch": "^7.2.0",
     "typedoc": "^0.28.19",
     "typescript": "^6.0.3"
   },
   "dependencies": {
-    "@infinityi/forge": "^1.0.0",
+    "@infinityi/forge": "^1.0.0"
+  },
+  "peerDependencies": {
     "@vscode/ripgrep": "^1.18.0",
     "diff": "^9.0.0",
     "fuse.js": "^7.4.2",
     "glob": "^13.0.6",
     "ignore": "^7.0.5",
     "minisearch": "^7.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@vscode/ripgrep": { "optional": true },
+    "diff": { "optional": true },
+    "fuse.js": { "optional": true },
+    "glob": { "optional": true },
+    "ignore": { "optional": true },
+    "minisearch": { "optional": true }
   }
 }
