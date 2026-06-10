@@ -154,3 +154,17 @@ export class ContextWindowError extends AgentError {
     if (options?.limit !== undefined) this.limit = options.limit;
   }
 }
+
+/**
+ * The optional `tools-shell` module was misconfigured (e.g. an `allowedCwds`
+ * entry that is not an absolute path). Thrown for host-side configuration
+ * faults at factory-build time — policy *denials* of a model's command are not
+ * errors; those return `{ ok: false, error }` from the tool so the model can
+ * recover.
+ */
+export class ShellPolicyError extends AgentError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "ShellPolicyError";
+  }
+}

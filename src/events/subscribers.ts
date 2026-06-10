@@ -94,6 +94,8 @@ export function eventFields(event: RunEvent): Record<string, string | number | b
       return { agent: event.agent, depth: event.depth, child: event.event.type };
     case "agent.handoff":
       return { from: event.from, to: event.to };
+    case "custom":
+      return { name: event.name };
   }
 }
 
@@ -130,5 +132,7 @@ export function eventPayload(event: RunEvent): Record<string, unknown> {
       return { agent: event.agent, depth: event.depth, event: eventPayload(event.event) };
     case "agent.handoff":
       return { from: event.from, to: event.to };
+    case "custom":
+      return { name: event.name, data: event.data };
   }
 }
