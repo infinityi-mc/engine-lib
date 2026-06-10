@@ -65,7 +65,17 @@ export type RunEvent =
    * `to` are agent names. Emitted at the switch point; the message history is
    * preserved across the handoff.
    */
-  | { readonly type: "agent.handoff"; readonly from: string; readonly to: string };
+  | { readonly type: "agent.handoff"; readonly from: string; readonly to: string }
+  /**
+   * An extension event emitted by an optional module or a custom tool through
+   * {@link RunBridge.emit}. `name` namespaces the event (e.g. `"shell.exec.start"`)
+   * and `data` is a JSON-serializable payload. The core loop never produces this
+   * variant; it is the stable seam for surfacing module-specific metadata (policy
+   * decisions, approvals, streamed output) onto the same subscriber/auditing
+   * stream as built-in events. Subscribers that don't recognize a `name` should
+   * ignore it.
+   */
+  | { readonly type: "custom"; readonly name: string; readonly data: Record<string, unknown> };
 
 /**
  * A handle the run loop hands to a tool so it can participate in its parent run:
