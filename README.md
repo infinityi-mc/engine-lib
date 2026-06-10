@@ -103,9 +103,9 @@ To stay a *library* and not a framework, engine-lib explicitly does **not** incl
   rendering is the host's job.
 - **No opinionated agent logic.** No built-in "researcher" or "coder" personas, no
   default system prompts. You define behavior.
-- **No built-in tools.** No web search, no code execution, no file system access
-  shipped in the box. Tools are yours to define (the library validates and runs
-  them).
+- **No root-level built-in tools.** The root package ships no web search, code
+  execution, or file system access. Opt-in tool packs such as `tools-shell` and
+  `tools-fs` live on explicit subpaths and require host configuration.
 - **No prompt template engine.** No templating DSL or prompt library. Instructions
   are plain strings/functions you own.
 - **No custom reasoning loop.** No ReAct/CoT/Tree-of-Thought framework — execution
@@ -141,6 +141,8 @@ import { AgentError } from "@infinityi/engine-lib/errors";
 import { resolveSecret } from "@infinityi/engine-lib/runtime";
 import { createOpenAI } from "@infinityi/engine-lib/providers";
 import { defineTool } from "@infinityi/engine-lib/tools";
+import { shellTools } from "@infinityi/engine-lib/tools-shell";
+import { filesystemTools } from "@infinityi/engine-lib/tools-fs";
 import { defineAgent, createAgentRegistry, asTool } from "@infinityi/engine-lib/agent";
 import { runAgent } from "@infinityi/engine-lib/execution";
 import { createSession } from "@infinityi/engine-lib/session";
@@ -283,6 +285,22 @@ default (`additionalProperties: false`), required keys are derived from the
 shape, and `s.optional(...)` makes an object key optional in both TypeScript and
 runtime validation. Use `asSchema()` / `fromJsonSchema()` when adapting an
 external schema library or raw JSON Schema.
+
+Optional prebuilt tools are available from explicit subpaths. `tools-shell`
+provides policy-gated command execution; `tools-fs` provides allowed-root
+filesystem and workspace tools such as `repo_map`, `find_files`, `search_text`,
+`read`, edit tools, patch application, and git diff/status:
+
+```ts
+const fs = filesystemTools({ allowedRoots: [process.cwd()] });
+const shell = shellTools({ allowedCwds: [process.cwd()] });
+
+const coder = defineAgent({
+  name: "coder",
+  provider,
+  tools: [fs.repoMap, fs.searchText, fs.read, fs.editReplace, shell.runCommand],
+});
+```
 
 ### Agents and composition
 
