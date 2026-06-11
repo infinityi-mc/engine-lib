@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
+import { defineAgent } from "../src/agent/index";
 import { ContextWindowError } from "../src/errors";
+import { runAgent } from "../src/execution/index";
 import { assistant, system, user } from "../src/messages/index";
 import type { Message } from "../src/messages/types";
 import {
@@ -56,6 +58,20 @@ describe("context providers", () => {
   it("resolves to [] when there are no providers", async () => {
     expect(await resolveContext(undefined, {})).toEqual([]);
     expect(await resolveContext([], {})).toEqual([]);
+  });
+
+  it("passes run metadata to context providers through runAgent", async () => {
+    const seen: string[] = [];
+    const provider = dynamicContext("input", (_ctx, run) => {
+      seen.push(run?.agentName ?? "");
+      seen.push(run?.input[0] === undefined ? "" : textOf(run.input[0]));
+      seen.push(run?.prior[0] === undefined ? "" : textOf(run.prior[0]));
+      return "context";
+    });
+    const agent = defineAgent({ name: "metadata-agent", provider: mockProvider() });
+    await runAgent(agent, { input: "new input", messages: [user("prior input")], context: [provider] });
+
+    expect(seen).toEqual(["metadata-agent", "new input", "prior input"]);
   });
 });
 

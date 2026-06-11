@@ -35,8 +35,8 @@ is the agent infrastructure layer for products that need agent behavior.
   sessions, and observability
 
 It is not intended to be a no-code agent builder, hosted runtime, UI framework,
-prompt template system, RAG engine, vector store, model host, or evaluation
-platform.
+prompt template system, hosted RAG service, managed vector database, model host,
+or evaluation platform.
 
 ## Core Concepts
 
@@ -79,11 +79,12 @@ Optional subpaths provide advanced or opt-in features:
 - provider adapter plumbing
 - durable session stores
 - shell, filesystem, HTTP, and web tool packs
+- retrieval primitives for host-owned RAG pipelines
 - testing doubles and provider conformance helpers
 - Forge lifecycle integration
 
 The root barrel intentionally does not expose shell execution, filesystem
-access, HTTP access, web crawling, browser automation, hosted retrieval, or UI
+access, HTTP access, web crawling, browser automation, retrieval, or UI
 components. Those capabilities are either explicit opt-in subpaths or outside
 the library's scope.
 

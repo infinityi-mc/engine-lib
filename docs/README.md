@@ -77,6 +77,7 @@ The TypeDoc entry points are aligned with the public package exports:
 | `@infinityi/engine-lib/session` | session handles and session store contract |
 | `@infinityi/engine-lib/session-stores` | optional durable session stores for Forge SQL, SQLite, PostgreSQL, Redis, and filesystem JSONL |
 | `@infinityi/engine-lib/context` | context providers and context-window strategies |
+| `@infinityi/engine-lib/retrieval` | optional RAG primitives: document loaders, chunkers, embeddings, vector stores, retrievers, and retriever context providers |
 | `@infinityi/engine-lib/events` | event hub, subscribers, event projection helpers, and telemetry bridge |
 | `@infinityi/engine-lib/lifecycle` | Forge lifecycle adapter (`agentRuntimeComponent`) |
 | `@infinityi/engine-lib/testing` | network-free test doubles |

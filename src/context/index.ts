@@ -19,6 +19,7 @@ export {
 export type {
   ContextItem,
   ContextProvider,
+  ContextResolveContext,
   ContextStrategy,
   ContextStrategyContext,
   ContextWindowOptions,

@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import {
   type ContextItem,
   type ContextProvider,
+  type ContextResolveContext,
   type ContextStrategy,
   type ContextStrategyContext,
   type ContextWindowOptions,
@@ -68,7 +69,20 @@ function assertSessionAndContextTypes(): void {
   const dynamicProvider: ContextProvider = dynamicContext("runtime", async (ctx) => ({
     hasSignal: ctx.signal !== undefined,
   }));
-  void [syncContext, asyncContext, staticProvider, dynamicProvider];
+  const dynamicRunProvider: ContextProvider = dynamicContext("runtime-run", (_ctx, run) => ({
+    agent: run?.agentName,
+    inputCount: run?.input.length ?? 0,
+  }));
+  void [syncContext, asyncContext, staticProvider, dynamicProvider, dynamicRunProvider];
+
+  const resolveCtx: ContextResolveContext = {
+    agentName: "typed",
+    input: [user("new")],
+    prior: [user("old")],
+    messages: [user("old"), user("new")],
+    contextWindow: { maxTokens: 100 },
+  };
+  void resolveCtx;
 
   const item: ContextItem = { title: "T", content: ["a", "b"] };
   void item;
