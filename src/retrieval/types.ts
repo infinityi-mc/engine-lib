@@ -82,7 +82,14 @@ export interface TextChunkerOptions {
 /** Embedding vector. */
 export type EmbeddingVector = readonly number[];
 
-/** Request to an embedding provider. */
+/**
+ * Request to an embedding provider.
+ *
+ * Providers should validate their own maximum batch size and throw a clear
+ * provider-specific error when `input.length` exceeds what the backing service
+ * can accept. `indexDocuments` batches calls with `batchSize` to help callers
+ * stay within those limits.
+ */
 export interface EmbeddingRequest {
   readonly input: readonly string[];
   readonly model?: string;
@@ -104,7 +111,13 @@ export interface EmbeddingResult {
   readonly raw?: unknown;
 }
 
-/** Host-supplied embedding provider contract. */
+/**
+ * Host-supplied embedding provider contract.
+ *
+ * Implementations should document their maximum `input` batch size. Callers can
+ * tune `IndexDocumentsOptions.batchSize` for indexing, while query retrieval
+ * sends one input per embedding call.
+ */
 export interface EmbeddingProvider {
   readonly name: string;
   readonly defaultModel?: string;
@@ -235,6 +248,7 @@ export interface IndexDocumentsOptions {
   readonly chunker: Chunker;
   readonly embeddings: EmbeddingProvider;
   readonly store: VectorStore;
+  /** Number of chunks to embed per provider call. Defaults to 64; tune to provider limits. */
   readonly batchSize?: number;
   readonly embeddingModel?: string;
 }
@@ -252,6 +266,11 @@ export interface IndexDocumentsResult {
 export interface RetrieverContextBudgetOptions {
   readonly maxContextTokens?: number;
   readonly reserveTokens?: number;
+  /**
+   * Counts rendered context tokens for budget checks. Keep this local and
+   * synchronous; truncating an oversized retrieval result may call it multiple
+   * times to find the largest exact fit.
+   */
   readonly countTokens?: TokenCounter;
 }
 
@@ -263,6 +282,7 @@ export interface RetrieverContextOptions extends RetrieverContextBudgetOptions {
   readonly query?: string | ((ctx: EngineContext, run?: ContextResolveContext) => string | undefined | Promise<string | undefined>);
   readonly topK?: number;
   readonly minScore?: number;
+  /** Include numeric retrieval scores in rendered context. Defaults to false. */
   readonly includeScores?: boolean;
   readonly onResults?: (
     results: readonly RetrievalResult[],
@@ -272,5 +292,5 @@ export interface RetrieverContextOptions extends RetrieverContextBudgetOptions {
   ) => void | Promise<void>;
 }
 
-/** The context provider produced by {@link retrieverContext}. */
+/** Semantic marker for the `ContextProvider` returned by {@link retrieverContext}. */
 export type RetrieverContextProvider = ContextProvider;

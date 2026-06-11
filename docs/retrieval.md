@@ -50,6 +50,11 @@ await indexDocuments({
 });
 ```
 
+`InMemoryVectorStore` computes similarity by scanning every stored record. It is
+intended for tests, examples, and small local corpora; production-scale or
+latency-sensitive systems should implement `VectorStore` with a dedicated vector
+database or search service.
+
 ## Inject Retrieved Context
 
 ```ts

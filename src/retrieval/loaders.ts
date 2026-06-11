@@ -1,4 +1,3 @@
-import { CancelledError } from "../errors";
 import type { EngineContext } from "../runtime/types";
 import type {
   DocumentLoader,
@@ -6,10 +5,7 @@ import type {
   LoadDocumentsResult,
   LoadedDocument,
 } from "./types";
-
-function throwIfAborted(ctx?: EngineContext): void {
-  if (ctx?.signal?.aborted) throw new CancelledError("retrieval cancelled");
-}
+import { throwIfAborted } from "./utils";
 
 function isAsyncIterable(value: DocumentLoaderOutput): value is AsyncIterable<LoadedDocument> {
   return Symbol.asyncIterator in Object(value);

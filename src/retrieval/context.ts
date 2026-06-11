@@ -71,6 +71,10 @@ function joinBlocks(blocks: readonly string[]): string {
   return blocks.join("\n\n");
 }
 
+function appendBlock(content: string, block: string): string {
+  return content === "" ? block : `${content}\n\n${block}`;
+}
+
 function availableBudget(
   options: RetrieverContextOptions,
   run: ContextResolveContext | undefined,
@@ -84,7 +88,7 @@ function availableBudget(
 }
 
 function truncateToFit(
-  blocks: readonly string[],
+  prefixContent: string,
   result: RetrievalResult,
   citation: number,
   budget: number,
@@ -94,11 +98,14 @@ function truncateToFit(
   let low = 1;
   let high = result.text.length;
   let best: string | undefined;
+  // Keep exact budget checks against the full rendered candidate. Tokenizers are
+  // not guaranteed to be additive across block boundaries, so counting only the
+  // new block could admit context that exceeds the caller's budget.
   while (low <= high) {
     const mid = Math.floor((low + high) / 2);
     const text = `${result.text.slice(0, mid).trimEnd()}\n[truncated]`;
     const block = renderResult(result, citation, includeScores, text);
-    const candidate = joinBlocks([...blocks, block]);
+    const candidate = appendBlock(prefixContent, block);
     if (countText(candidate, countTokens) <= budget) {
       best = block;
       low = mid + 1;
@@ -123,28 +130,28 @@ function selectResults(
   }
   if (budget <= 0) return { content: "", selected: [] };
 
-  const blocks: string[] = [];
+  let content = "";
   const selected: RetrievalResult[] = [];
   for (let index = 0; index < results.length; index += 1) {
     const result = results[index];
     if (result === undefined) continue;
     const citation = selected.length + 1;
     const block = renderResult(result, citation, includeScores);
-    const candidate = joinBlocks([...blocks, block]);
+    const candidate = appendBlock(content, block);
     if (countText(candidate, countTokens) <= budget) {
-      blocks.push(block);
+      content = candidate;
       selected.push(result);
       continue;
     }
 
-    const truncated = truncateToFit(blocks, result, citation, budget, countTokens, includeScores);
+    const truncated = truncateToFit(content, result, citation, budget, countTokens, includeScores);
     if (truncated !== undefined) {
-      blocks.push(truncated);
+      content = appendBlock(content, truncated);
       selected.push(result);
     }
     break;
   }
-  return { content: joinBlocks(blocks), selected };
+  return { content, selected };
 }
 
 /** Convert any retriever into a run-time context provider with citations. */
@@ -163,7 +170,7 @@ export function retrieverContext(options: RetrieverContextOptions): ContextProvi
 
       const countTokens = options.countTokens ?? run?.contextWindow?.countTokens ?? estimateTokens;
       const budget = availableBudget(options, run, countTokens);
-      const rendered = selectResults(results, budget, countTokens, options.includeScores ?? true);
+      const rendered = selectResults(results, budget, countTokens, options.includeScores ?? false);
       if (rendered.content === "") return [];
       await options.onResults?.(rendered.selected, query, ctx, run);
       return [{ title: options.title ?? "Retrieved Context", content: rendered.content }];

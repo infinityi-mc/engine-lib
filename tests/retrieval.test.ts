@@ -11,6 +11,7 @@ import {
   indexDocuments,
   loadDocuments,
   mergeHybridResults,
+  recursiveTextChunker,
   retrieverContext,
   staticDocumentLoader,
 } from "../src/retrieval/index";
@@ -68,6 +69,17 @@ describe("retrieval loaders and chunking", () => {
     expect(chunks[0]?.source?.title).toBe("Runbook");
     expect(chunks[0]?.source?.location?.startLine).toBe(1);
     expect(chunks[1]?.source?.location?.startOffset).toBeGreaterThan(0);
+  });
+
+  it("recursively splits oversized spans by separator priority", async () => {
+    const chunks = await recursiveTextChunker({ maxChars: 18, overlapChars: 0, separators: ["\n\n", " "] }).chunk({
+      content: "alpha beta gamma delta epsilon",
+      source: { title: "Words" },
+    }, { documentIndex: 0 });
+
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.every((chunk) => chunk.text.length <= 18)).toBe(true);
+    expect(chunks.map((chunk) => chunk.text)).toEqual(["alpha beta gamma", "delta epsilon"]);
   });
 });
 
@@ -207,6 +219,7 @@ describe("retrieverContext", () => {
     expect(selected.map((result) => result.id)).toEqual(["r1"]);
     expect(contextText).toContain("## Retrieved Context");
     expect(contextText).toContain("[1] Database Runbook, lines 2-4");
+    expect(contextText).not.toContain("score=");
     expect(contextText).toContain("[truncated]");
     expect(contextText).not.toContain("final tail");
     expect(contextText).not.toContain("Cache Runbook");

@@ -1,4 +1,3 @@
-import { CancelledError } from "../errors";
 import type { EngineContext } from "../runtime/types";
 import { loadDocuments } from "./loaders";
 import type {
@@ -16,18 +15,8 @@ import type {
   VectorRetrieverOptions,
   VectorSearchResult,
 } from "./types";
+import { assertPositiveInteger, throwIfAborted } from "./utils";
 import { assertVector } from "./vector-store";
-
-function throwIfAborted(ctx?: EngineContext): void {
-  if (ctx?.signal?.aborted) throw new CancelledError("retrieval cancelled");
-}
-
-function assertPositiveInteger(name: string, value: number | undefined): void {
-  if (value === undefined) return;
-  if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
-    throw new TypeError(`${name} must be a positive integer`);
-  }
-}
 
 function defaultModel(provider: EmbeddingProvider, model?: string): string | undefined {
   return model ?? provider.defaultModel;
@@ -69,13 +58,13 @@ function scoreBounds(results: readonly { readonly score: number }[]): { readonly
 
 interface HybridEntry {
   readonly id: string;
-  text: string;
-  source?: RetrievalResult["source"];
-  metadata?: RetrievalResult["metadata"];
-  vectorRaw?: number;
-  keywordRaw?: number;
-  vectorNormalized?: number;
-  keywordNormalized?: number;
+  readonly text: string;
+  readonly source?: RetrievalResult["source"];
+  readonly metadata?: RetrievalResult["metadata"];
+  readonly vectorRaw?: number;
+  readonly keywordRaw?: number;
+  readonly vectorNormalized?: number;
+  readonly keywordNormalized?: number;
 }
 
 /** Merge vector and keyword retrieval hits with score normalization and de-duplication. */
@@ -93,30 +82,32 @@ export function mergeHybridResults(
   const entries = new Map<string, HybridEntry>();
 
   for (const result of vectorResults) {
-    const entry: HybridEntry = entries.get(result.id) ?? {
+    const previous = entries.get(result.id);
+    entries.set(result.id, {
       id: result.id,
-      text: result.text,
-      ...(result.source !== undefined ? { source: result.source } : {}),
-      ...(result.metadata !== undefined ? { metadata: result.metadata } : {}),
-    };
-    entry.vectorRaw = result.score;
-    entry.vectorNormalized = normalizeScore(result.score, vectorBounds.min, vectorBounds.max);
-    entries.set(result.id, entry);
+      text: previous?.text ?? result.text,
+      ...(previous?.source !== undefined || result.source !== undefined ? { source: previous?.source ?? result.source } : {}),
+      ...(previous?.metadata !== undefined || result.metadata !== undefined ? { metadata: previous?.metadata ?? result.metadata } : {}),
+      ...(previous?.keywordRaw !== undefined ? { keywordRaw: previous.keywordRaw } : {}),
+      ...(previous?.keywordNormalized !== undefined ? { keywordNormalized: previous.keywordNormalized } : {}),
+      vectorRaw: result.score,
+      vectorNormalized: normalizeScore(result.score, vectorBounds.min, vectorBounds.max),
+    });
   }
 
   for (const result of keywordResults) {
-    const entry: HybridEntry = entries.get(result.id) ?? {
+    const previous = entries.get(result.id);
+    const text = previous?.text === undefined || previous.text === "" ? result.text : previous.text;
+    entries.set(result.id, {
       id: result.id,
-      text: result.text,
-      ...(result.source !== undefined ? { source: result.source } : {}),
-      ...(result.metadata !== undefined ? { metadata: result.metadata } : {}),
-    };
-    if (entry.text === "") entry.text = result.text;
-    if (entry.source === undefined && result.source !== undefined) entry.source = result.source;
-    if (entry.metadata === undefined && result.metadata !== undefined) entry.metadata = result.metadata;
-    entry.keywordRaw = result.score;
-    entry.keywordNormalized = normalizeScore(result.score, keywordBounds.min, keywordBounds.max);
-    entries.set(result.id, entry);
+      text,
+      ...(previous?.source !== undefined || result.source !== undefined ? { source: previous?.source ?? result.source } : {}),
+      ...(previous?.metadata !== undefined || result.metadata !== undefined ? { metadata: previous?.metadata ?? result.metadata } : {}),
+      ...(previous?.vectorRaw !== undefined ? { vectorRaw: previous.vectorRaw } : {}),
+      ...(previous?.vectorNormalized !== undefined ? { vectorNormalized: previous.vectorNormalized } : {}),
+      keywordRaw: result.score,
+      keywordNormalized: normalizeScore(result.score, keywordBounds.min, keywordBounds.max),
+    });
   }
 
   const merged = [...entries.values()]

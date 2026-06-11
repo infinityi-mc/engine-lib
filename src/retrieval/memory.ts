@@ -1,4 +1,3 @@
-import { CancelledError } from "../errors";
 import type { EngineContext } from "../runtime/types";
 import type {
   EmbeddingVector,
@@ -8,6 +7,7 @@ import type {
   VectorStore,
   VectorStoreStats,
 } from "./types";
+import { assertPositiveInteger, throwIfAborted } from "./utils";
 import { assertVector, scoreVectors, type VectorSimilarity } from "./vector-store";
 
 /** Options for {@link InMemoryVectorStore}. */
@@ -15,10 +15,6 @@ export interface InMemoryVectorStoreOptions {
   readonly name?: string;
   readonly dimensions?: number;
   readonly similarity?: VectorSimilarity;
-}
-
-function throwIfAborted(ctx?: EngineContext): void {
-  if (ctx?.signal?.aborted) throw new CancelledError("retrieval cancelled");
 }
 
 function cloneVector(vector: EmbeddingVector): number[] {
@@ -35,14 +31,11 @@ function cloneRecord(record: VectorRecord): VectorRecord {
   };
 }
 
-function assertPositiveInteger(name: string, value: number | undefined): void {
-  if (value === undefined) return;
-  if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
-    throw new TypeError(`${name} must be a positive integer`);
-  }
-}
-
-/** Network-free vector store for tests, examples, and small in-memory corpora. */
+/**
+ * Network-free vector store for tests, examples, and small in-memory corpora.
+ * Queries linearly scan every record, so use a dedicated vector database for
+ * large or latency-sensitive corpora.
+ */
 export class InMemoryVectorStore implements VectorStore {
   readonly name: string;
 
