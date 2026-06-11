@@ -103,9 +103,10 @@ To stay a *library* and not a framework, engine-lib explicitly does **not** incl
   rendering is the host's job.
 - **No opinionated agent logic.** No built-in "researcher" or "coder" personas, no
   default system prompts. You define behavior.
-- **No root-level built-in tools.** The root package ships no web search, code
-  execution, or file system access. Opt-in tool packs such as `tools-shell` and
-  `tools-fs` live on explicit subpaths and require host configuration.
+- **No root-level built-in tools.** The root package ships no web search, HTTP,
+  code execution, or file system access from the root barrel. Opt-in tool packs
+  such as `tools-shell`, `tools-fs`, `tools-http`, and `tools-web` live on
+  explicit subpaths and require host configuration.
 - **No prompt template engine.** No templating DSL or prompt library. Instructions
   are plain strings/functions you own.
 - **No custom reasoning loop.** No ReAct/CoT/Tree-of-Thought framework — execution
@@ -143,6 +144,8 @@ import { createOpenAI } from "@infinityi/engine-lib/providers";
 import { defineTool } from "@infinityi/engine-lib/tools";
 import { shellTools } from "@infinityi/engine-lib/tools-shell";
 import { filesystemTools } from "@infinityi/engine-lib/tools-fs";
+import { httpTools, createHttpToolClient } from "@infinityi/engine-lib/tools-http";
+import { webTools } from "@infinityi/engine-lib/tools-web";
 import { defineAgent, createAgentRegistry, asTool } from "@infinityi/engine-lib/agent";
 import { runAgent } from "@infinityi/engine-lib/execution";
 import { createSession } from "@infinityi/engine-lib/session";
@@ -289,22 +292,45 @@ external schema library or raw JSON Schema.
 Optional prebuilt tools are available from explicit subpaths. `tools-shell`
 provides policy-gated command execution; `tools-fs` provides allowed-root
 filesystem and workspace tools such as `repo_map`, `find_files`, `search_text`,
-`read`, edit tools, patch application, and git diff/status:
+`read`, edit tools, patch application, and git diff/status; `tools-http`
+provides low-level policy-gated HTTP GET/POST; and `tools-web` provides static
+web/search helpers built on the HTTP client:
 
 ```ts
 const fs = filesystemTools({ allowedRoots: [process.cwd()] });
 const shell = shellTools({ allowedCwds: [process.cwd()] });
+const http = httpTools({ allowedHosts: ["api.example.com"] });
+const web = webTools({
+  allowPublicInternet: true,
+  robots: "enforce",
+  searchProvider,
+});
 
 const coder = defineAgent({
   name: "coder",
   provider,
-  tools: [fs.repoMap, fs.searchText, fs.read, fs.editReplace, shell.runCommand],
+  tools: [fs.repoMap, fs.searchText, fs.read, fs.editReplace, shell.runCommand, http.httpGet],
 });
 ```
 
-Because `tools-fs` is optional, its traversal/search helpers are declared as
-optional peer dependencies. Applications that import `@infinityi/engine-lib/tools-fs`
-should install the listed peer packages from `package.json`.
+`tools-http` requires explicit network scope: either `allowedHosts` or
+`allowPublicInternet: true`. It denies private/localhost targets by default,
+checks every redirect target, strips model-supplied headers unless their names
+are allowlisted, uses Forge resilience for timeout/retry, and returns compact
+metadata plus parsed JSON or text/HTML bodies. HTTP status responses are normal
+successful tool executions; policy, validation, network, timeout, and parsing
+failures return tool errors.
+
+`tools-web` adds `web_search`, `fetch_page`, `extract_readable_text`, and
+`crawl_links`. Search uses only the host's injected `SearchProvider`; no vendor
+adapter, browser automation, JavaScript rendering, cookie jar, or authenticated
+session handling is bundled. Robots policy defaults to `enforce`, with
+`metadata` and `ignore` modes available per host or globally.
+
+Because `tools-fs` and `tools-web` are optional, their helper packages are
+declared as optional peer dependencies. Applications that import
+`@infinityi/engine-lib/tools-fs` or `@infinityi/engine-lib/tools-web` should
+install the listed peer packages from `package.json`.
 
 ### Agents and composition
 

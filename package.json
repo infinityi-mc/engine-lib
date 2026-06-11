@@ -68,6 +68,14 @@
       "import": "./dist/tools-fs/index.js",
       "types": "./dist/tools-fs/index.d.ts"
     },
+    "./tools-http": {
+      "import": "./dist/tools-http/index.js",
+      "types": "./dist/tools-http/index.d.ts"
+    },
+    "./tools-web": {
+      "import": "./dist/tools-web/index.js",
+      "types": "./dist/tools-web/index.d.ts"
+    },
     "./agent": {
       "import": "./dist/agent/index.js",
       "types": "./dist/agent/index.d.ts"
@@ -103,7 +111,7 @@
   },
   "scripts": {
     "clean": "bun -e \"const fs = require('fs'); fs.rmSync('dist', { recursive: true, force: true });\"",
-    "build:js": "bun build src/index.ts src/schema/index.ts src/messages/index.ts src/errors.ts src/runtime/index.ts src/providers/index.ts src/tools/index.ts src/tools-shell/index.ts src/tools-fs/index.ts src/agent/index.ts src/execution/index.ts src/session/index.ts src/context/index.ts src/events/index.ts src/testing/index.ts src/testing/conformance.ts src/lifecycle/index.ts --outdir dist --root src --splitting --external bun:test --external typescript --external @vscode/ripgrep --external diff --external fuse.js --external glob --external ignore --external minisearch --target node",
+    "build:js": "bun build src/index.ts src/schema/index.ts src/messages/index.ts src/errors.ts src/runtime/index.ts src/providers/index.ts src/tools/index.ts src/tools-shell/index.ts src/tools-fs/index.ts src/tools-http/index.ts src/tools-web/index.ts src/agent/index.ts src/execution/index.ts src/session/index.ts src/context/index.ts src/events/index.ts src/testing/index.ts src/testing/conformance.ts src/lifecycle/index.ts --outdir dist --root src --splitting --external bun:test --external typescript --external @vscode/ripgrep --external diff --external fuse.js --external glob --external ignore --external minisearch --external @mozilla/readability --external linkedom --external robots-parser --target node",
     "build:types": "tsc -p tsconfig.build.json",
     "build": "bun run clean && bun run build:js && bun run build:types",
     "check": "tsc --noEmit",
@@ -112,13 +120,16 @@
     "prepublishOnly": "bun run check && bun test && bun run build"
   },
   "devDependencies": {
+    "@mozilla/readability": "^0.6.0",
     "@types/bun": "^1.3.14",
     "@vscode/ripgrep": "^1.18.0",
     "diff": "^9.0.0",
     "fuse.js": "^7.4.2",
     "glob": "^13.0.6",
     "ignore": "^7.0.5",
+    "linkedom": "^0.18.12",
     "minisearch": "^7.2.0",
+    "robots-parser": "^3.0.1",
     "typedoc": "^0.28.19",
     "typescript": "^6.0.3"
   },
@@ -126,19 +137,43 @@
     "@infinityi/forge": "^1.0.0"
   },
   "peerDependencies": {
+    "@mozilla/readability": "^0.6.0",
     "@vscode/ripgrep": "^1.18.0",
     "diff": "^9.0.0",
     "fuse.js": "^7.4.2",
     "glob": "^13.0.6",
     "ignore": "^7.0.5",
-    "minisearch": "^7.2.0"
+    "linkedom": "^0.18.12",
+    "minisearch": "^7.2.0",
+    "robots-parser": "^3.0.1"
   },
   "peerDependenciesMeta": {
-    "@vscode/ripgrep": { "optional": true },
-    "diff": { "optional": true },
-    "fuse.js": { "optional": true },
-    "glob": { "optional": true },
-    "ignore": { "optional": true },
-    "minisearch": { "optional": true }
+    "@mozilla/readability": {
+      "optional": true
+    },
+    "@vscode/ripgrep": {
+      "optional": true
+    },
+    "diff": {
+      "optional": true
+    },
+    "fuse.js": {
+      "optional": true
+    },
+    "glob": {
+      "optional": true
+    },
+    "ignore": {
+      "optional": true
+    },
+    "linkedom": {
+      "optional": true
+    },
+    "minisearch": {
+      "optional": true
+    },
+    "robots-parser": {
+      "optional": true
+    }
   }
 }
