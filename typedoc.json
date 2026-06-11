@@ -3,6 +3,7 @@
   "entryPoints": [
     "src/index.ts",
     "src/lifecycle/index.ts",
+    "src/session-stores/index.ts",
     "src/testing/index.ts",
     "src/testing/conformance.ts"
   ],
