@@ -105,6 +105,32 @@ describe("fetch_page and extract_readable_text", () => {
     expect(fallbackContent.readable).toBe(false);
     expect(fallbackContent.text).toBe("plain fallback text");
   });
+
+  it("does not mark exact-length readable text as truncated", async () => {
+    const articleText = "Exact readable content for truncation check.";
+    const web = webTools({
+      allowedHosts: ["example.com"],
+      fetch: routedFetch({
+        "https://example.com/robots.txt": new Response("User-agent: *\nAllow: /\n", {
+          headers: { "content-type": "text/plain" },
+        }),
+        "https://example.com/exact": html(`
+          <html><head><title>Exact</title></head>
+          <body><article><p>${articleText}</p></article></body></html>
+        `),
+      }),
+    });
+
+    const res = await run(web.extractReadableText, {
+      url: "https://example.com/exact",
+      max_body_chars: articleText.length,
+    });
+    expect(res.ok).toBe(true);
+    const content = (res as { content: { readable: boolean; text: string; textTruncated: boolean } }).content;
+    expect(content.readable).toBe(true);
+    expect(content.text).toBe(articleText);
+    expect(content.textTruncated).toBe(false);
+  });
 });
 
 describe("crawl_links", () => {
@@ -147,10 +173,11 @@ describe("crawl_links", () => {
       max_links_per_page: 3,
     });
     expect(res.ok).toBe(true);
-    const content = (res as { content: { pages: unknown[]; errors: Array<{ url: string; error: string }> } }).content;
+    const content = (res as { content: { pages: unknown[]; errors: Array<{ url: string; error: string }>; truncated: boolean } }).content;
     expect(content.pages).toHaveLength(2);
     expect(content.errors[0]?.url).toBe("https://example.com/blocked");
     expect(content.errors[0]?.error).toContain("robots.txt disallows");
+    expect(content.truncated).toBe(false);
     expect(fetched).toEqual(["start", "a"]);
   });
 });

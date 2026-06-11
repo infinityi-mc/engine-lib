@@ -288,4 +288,39 @@ describe("http_get/http_post behavior", () => {
     expect((post as { content: HttpRequestResult }).content.status).toBe(503);
     expect(postAttempts).toBe(1);
   });
+
+  it("retries redirected GET requests after POST redirects", async () => {
+    const methods: string[] = [];
+    let finalAttempts = 0;
+    const { httpPost } = httpTools({
+      allowedHosts: ["example.com"],
+      retry: { initialDelayMs: 0, maxDelayMs: 0 },
+      fetch: asFetch(async (input, init) => {
+        const url = String(input);
+        methods.push(init?.method ?? "GET");
+        if (url.endsWith("/start")) {
+          return new Response(null, {
+            status: 303,
+            headers: { location: "https://example.com/final" },
+          });
+        }
+        finalAttempts += 1;
+        if (finalAttempts === 1) {
+          return new Response("unavailable", {
+            status: 503,
+            headers: { "content-type": "text/plain" },
+          });
+        }
+        return new Response("ok", { headers: { "content-type": "text/plain" } });
+      }),
+    });
+
+    const res = await run(httpPost, { url: "https://example.com/start", body: "x" });
+    expect(res.ok).toBe(true);
+    const out = (res as { content: HttpRequestResult }).content;
+    expect(out.status).toBe(200);
+    expect(out.body).toBe("ok");
+    expect(finalAttempts).toBe(2);
+    expect(methods).toEqual(["POST", "GET", "GET"]);
+  });
 });

@@ -39,6 +39,7 @@ interface PageResult {
   readonly citation: Citation;
   readonly text: string;
   readonly textTruncated: boolean;
+  readonly bodyTruncated: boolean;
   readonly html?: string;
   readonly links: readonly { readonly url: string; readonly text?: string }[];
 }
@@ -193,6 +194,7 @@ function normalizeFetchText(result: HttpRequestResult, maxChars: number): {
   title?: string;
   links: readonly { readonly url: string; readonly text?: string }[];
   truncated: boolean;
+  bodyTruncated: boolean;
 } {
   if (typeof result.body === "string" && isHtml(result)) {
     const parsed = parseStaticHtml(result.body, result.finalUrl);
@@ -203,6 +205,7 @@ function normalizeFetchText(result: HttpRequestResult, maxChars: number): {
       title: parsed.title,
       links: parsed.links,
       truncated: limited,
+      bodyTruncated: result.bodyTruncated,
     };
   }
   if (typeof result.body === "string") {
@@ -211,6 +214,7 @@ function normalizeFetchText(result: HttpRequestResult, maxChars: number): {
       text: text.slice(0, maxChars),
       links: [],
       truncated: result.bodyTruncated || text.length > maxChars,
+      bodyTruncated: result.bodyTruncated,
     };
   }
   if (result.bodyJson !== undefined) {
@@ -219,9 +223,10 @@ function normalizeFetchText(result: HttpRequestResult, maxChars: number): {
       text: text.slice(0, maxChars),
       links: [],
       truncated: text.length > maxChars,
+      bodyTruncated: result.bodyTruncated,
     };
   }
-  return { text: "", links: [], truncated: false };
+  return { text: "", links: [], truncated: false, bodyTruncated: result.bodyTruncated };
 }
 
 function createRobotsChecker(config: WebToolsConfig, http: HttpToolClient) {
@@ -308,6 +313,7 @@ export function webTools(config: WebToolsConfig): WebTools {
       citation: citationFor(source),
       text: textInfo.text,
       textTruncated: textInfo.truncated,
+      bodyTruncated: textInfo.bodyTruncated,
       html: textInfo.html,
       links: textInfo.links,
     };
@@ -373,6 +379,7 @@ export function webTools(config: WebToolsConfig): WebTools {
         const page = await fetchPageInternal(args.url, maxChars, ctx);
         let text = page.text;
         let title = page.source.title;
+        let textTruncated = page.textTruncated;
         let readable = false;
         let byline: string | undefined;
         let excerpt: string | undefined;
@@ -384,7 +391,9 @@ export function webTools(config: WebToolsConfig): WebTools {
             }).parse();
             const articleText = compactText(article?.textContent ?? "");
             if (articleText !== "") {
+              const articleTruncated = articleText.length > maxChars;
               text = articleText.slice(0, maxChars);
+              textTruncated = page.bodyTruncated || articleTruncated;
               title = article?.title ?? title;
               byline = article?.byline ?? undefined;
               excerpt = article?.excerpt ?? undefined;
@@ -395,7 +404,6 @@ export function webTools(config: WebToolsConfig): WebTools {
           }
         }
 
-        const textTruncated = page.textTruncated || text.length >= maxChars;
         const source: SourceMetadata = {
           ...page.source,
           ...(title !== undefined ? { title } : {}),
@@ -432,7 +440,9 @@ export function webTools(config: WebToolsConfig): WebTools {
         const linksPerPage = clamp(args.max_links_per_page, maxLinksPerPage, 1, maxLinksPerPage);
         const requireSameHost = args.same_host ?? true;
         const queue: Array<{ url: string; depth: number }> = [{ url: start.href, depth: 0 }];
+        const queued = new Set<string>([start.href]);
         const seen = new Set<string>();
+        let truncated = false;
         const pages: Array<{
           source: SourceMetadata;
           citation: Citation;
@@ -442,6 +452,7 @@ export function webTools(config: WebToolsConfig): WebTools {
 
         while (queue.length > 0 && pages.length < maxPages) {
           const next = queue.shift()!;
+          queued.delete(next.url);
           if (seen.has(next.url)) continue;
           seen.add(next.url);
           if (requireSameHost && !sameHost(next.url, start)) continue;
@@ -456,13 +467,18 @@ export function webTools(config: WebToolsConfig): WebTools {
             continue;
           }
 
-          const links = page.links.slice(0, linksPerPage);
+          const eligibleLinks = requireSameHost
+            ? page.links.filter((link) => sameHost(link.url, start))
+            : page.links;
+          const links = eligibleLinks.slice(0, linksPerPage);
+          if (eligibleLinks.length > links.length) truncated = true;
           pages.push({ source: page.source, citation: page.citation, links });
           if (next.depth < depth) {
             for (const link of links) {
               if (seen.has(link.url)) continue;
-              if (requireSameHost && !sameHost(link.url, start)) continue;
+              if (queued.has(link.url)) continue;
               queue.push({ url: link.url, depth: next.depth + 1 });
+              queued.add(link.url);
             }
           }
         }
@@ -473,7 +489,7 @@ export function webTools(config: WebToolsConfig): WebTools {
             startUrl: start.href,
             pages,
             errors,
-            truncated: queue.length > 0 || seen.size > pages.length + errors.length,
+            truncated: truncated || queue.length > 0,
           },
         };
       } catch (error) {

@@ -232,22 +232,6 @@ export function createHttpToolClient(config: HttpToolsConfig): HttpToolClient {
     const timeoutMs = timeoutFor(normalized, req.timeoutMs);
     const maxBytes = bytesFor(normalized, req.maxBytes);
     const maxBodyChars = charsFor(normalized, req.maxBodyChars);
-    const retryEnabled = shouldRetryMethod(normalized, method);
-    const maxAttempts = retryEnabled ? normalized.retryMaxAttempts : 1;
-    const pipeline = combine(
-      retry({
-        maxAttempts,
-        backoff: exponentialBackoff({
-          initial: normalized.retryInitialDelayMs,
-          max: normalized.retryMaxDelayMs,
-        }),
-        shouldRetry: (error) => {
-          if (ctx?.signal?.aborted) return false;
-          return retryEnabled && isTransient(error);
-        },
-      }),
-      timeout({ ms: timeoutMs }),
-    );
 
     const started = performance.now();
     const redirects: string[] = [];
@@ -262,6 +246,22 @@ export function createHttpToolClient(config: HttpToolsConfig): HttpToolClient {
         const requestHeaders = buildRequestHeaders(normalized, req.headers, contentType, {
           includeConfiguredHeaders: currentUrl.origin === initialOrigin,
         });
+        const retryEnabled = shouldRetryMethod(normalized, currentMethod);
+        const maxAttempts = retryEnabled ? normalized.retryMaxAttempts : 1;
+        const pipeline = combine(
+          retry({
+            maxAttempts,
+            backoff: exponentialBackoff({
+              initial: normalized.retryInitialDelayMs,
+              max: normalized.retryMaxDelayMs,
+            }),
+            shouldRetry: (error) => {
+              if (ctx?.signal?.aborted) return false;
+              return retryEnabled && isTransient(error);
+            },
+          }),
+          timeout({ ms: timeoutMs }),
+        );
 
         const response = await pipeline.execute(async (rctx) => {
           const fetched = await normalized.fetch(currentUrl.href, {
