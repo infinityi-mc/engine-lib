@@ -149,6 +149,7 @@ import { webTools } from "@infinityi/engine-lib/tools-web";
 import { defineAgent, createAgentRegistry, asTool } from "@infinityi/engine-lib/agent";
 import { runAgent } from "@infinityi/engine-lib/execution";
 import { createSession } from "@infinityi/engine-lib/session";
+import { createSqliteSessionStore } from "@infinityi/engine-lib/session-stores";
 import { staticContext, truncateOldest } from "@infinityi/engine-lib/context";
 import { createEventHub, loggingSubscriber, messageBusSubscriber } from "@infinityi/engine-lib/events";
 import { agentRuntimeComponent } from "@infinityi/engine-lib/lifecycle";
@@ -395,6 +396,31 @@ and `delete`. Store implementations must preserve message order, treat
 `append()` as an atomic tail add, and avoid exposing mutable internal arrays by
 reference.
 
+Durable adapters live on the optional `@infinityi/engine-lib/session-stores`
+subpath. Use `InMemorySessionStore` for tests and ephemeral runs; use SQLite,
+PostgreSQL, Redis, filesystem JSONL, or a Forge `Db` backed store when history
+must survive restarts:
+
+```ts
+import { createSession } from "@infinityi/engine-lib/session";
+import { createSqliteSessionStore } from "@infinityi/engine-lib/session-stores";
+
+const store = await createSqliteSessionStore({ filename: "sessions.db", migrate: true });
+const session = createSession({ id: "user-123", store });
+```
+
+`createPostgresSessionStore()` accepts a pg-compatible dedicated client;
+`RedisSessionStore` accepts a structural Redis client; `FilesystemJsonlSessionStore`
+stores one append-only log per session directory; and `ForgeDataSessionStore`
+adapts an existing `@infinityi/forge/data` `Db`. Stores expose `migrate()` where
+they own schema/data initialization and `close()` where they own resources.
+
+At-rest encryption is host-owned through `SessionStoreCodec`: wrap the default
+JSON codec to encrypt/decrypt encoded messages and metadata before they reach
+SQL, Redis, or disk. `withSessionStoreHooks()` adds host-provided compaction and
+archive hooks after `append()` or `save()` without changing the `SessionStore`
+contract.
+
 Successful runs append only conversation messages: user input, assistant turns,
 and tool-result messages. Instructions, injected context, and handoff-injected
 instructions are request-time system messages and are never persisted. Failed
@@ -529,7 +555,8 @@ const app = await boot({
 // app.ready === true; app.stop() drains it (running the optional onStop hook).
 ```
 
-(An optional `forge/data`-backed `SessionStore` is deferred to a later change.)
+Durable session stores are available from `@infinityi/engine-lib/session-stores`
+and can be closed from the lifecycle `onStop` hook when they own resources.
 
 ## License
 
