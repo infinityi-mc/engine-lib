@@ -121,6 +121,7 @@
     "check": "tsc --noEmit",
     "test": "bun test",
     "docs": "typedoc",
+    "examples": "bun run examples/incident-analysis.ts && bun run examples/01-minimal-agent.ts && bun run examples/02-custom-tool.ts && bun run examples/03-streaming.ts && bun run examples/04-sessions-context.ts && bun run examples/05-events-subscribers.ts && bun run examples/06-multi-agent-handoff.ts && bun run examples/07-sub-agent-tool.ts && bun run examples/08-testing-agent.ts && bun run examples/09-tools-filesystem.ts && bun run examples/10-tools-http-web.ts && bun run examples/11-shell-tools.ts && bun run examples/12-provider-openai.ts && bun run examples/13-lifecycle.ts",
     "prepublishOnly": "bun run check && bun test && bun run build"
   },
   "devDependencies": {
