@@ -26,6 +26,8 @@ source repository; the documented entry points are the public import surfaces:
 | `@infinityi/engine-lib/tools` | tool definitions and tool-result mapping helpers |
 | `@infinityi/engine-lib/tools-shell` | optional policy-gated command execution tools |
 | `@infinityi/engine-lib/tools-fs` | optional allowed-root filesystem and workspace tools |
+| `@infinityi/engine-lib/tools-http` | optional policy-gated HTTP GET/POST tools and client |
+| `@infinityi/engine-lib/tools-web` | optional static web/search tools built on `tools-http` |
 | `@infinityi/engine-lib/agent` | agent definitions, registries, handoffs, and sub-agent-as-tool helpers |
 | `@infinityi/engine-lib/execution` | `runAgent` and run result/event types |
 | `@infinityi/engine-lib/session` | session handles and session store contract |
