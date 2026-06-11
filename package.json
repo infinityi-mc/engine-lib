@@ -96,6 +96,10 @@
       "import": "./dist/context/index.js",
       "types": "./dist/context/index.d.ts"
     },
+    "./retrieval": {
+      "import": "./dist/retrieval/index.js",
+      "types": "./dist/retrieval/index.d.ts"
+    },
     "./events": {
       "import": "./dist/events/index.js",
       "types": "./dist/events/index.d.ts"
@@ -115,13 +119,13 @@
   },
   "scripts": {
     "clean": "bun -e \"const fs = require('fs'); fs.rmSync('dist', { recursive: true, force: true });\"",
-    "build:js": "bun build src/index.ts src/schema/index.ts src/messages/index.ts src/errors.ts src/runtime/index.ts src/providers/index.ts src/tools/index.ts src/tools-shell/index.ts src/tools-fs/index.ts src/tools-http/index.ts src/tools-web/index.ts src/agent/index.ts src/execution/index.ts src/session/index.ts src/session-stores/index.ts src/context/index.ts src/events/index.ts src/testing/index.ts src/testing/conformance.ts src/lifecycle/index.ts --outdir dist --root src --splitting --external bun:test --external typescript --external @vscode/ripgrep --external diff --external fuse.js --external glob --external ignore --external minisearch --external @mozilla/readability --external linkedom --external robots-parser --target node",
+    "build:js": "bun build src/index.ts src/schema/index.ts src/messages/index.ts src/errors.ts src/runtime/index.ts src/providers/index.ts src/tools/index.ts src/tools-shell/index.ts src/tools-fs/index.ts src/tools-http/index.ts src/tools-web/index.ts src/agent/index.ts src/execution/index.ts src/session/index.ts src/session-stores/index.ts src/context/index.ts src/retrieval/index.ts src/events/index.ts src/testing/index.ts src/testing/conformance.ts src/lifecycle/index.ts --outdir dist --root src --splitting --external bun:test --external typescript --external @vscode/ripgrep --external diff --external fuse.js --external glob --external ignore --external minisearch --external @mozilla/readability --external linkedom --external robots-parser --target node",
     "build:types": "tsc -p tsconfig.build.json",
     "build": "bun run clean && bun run build:js && bun run build:types",
     "check": "tsc --noEmit",
     "test": "bun test",
     "docs": "typedoc",
-    "examples": "bun run examples/incident-analysis.ts && bun run examples/01-minimal-agent.ts && bun run examples/02-custom-tool.ts && bun run examples/03-streaming.ts && bun run examples/04-sessions-context.ts && bun run examples/05-events-subscribers.ts && bun run examples/06-multi-agent-handoff.ts && bun run examples/07-sub-agent-tool.ts && bun run examples/08-testing-agent.ts && bun run examples/09-tools-filesystem.ts && bun run examples/10-tools-http-web.ts && bun run examples/11-shell-tools.ts && bun run examples/12-provider-openai.ts && bun run examples/13-lifecycle.ts",
+    "examples": "bun run examples/incident-analysis.ts && bun run examples/01-minimal-agent.ts && bun run examples/02-custom-tool.ts && bun run examples/03-streaming.ts && bun run examples/04-sessions-context.ts && bun run examples/05-events-subscribers.ts && bun run examples/06-multi-agent-handoff.ts && bun run examples/07-sub-agent-tool.ts && bun run examples/08-testing-agent.ts && bun run examples/09-tools-filesystem.ts && bun run examples/10-tools-http-web.ts && bun run examples/11-shell-tools.ts && bun run examples/12-provider-openai.ts && bun run examples/13-lifecycle.ts && bun run examples/14-retrieval.ts",
     "prepublishOnly": "bun run check && bun test && bun run build"
   },
   "devDependencies": {

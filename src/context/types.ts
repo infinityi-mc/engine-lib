@@ -25,13 +25,32 @@ export interface ContextItem {
   readonly content: unknown;
 }
 
+/** Run-specific facts made available while resolving context providers. */
+export interface ContextResolveContext {
+  /** Active agent name for this run. */
+  readonly agentName: string;
+  /** Resolved agent instructions, when any. */
+  readonly instructions?: string;
+  /** New input messages for this run. */
+  readonly input: readonly Message[];
+  /** Prior conversation history loaded before this run's input. */
+  readonly prior: readonly Message[];
+  /** Prior history followed by this run's input, excluding instructions/context. */
+  readonly messages: readonly Message[];
+  /** Per-run context-window configuration, when supplied. */
+  readonly contextWindow?: ContextWindowOptions;
+}
+
 /**
  * A host-supplied context source, resolved once per run before the first
  * provider call. Results are injected as system context and are not persisted.
  */
 export interface ContextProvider {
   readonly name: string;
-  resolve(ctx: EngineContext): ContextItem[] | Promise<ContextItem[]>;
+  resolve(
+    ctx: EngineContext,
+    run?: ContextResolveContext,
+  ): ContextItem[] | Promise<ContextItem[]>;
 }
 
 /** Counts tokens for a message list (pluggable; a char-based heuristic ships built-in). */

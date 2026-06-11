@@ -10,7 +10,7 @@
 import { system } from "../messages/factory";
 import type { Message } from "../messages/types";
 import type { EngineContext } from "../runtime/types";
-import type { ContextItem, ContextProvider } from "./types";
+import type { ContextItem, ContextProvider, ContextResolveContext } from "./types";
 
 /** Render one {@link ContextItem} to text (strings pass through; else JSON). */
 function renderItem(item: ContextItem): string {
@@ -37,13 +37,13 @@ export function staticContext(content: unknown, title?: string): ContextProvider
 /** Inject context computed lazily at run time from the {@link EngineContext}. */
 export function dynamicContext(
   name: string,
-  fn: (ctx: EngineContext) => unknown | Promise<unknown>,
+  fn: (ctx: EngineContext, run?: ContextResolveContext) => unknown | Promise<unknown>,
   title?: string,
 ): ContextProvider {
   return {
     name,
-    resolve: async (ctx) => {
-      const content = await fn(ctx);
+    resolve: async (ctx, run) => {
+      const content = await fn(ctx, run);
       return [{ content, ...(title !== undefined ? { title } : {}) }];
     },
   };
@@ -58,9 +58,10 @@ export function dynamicContext(
 export async function resolveContext(
   providers: readonly ContextProvider[] | undefined,
   ctx: EngineContext,
+  run?: ContextResolveContext,
 ): Promise<Message[]> {
   if (providers === undefined || providers.length === 0) return [];
-  const resolved = await Promise.all(providers.map((p) => p.resolve(ctx)));
+  const resolved = await Promise.all(providers.map((p) => p.resolve(ctx, run)));
   const blocks = resolved.flat().map(renderItem).filter((s) => s !== "");
   if (blocks.length === 0) return [];
   return [system(blocks.join("\n\n"))];

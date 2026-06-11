@@ -257,10 +257,17 @@ async function* executeAgent(
     // failing context provider or session-store load is wrapped as an AgentError,
     // surfaced as an `error` event, and routed through the onError hook.
     const instructions = await resolveInstructions(agent, engineCtx);
-    const contextMessages = await resolveContext(opts.context, engineCtx);
     const prior =
       opts.session !== undefined ? await opts.session.messages() : (opts.messages ?? []);
     const inputMessages = normalizeInput(opts.input);
+    const contextMessages = await resolveContext(opts.context, engineCtx, {
+      agentName: agent.name,
+      ...(instructions !== undefined ? { instructions } : {}),
+      input: inputMessages,
+      prior,
+      messages: [...prior, ...inputMessages],
+      ...(opts.contextWindow !== undefined ? { contextWindow: opts.contextWindow } : {}),
+    });
 
     const messages: Message[] = [];
     if (instructions !== undefined && instructions !== "") messages.push(system(instructions));

@@ -16,6 +16,7 @@
     "src/execution/index.ts",
     "src/session/index.ts",
     "src/context/index.ts",
+    "src/retrieval/index.ts",
     "src/events/index.ts",
     "src/lifecycle/index.ts",
     "src/session-stores/index.ts",
