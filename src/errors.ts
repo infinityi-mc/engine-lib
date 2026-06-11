@@ -168,3 +168,15 @@ export class ShellPolicyError extends AgentError {
     this.name = "ShellPolicyError";
   }
 }
+
+/**
+ * The optional `tools-fs` module was misconfigured (for example, missing
+ * absolute `allowedRoots`). Per-call filesystem denials are returned as tool
+ * failures so the model can recover.
+ */
+export class FilesystemPolicyError extends AgentError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "FilesystemPolicyError";
+  }
+}

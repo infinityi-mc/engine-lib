@@ -26,6 +26,7 @@ export {
   CancelledError,
   ContextWindowError,
   ExecutionError,
+  FilesystemPolicyError,
   MaxHandoffsExceededError,
   MaxStepsExceededError,
   ProviderError,

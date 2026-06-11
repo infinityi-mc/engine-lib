@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { join } from "node:path";
 
 import type { RunEvent } from "../src/execution/types";
 import { ShellPolicyError } from "../src/errors";
@@ -35,13 +36,14 @@ async function run(tool: ToolDefinition, args: unknown, ctx: ToolContext): Promi
 }
 
 const ROOT = process.cwd();
+const JS = process.execPath;
 
 // --- pure policy units -----------------------------------------------------
 
 describe("resolveCwd", () => {
   it("accepts the root itself and descendants", () => {
     expect(resolveCwd(undefined, [ROOT])).toBe(ROOT);
-    expect(resolveCwd("src", [ROOT])).toBe(`${ROOT}/src`);
+    expect(resolveCwd("src", [ROOT])).toBe(join(ROOT, "src"));
   });
   it("rejects paths that escape every root", () => {
     expect(resolveCwd("..", [ROOT])).toBeNull();
@@ -104,7 +106,7 @@ describe("run_command", () => {
   it("captures stdout and a zero exit code", async () => {
     const { runCommand } = shellTools({ allowedCwds: [ROOT] });
     const { ctx, events } = captureCtx();
-    const res = await run(runCommand, { command: "echo", args: ["hello"] }, ctx);
+    const res = await run(runCommand, { command: JS, args: ["-e", "console.log('hello')"] }, ctx);
     expect(res.ok).toBe(true);
     const out = (res as { content: CommandResult }).content;
     expect(out.stdout.trim()).toBe("hello");
@@ -116,7 +118,7 @@ describe("run_command", () => {
   it("returns ok:true with a non-zero exit code (model sees failures)", async () => {
     const { runCommand } = shellTools({ allowedCwds: [ROOT] });
     const { ctx } = captureCtx();
-    const res = await run(runCommand, { command: "sh", args: ["-c", "exit 3"] }, ctx);
+    const res = await run(runCommand, { command: JS, args: ["-e", "process.exit(3)"] }, ctx);
     expect(res.ok).toBe(true);
     expect((res as { content: CommandResult }).content.exitCode).toBe(3);
   });
@@ -141,7 +143,7 @@ describe("run_command", () => {
   it("times out a long-running command", async () => {
     const { runCommand } = shellTools({ allowedCwds: [ROOT] });
     const { ctx } = captureCtx();
-    const res = await run(runCommand, { command: "sleep", args: ["5"], timeoutMs: 100 }, ctx);
+    const res = await run(runCommand, { command: JS, args: ["-e", "setTimeout(() => {}, 5000)"], timeoutMs: 100 }, ctx);
     expect(res.ok).toBe(true);
     const out = (res as { content: CommandResult }).content;
     expect(out.timedOut).toBe(true);
@@ -153,7 +155,7 @@ describe("run_command", () => {
     const { ctx } = captureCtx();
     const res = await run(
       runCommand,
-      { command: "sh", args: ["-c", "for i in $(seq 1 1000); do echo line$i; done"] },
+      { command: JS, args: ["-e", "for (let i = 0; i < 1000; i++) console.log(`line${i}`)"] },
       ctx,
     );
     const out = (res as { content: CommandResult }).content;
@@ -183,14 +185,14 @@ describe("approval gating", () => {
     let approveCalled = false;
     const { runCommand } = shellTools({
       allowedCwds: [ROOT],
-      requiresApproval: (req) => req.command === "echo",
+      requiresApproval: (req) => req.command === JS,
       approve: () => {
         approveCalled = true;
         return false;
       },
     });
     const { ctx, events } = captureCtx();
-    const res = await run(runCommand, { command: "echo", args: ["nope"] }, ctx);
+    const res = await run(runCommand, { command: JS, args: ["-e", "console.log('nope')"] }, ctx);
     expect(res.ok).toBe(false);
     expect(approveCalled).toBe(true);
     expect(customNames(events)).toEqual(["shell.policy", "shell.approval", "shell.approval"]);
@@ -205,7 +207,7 @@ describe("approval gating", () => {
       approve: () => ({ approved: true, reason: "ok" }),
     });
     const { ctx, events } = captureCtx();
-    const res = await run(runCommand, { command: "echo", args: ["go"] }, ctx);
+    const res = await run(runCommand, { command: JS, args: ["-e", "console.log('go')"] }, ctx);
     expect(res.ok).toBe(true);
     expect(customNames(events)).toEqual([
       "shell.policy",
@@ -230,7 +232,7 @@ describe("spawn_command", () => {
   it("streams output as shell.exec.chunk events", async () => {
     const { spawnCommand } = shellTools({ allowedCwds: [ROOT] });
     const { ctx, events } = captureCtx();
-    const res = await run(spawnCommand, { command: "echo", args: ["streamed ✓ café"] }, ctx);
+    const res = await run(spawnCommand, { command: JS, args: ["-e", "console.log('streamed ✓ café')"] }, ctx);
     expect(res.ok).toBe(true);
     const chunks = events
       .filter((e): e is Extract<RunEvent, { type: "custom" }> => e.type === "custom")
@@ -248,7 +250,7 @@ describe("tool invoked outside a run", () => {
   it("works with no ctx.run (emits are no-ops)", async () => {
     const { runCommand } = shellTools({ allowedCwds: [ROOT] });
     const ctx: ToolContext = { toolCallId: "x" };
-    const res = await run(runCommand, { command: "echo", args: ["ok"] }, ctx);
+    const res = await run(runCommand, { command: JS, args: ["-e", "console.log('ok')"] }, ctx);
     expect(res.ok).toBe(true);
   });
 });
