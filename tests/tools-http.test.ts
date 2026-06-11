@@ -182,6 +182,85 @@ describe("http_get/http_post behavior", () => {
     expect(attempts).toBe(1);
   });
 
+  it("cancels redirect response bodies before following or denying redirect targets", async () => {
+    let followedRedirectCancelled = false;
+    const followedTools = httpTools({
+      allowedHosts: ["example.com"],
+      fetch: asFetch(async (input) => {
+        const url = String(input);
+        if (url.endsWith("/start")) {
+          return new Response(new ReadableStream({
+            cancel: () => {
+              followedRedirectCancelled = true;
+            },
+          }), {
+            status: 302,
+            headers: { location: "https://example.com/final" },
+          });
+        }
+        return new Response("done", { headers: { "content-type": "text/plain" } });
+      }),
+    });
+    const followed = await run(followedTools.httpGet, { url: "https://example.com/start" });
+    expect(followed.ok).toBe(true);
+    expect(followedRedirectCancelled).toBe(true);
+
+    let deniedRedirectCancelled = false;
+    const deniedTools = httpTools({
+      allowedHosts: ["example.com"],
+      fetch: asFetch(async () => new Response(new ReadableStream({
+        cancel: () => {
+          deniedRedirectCancelled = true;
+        },
+      }), {
+        status: 302,
+        headers: { location: "https://other.example/final" },
+      })),
+    });
+    const denied = await run(deniedTools.httpGet, { url: "https://example.com/start" });
+    expect(denied.ok).toBe(false);
+    expect(deniedRedirectCancelled).toBe(true);
+  });
+
+  it("strips configured and model-supplied headers on cross-origin redirects", async () => {
+    let initialHeaders = new Headers();
+    let redirectedHeaders = new Headers();
+    const { httpGet } = httpTools({
+      allowedHosts: ["example.com", "other.example"],
+      defaultHeaders: [
+        { name: "authorization", value: "Bearer host-secret" },
+        { name: "x-api-key", value: "host-key" },
+        { name: "accept", value: "application/json" },
+      ],
+      allowedRequestHeaders: ["x-allowed"],
+      fetch: asFetch(async (input, init) => {
+        const url = String(input);
+        if (url.startsWith("https://example.com/")) {
+          initialHeaders = new Headers(init?.headers);
+          return new Response(null, {
+            status: 302,
+            headers: { location: "https://other.example/final" },
+          });
+        }
+        redirectedHeaders = new Headers(init?.headers);
+        return json({ ok: true });
+      }),
+    });
+
+    const res = await run(httpGet, {
+      url: "https://example.com/start",
+      headers: [{ name: "x-allowed", value: "model-value" }],
+    });
+    expect(res.ok).toBe(true);
+    expect(initialHeaders.get("authorization")).toBe("Bearer host-secret");
+    expect(initialHeaders.get("x-api-key")).toBe("host-key");
+    expect(initialHeaders.get("x-allowed")).toBe("model-value");
+    expect(redirectedHeaders.get("authorization")).toBeNull();
+    expect(redirectedHeaders.get("x-api-key")).toBeNull();
+    expect(redirectedHeaders.get("accept")).toBeNull();
+    expect(redirectedHeaders.get("x-allowed")).toBeNull();
+  });
+
   it("retries transient GET failures and does not retry POST by default", async () => {
     let getAttempts = 0;
     const getTools = httpTools({

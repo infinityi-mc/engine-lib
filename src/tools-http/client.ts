@@ -251,6 +251,7 @@ export function createHttpToolClient(config: HttpToolsConfig): HttpToolClient {
 
     const started = performance.now();
     const redirects: string[] = [];
+    const initialOrigin = url.origin;
     emitHttpRequestStart(ctx, method, url.href, timeoutMs);
 
     try {
@@ -258,7 +259,9 @@ export function createHttpToolClient(config: HttpToolsConfig): HttpToolClient {
         const currentMethod = method;
         const currentUrl = url;
         const { body, contentType } = bodyFor(req, currentMethod);
-        const requestHeaders = buildRequestHeaders(normalized, req.headers, contentType);
+        const requestHeaders = buildRequestHeaders(normalized, req.headers, contentType, {
+          includeConfiguredHeaders: currentUrl.origin === initialOrigin,
+        });
 
         const response = await pipeline.execute(async (rctx) => {
           const fetched = await normalized.fetch(currentUrl.href, {
@@ -286,6 +289,7 @@ export function createHttpToolClient(config: HttpToolsConfig): HttpToolClient {
             throw new HttpPolicyError(`too many redirects (max ${normalized.maxRedirects})`);
           }
           const next = new URL(location, currentUrl);
+          await cancelBody(response);
           checkUrl(next, normalized, ctx);
           redirects.push(next.href);
           method = redirectedMethod(method, response.status);

@@ -267,16 +267,19 @@ export function buildRequestHeaders(
   config: NormalizedHttpConfig,
   modelHeaders: readonly HeaderEntry[] | undefined,
   contentType?: string,
+  options?: { includeConfiguredHeaders?: boolean },
 ): Headers {
   const headers = new Headers();
-  for (const entry of config.defaultHeaders) headers.set(entry.name, entry.value);
-  for (const entry of modelHeaders ?? []) {
-    const name = normalizeHeaderName(entry.name);
-    if (!config.allowedRequestHeaders.has(name)) continue;
-    if (/[\r\n]/.test(entry.value)) {
-      throw new HttpPolicyError(`header ${JSON.stringify(entry.name)} value contains a newline`);
+  if (options?.includeConfiguredHeaders ?? true) {
+    for (const entry of config.defaultHeaders) headers.set(entry.name, entry.value);
+    for (const entry of modelHeaders ?? []) {
+      const name = normalizeHeaderName(entry.name);
+      if (!config.allowedRequestHeaders.has(name)) continue;
+      if (/[\r\n]/.test(entry.value)) {
+        throw new HttpPolicyError(`header ${JSON.stringify(entry.name)} value contains a newline`);
+      }
+      headers.set(name, entry.value);
     }
-    headers.set(name, entry.value);
   }
   if (contentType !== undefined && !headers.has("content-type")) {
     headers.set("content-type", contentType);
