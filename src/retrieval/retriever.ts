@@ -73,7 +73,9 @@ export function mergeHybridResults(
   keywordResults: readonly KeywordRetrievalResult[],
   options: HybridRetrievalOptions = {},
 ): RetrievalResult[] {
-  const topK = options.topK ?? Math.max(vectorResults.length, keywordResults.length);
+  const inferredTopK = Math.max(vectorResults.length, keywordResults.length);
+  if (options.topK === undefined && inferredTopK === 0) return [];
+  const topK = options.topK ?? inferredTopK;
   assertPositiveInteger("topK", topK);
   const vectorWeight = options.vectorWeight ?? 0.7;
   const keywordWeight = options.keywordWeight ?? 0.3;

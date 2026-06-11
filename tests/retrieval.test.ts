@@ -154,6 +154,10 @@ describe("indexing and vector retrieval", () => {
 });
 
 describe("hybrid retrieval", () => {
+  it("returns no results when both channels are empty", () => {
+    expect(mergeHybridResults([], [])).toEqual([]);
+  });
+
   it("de-duplicates and combines vector and keyword scores", () => {
     const vectorResults: RetrievalResult[] = [
       { id: "a", rank: 1, score: 0.9, text: "vector a" },
