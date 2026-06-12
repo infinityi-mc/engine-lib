@@ -5,7 +5,7 @@
     "": {
       "name": "engine-lib",
       "dependencies": {
-        "@infinityi/forge": "^1.0.0",
+        "@infinityi/forge": "^1.0.1",
       },
       "devDependencies": {
         "@mozilla/readability": "^0.6.0",
@@ -22,27 +22,33 @@
         "typescript": "^6.0.3",
       },
       "peerDependencies": {
+        "@mozilla/readability": "^0.6.0",
         "@vscode/ripgrep": "^1.18.0",
         "diff": "^9.0.0",
         "fuse.js": "^7.4.2",
         "glob": "^13.0.6",
         "ignore": "^7.0.5",
+        "linkedom": "^0.18.12",
         "minisearch": "^7.2.0",
+        "robots-parser": "^3.0.1",
       },
       "optionalPeers": [
+        "@mozilla/readability",
         "@vscode/ripgrep",
         "diff",
         "fuse.js",
         "glob",
         "ignore",
+        "linkedom",
         "minisearch",
+        "robots-parser",
       ],
     },
   },
   "packages": {
     "@gerrit0/mini-shiki": ["@gerrit0/mini-shiki@3.23.0", "", { "dependencies": { "@shikijs/engine-oniguruma": "^3.23.0", "@shikijs/langs": "^3.23.0", "@shikijs/themes": "^3.23.0", "@shikijs/types": "^3.23.0", "@shikijs/vscode-textmate": "^10.0.2" } }, "sha512-bEMORlG0cqdjVyCEuU0cDQbORWX+kYCeo0kV1lbxF5bt4r7SID2l9bqsxJEM0zndaxpOUT7riCyIVEuqq/Ynxg=="],
 
-    "@infinityi/forge": ["@infinityi/forge@1.0.0", "", { "peerDependencies": { "typescript": "^6" } }, "sha512-M7Hs6WhWKUQatcXLwmsXph8CE5yPHOnrIsV6d3SA2XNOTdDgSq0h6BYW0jl+x+zIo70ClWIZtcyr7ajAMOcE3g=="],
+    "@infinityi/forge": ["@infinityi/forge@1.0.1", "", { "peerDependencies": { "typescript": "^6" } }, "sha512-ew0+WZaFGp+waLZtANXGABGkMA86WiRBOzjRkfk/Yz3H2BRpEM0vzVMm3Dvvz8LxP+qp6T8mxjvAEehP7Trmow=="],
 
     "@mozilla/readability": ["@mozilla/readability@0.6.0", "", {}, "sha512-juG5VWh4qAivzTAeMzvY9xs9HY5rAcr2E4I7tiSSCokRFi7XIZCAu92ZkSTsIj1OPceCifL3cpfteP3pDT9/QQ=="],
 
