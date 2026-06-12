@@ -143,7 +143,7 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
-    "@infinityi/forge": "^1.0.0"
+    "@infinityi/forge": "^1.0.1"
   },
   "peerDependencies": {
     "@mozilla/readability": "^0.6.0",
