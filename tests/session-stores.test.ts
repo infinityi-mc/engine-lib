@@ -3,24 +3,27 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createDb } from "@infinityi/forge/data";
+import { createDb, raw, sql } from "@infinityi/forge/data";
 import type { DatabaseSchema } from "@infinityi/forge/data";
 import { createSqliteDialect, createSqliteDriver } from "@infinityi/forge/data/dialects/sqlite";
 
-import { user } from "../src/messages/index";
+import { assistant, user } from "../src/messages/index";
 import { createSession, InMemorySessionStore } from "../src/session/index";
 import type { SessionState, SessionStore } from "../src/session/index";
 import {
   FilesystemJsonlSessionStore,
   ForgeDataSessionStore,
   RedisSessionStore,
+  SUMMARY_METADATA_KEY,
   SESSION_STORE_SCHEMA_VERSION,
   createPostgresSessionStore,
   createSqliteSessionStore,
   migrateSessionStore,
+  summarizingCompactor,
   withSessionStoreHooks,
 } from "../src/session-stores/index";
 import type { RedisSessionStoreClient, RedisSessionStoreTransaction, SessionArchiveRecord, SessionStoreCodec } from "../src/session-stores/index";
+import { mockProvider, runSessionStoreConformance } from "../src/testing/index";
 
 interface StoreFixture {
   readonly store: SessionStore;
@@ -160,6 +163,7 @@ class FakeRedisTransaction implements RedisSessionStoreTransaction {
 class FakeRedisClient implements RedisSessionStoreClient {
   private readonly strings = new Map<string, string>();
   private readonly lists = new Map<string, string[]>();
+  readonly expiries: Array<{ key: string; ttlMs: number }> = [];
 
   get(key: string): string | undefined {
     return this.strings.get(key);
@@ -181,6 +185,18 @@ class FakeRedisClient implements RedisSessionStoreClient {
 
   rPush(key: string, ...values: string[]): number {
     return this.rPushSync(key, ...values);
+  }
+
+  pExpire(key: string, ttlMs: number): void {
+    this.expiries.push({ key, ttlMs });
+  }
+
+  scan(_cursor: string, options?: { readonly MATCH?: string; readonly COUNT?: number }): { cursor: string; keys: string[] } {
+    const pattern = options?.MATCH === undefined
+      ? undefined
+      : new RegExp(`^${options.MATCH.split("*").map(escapeRegExp).join(".*")}$`);
+    const keys = [...this.strings.keys(), ...this.lists.keys()].filter((key) => pattern === undefined || pattern.test(key));
+    return { cursor: "0", keys };
   }
 
   multi(): RedisSessionStoreTransaction {
@@ -205,6 +221,51 @@ class FakeRedisClient implements RedisSessionStoreClient {
     return list.length;
   }
 }
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+runSessionStoreConformance("InMemorySessionStore", {
+  testApi: { describe, expect, it },
+  makeStore: () => new InMemorySessionStore(),
+});
+
+runSessionStoreConformance("ForgeDataSessionStore over injected SQLite", {
+  testApi: { describe, expect, it },
+  makeStore: async () => {
+    const db = createDb<DatabaseSchema>({
+      dialect: createSqliteDialect(),
+      driver: createSqliteDriver(),
+    });
+    const store = new ForgeDataSessionStore({ db, closeDbOnClose: true });
+    await store.migrate();
+    return store;
+  },
+});
+
+runSessionStoreConformance("createSqliteSessionStore", {
+  testApi: { describe, expect, it },
+  makeStore: async () => createSqliteSessionStore({ filename: ":memory:", migrate: true }),
+});
+
+runSessionStoreConformance("FilesystemJsonlSessionStore", {
+  testApi: { describe, expect, it },
+  makeStore: async () => {
+    const store = new FilesystemJsonlSessionStore({ directory: await tempDirectory() });
+    await store.migrate();
+    return store;
+  },
+});
+
+runSessionStoreConformance("RedisSessionStore", {
+  testApi: { describe, expect, it },
+  makeStore: async () => {
+    const store = new RedisSessionStore({ client: new FakeRedisClient() });
+    await store.migrate();
+    return store;
+  },
+});
 
 runSessionStoreContract("SQLite session store", async () => ({
   store: await createSqliteSessionStore({ filename: ":memory:", migrate: true }),
@@ -260,6 +321,45 @@ describe("ForgeDataSessionStore", () => {
     expect(store).toBeInstanceOf(ForgeDataSessionStore);
     await store.close();
     expect(ended).toBe(false);
+  });
+
+  it("purges idle SQL sessions by updated_at", async () => {
+    const db = createDb<DatabaseSchema>({
+      dialect: createSqliteDialect(),
+      driver: createSqliteDriver(),
+    });
+    const store = new ForgeDataSessionStore({ db, closeDbOnClose: true });
+    try {
+      await store.migrate();
+      await store.append("stale", [user("old")]);
+      await store.append("fresh", [user("new")]);
+      await db.raw(sql`
+        update ${raw('"engine_session_sessions"')}
+        set updated_at = ${new Date(Date.now() - 10 * 86_400_000).toISOString()}
+        where id = ${"stale"}
+      `).execute();
+
+      const purged = await store.purgeExpired({ maxIdleMs: 86_400_000 });
+      expect(purged).toEqual(["stale"]);
+      expect(await store.load("stale")).toBeUndefined();
+      expect(messageTexts(await store.load("fresh"))).toEqual(["new"]);
+    } finally {
+      await store.close();
+    }
+  });
+});
+
+describe("RedisSessionStore v2 capabilities", () => {
+  it("applies PEXPIRE to all per-session keys", async () => {
+    const client = new FakeRedisClient();
+    const store = new RedisSessionStore({ client });
+    await store.setExpiry("ttl", 1000);
+    expect(client.expiries.map((entry) => entry.ttlMs)).toEqual([1000, 1000, 1000]);
+    expect(client.expiries.map((entry) => entry.key).toSorted()).toEqual([
+      "engine:sessions:dHRs:exists",
+      "engine:sessions:dHRs:messages",
+      "engine:sessions:dHRs:metadata",
+    ]);
   });
 });
 
@@ -326,5 +426,56 @@ describe("withSessionStoreHooks", () => {
     expect(messageTexts(await store.load("s1"))).toEqual(["new"]);
     expect(archived).toHaveLength(1);
     expect(messageTexts({ id: "archive", messages: archived[0]!.messages ?? [] })).toEqual(["old"]);
+  });
+
+  it("summarizingCompactor persists one pinned summary and reports AppendResult", async () => {
+    let providerCalls = 0;
+    const archived: SessionArchiveRecord[] = [];
+    const provider = mockProvider({
+      result: () => {
+        providerCalls += 1;
+        return {
+          message: { role: "assistant", content: [{ type: "text", text: "SUMMARY" }] },
+          toolCalls: [],
+          finishReason: "stop",
+          model: "m",
+          raw: {},
+        };
+      },
+    });
+    const store = withSessionStoreHooks(new InMemorySessionStore(), {
+      compactor: summarizingCompactor({
+        provider,
+        model: "m",
+        keepRecentTurns: 1,
+        shouldCompactAt: { messages: 4 },
+      }),
+      archiver: {
+        archive: (record) => {
+          archived.push(record);
+        },
+      },
+    });
+
+    const result = await store.append("s1", [
+      user("old-1"),
+      assistant("old-2"),
+      user("old-3"),
+      assistant("old-4"),
+      user("recent"),
+    ]);
+
+    expect(result.compacted).toBe(true);
+    expect(result.removed).toBeGreaterThan(0);
+    const state = await store.load("s1");
+    expect(state?.messages).toHaveLength(2);
+    expect(state?.messages[0]?.role).toBe("system");
+    expect(state?.messages[0]?.metadata).toMatchObject({ pinned: true, [SUMMARY_METADATA_KEY]: true });
+    expect(messageTexts(state)).toEqual(["Summary of earlier conversation:\nSUMMARY", "recent"]);
+    expect(archived[0]?.messages).toHaveLength(4);
+
+    await store.append("s1", [assistant("final")]);
+    expect(providerCalls).toBe(1);
+    expect((await store.load("s1"))?.messages.filter((message) => message.metadata?.[SUMMARY_METADATA_KEY] === true)).toHaveLength(1);
   });
 });

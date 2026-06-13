@@ -12,6 +12,7 @@ import {
   staticContext,
   summarizeOldest,
   truncateOldest,
+  truncateToolAware,
 } from "../src/context/index";
 import { mockProvider } from "../src/testing/index";
 
@@ -102,6 +103,46 @@ describe("truncateOldest", () => {
     const messages = [system("a"), system("b"), user("1")];
     // reduce() throws synchronously here (no async work needed).
     expect(() => truncateOldest().reduce([...messages], { ...ctx, maxTokens: 1 })).toThrow(
+      ContextWindowError,
+    );
+  });
+});
+
+describe("truncateToolAware", () => {
+  const ctx = {
+    maxTokens: 0,
+    countTokens: (msgs: readonly Message[]) => msgs.length,
+    provider: mockProvider(),
+    model: "m",
+    engine: {},
+  };
+
+  it("drops whole turns without splitting tool calls from tool results", async () => {
+    const messages: Message[] = [
+      system("sys"),
+      user("old"),
+      assistant([{ type: "tool_call", id: "c1", name: "lookup", arguments: { q: "old" } }]),
+      { role: "tool", content: [{ type: "tool_result", toolCallId: "c1", content: [{ type: "text", text: "old-result" }] }] },
+      user("new"),
+      assistant("answer"),
+    ];
+
+    const result = await truncateToolAware().reduce([...messages], { ...ctx, maxTokens: 3 });
+    const hasCall = result.some((message) => message.content.some((part) => part.type === "tool_call" && part.id === "c1"));
+    const hasResult = result.some((message) => message.content.some((part) => part.type === "tool_result" && part.toolCallId === "c1"));
+    expect(hasCall).toBe(hasResult);
+    expect(result.map((message) => message.role)).toEqual(["system", "user", "assistant"]);
+    expect(textOf(result.at(-1)!)).toBe("answer");
+  });
+
+  it("retains pinned messages and throws when pins cannot fit", () => {
+    const messages: Message[] = [
+      system("sys"),
+      { ...user("pinned"), metadata: { pinned: true } },
+      assistant("latest"),
+    ];
+
+    expect(() => truncateToolAware().reduce([...messages], { ...ctx, maxTokens: 2 })).toThrow(
       ContextWindowError,
     );
   });

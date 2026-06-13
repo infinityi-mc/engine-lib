@@ -14,6 +14,7 @@ export {
   estimateTokens,
   summarizeOldest,
   truncateOldest,
+  truncateToolAware,
 } from "./window";
 
 export type {

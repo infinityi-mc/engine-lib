@@ -12,7 +12,10 @@ export { addUsage, emptyUsage } from "./usage";
 export type {
   AnyRunOptions,
   BufferedRunOptions,
+  CheckpointPolicy,
+  ResumeOptions,
   RunBridge,
+  RunCheckpoint,
   RunEvent,
   RunHandle,
   RunInput,

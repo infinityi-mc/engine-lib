@@ -47,6 +47,64 @@ export function estimateTokens(messages: readonly Message[]): number {
   return Math.ceil(chars / 4);
 }
 
+interface MessageGroup {
+  readonly messages: readonly Message[];
+  readonly pinned: boolean;
+}
+
+function messagePinned(
+  message: Message,
+  index: number,
+  pin?: (message: Message, index: number) => boolean,
+): boolean {
+  return message.role === "system" || message.metadata?.pinned === true || pin?.(message, index) === true;
+}
+
+function hasToolCall(message: Message): boolean {
+  return message.content.some((part) => part.type === "tool_call");
+}
+
+function isToolResultMessage(message: Message): boolean {
+  return message.role === "tool" && message.content.some((part) => part.type === "tool_result");
+}
+
+/** Split messages into request-valid groups, keeping tool-call/result turns intact. */
+export function splitConversationTurns(
+  messages: readonly Message[],
+  pin?: (message: Message, index: number) => boolean,
+): MessageGroup[] {
+  const groups: MessageGroup[] = [];
+  let index = 0;
+  while (index < messages.length) {
+    const message = messages[index]!;
+    const start = index;
+    const group: Message[] = [message];
+    index += 1;
+    if (message.role === "assistant" && hasToolCall(message)) {
+      while (index < messages.length && isToolResultMessage(messages[index]!)) {
+        group.push(messages[index]!);
+        index += 1;
+      }
+    }
+    groups.push({
+      messages: group,
+      pinned: group.some((m, offset) => messagePinned(m, start + offset, pin)),
+    });
+  }
+  return groups;
+}
+
+function flattenGroups(groups: readonly MessageGroup[]): Message[] {
+  return groups.flatMap((group) => [...group.messages]);
+}
+
+function latestNonSystemGroupIndex(groups: readonly MessageGroup[]): number {
+  for (let index = groups.length - 1; index >= 0; index -= 1) {
+    if (groups[index]!.messages.some((message) => message.role !== "system")) return index;
+  }
+  return -1;
+}
+
 /** Render messages to a plain-text transcript (for summarization prompts). */
 function transcript(messages: readonly Message[]): string {
   return messages
@@ -96,6 +154,44 @@ export function truncateOldest(): ContextStrategy {
 }
 
 /**
+ * Drop oldest whole turns while preserving system messages, pinned messages,
+ * and assistant tool-call/result pairing.
+ */
+export function truncateToolAware(opts: {
+  pin?: (message: Message, index: number) => boolean;
+} = {}): ContextStrategy {
+  return {
+    name: "truncate-tool-aware",
+    reduce(messages, ctx) {
+      const groups = splitConversationTurns(messages, opts.pin);
+      const keep = new Set<number>();
+      const latest = latestNonSystemGroupIndex(groups);
+      groups.forEach((group, index) => {
+        if (group.pinned || index === latest) keep.add(index);
+      });
+
+      for (let index = groups.length - 1; index >= 0; index -= 1) {
+        if (keep.has(index)) continue;
+        const candidate = flattenGroups(groups.filter((_, i) => keep.has(i) || i === index));
+        if (ctx.countTokens(candidate) <= ctx.maxTokens) {
+          keep.add(index);
+        }
+      }
+
+      const result = flattenGroups(groups.filter((_, index) => keep.has(index)));
+      const tokens = ctx.countTokens(result);
+      if (tokens > ctx.maxTokens) {
+        throw new ContextWindowError(
+          `context window exceeded: ${tokens} tokens > limit ${ctx.maxTokens} (irreducible)`,
+          { tokens, limit: ctx.maxTokens },
+        );
+      }
+      return result;
+    },
+  };
+}
+
+/**
  * Compress the oldest overflow into a single `system` summary via a provider
  * call, keeping the most recent `keepRecent` (default 4) non-system messages
  * verbatim. Throws {@link ContextWindowError} if the result still overflows.
@@ -107,10 +203,10 @@ export function summarizeOldest(opts: { keepRecent?: number } = {}): ContextStra
     async reduce(messages, ctx) {
       const systemMsgs = messages.filter((m) => m.role === "system");
       const rest = messages.filter((m) => m.role !== "system");
-
-      const splitAt = Math.max(0, rest.length - keepRecent);
-      const older = rest.slice(0, splitAt);
-      const recent = rest.slice(splitAt);
+      const groups = splitConversationTurns(rest);
+      const splitAt = Math.max(0, groups.length - keepRecent);
+      const older = flattenGroups(groups.slice(0, splitAt));
+      const recent = flattenGroups(groups.slice(splitAt));
 
       let result: Message[];
       if (older.length === 0) {
@@ -121,7 +217,7 @@ export function summarizeOldest(opts: { keepRecent?: number } = {}): ContextStra
           messages: [
             system(
               "Summarize the following conversation transcript concisely, preserving " +
-                "facts, decisions, and open questions. Output only the summary.",
+                "facts, decisions, open questions, and any in-flight tool intent. Output only the summary.",
             ),
             { role: "user" as const, content: [{ type: "text" as const, text: transcript(older) }] },
           ],

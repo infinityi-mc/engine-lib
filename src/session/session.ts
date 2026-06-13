@@ -14,7 +14,7 @@
 
 import type { Message } from "../messages/types";
 import { InMemorySessionStore } from "./store";
-import type { Session, SessionStore } from "./types";
+import type { AppendResult, Session, SessionStore } from "./types";
 
 /** Options for {@link createSession}. */
 export interface CreateSessionOptions {
@@ -26,6 +26,10 @@ export interface CreateSessionOptions {
   readonly messages?: readonly Message[];
   /** Free-form metadata attached to the session handle. */
   readonly metadata?: Record<string, unknown>;
+  /** Expected model used as the compatibility baseline when this session is resumed. */
+  readonly expectedModel?: string;
+  /** Expected provider used as the compatibility baseline when this session is resumed. */
+  readonly expectedProvider?: string;
 }
 
 function generateId(): string {
@@ -51,10 +55,15 @@ export function createSession(opts: CreateSessionOptions = {}): Session {
   const ensureSeeded = (): Promise<void> => {
     if (seedPromise !== undefined) return seedPromise;
     seedPromise = (async () => {
-      if (seed === undefined || seed.length === 0) return;
       const existing = await store.load(id);
-      if (existing === undefined || existing.messages.length === 0) {
-        await store.append(id, seed);
+      const shouldSeedMessages = seed !== undefined && seed.length > 0 && (existing === undefined || existing.messages.length === 0);
+      const shouldSeedMetadata = metadata !== undefined && existing === undefined;
+      if (shouldSeedMessages || shouldSeedMetadata) {
+        await store.save({
+          id,
+          messages: shouldSeedMessages ? seed ?? [] : existing?.messages ?? [],
+          ...(shouldSeedMetadata ? { metadata } : existing?.metadata !== undefined ? { metadata: existing.metadata } : {}),
+        });
       }
     })();
     return seedPromise;
@@ -63,15 +72,26 @@ export function createSession(opts: CreateSessionOptions = {}): Session {
   return {
     id,
     ...(metadata !== undefined ? { metadata } : {}),
+    ...(opts.expectedModel !== undefined ? { expectedModel: opts.expectedModel } : {}),
+    ...(opts.expectedProvider !== undefined ? { expectedProvider: opts.expectedProvider } : {}),
     async messages(): Promise<Message[]> {
       await ensureSeeded();
       const state = await store.load(id);
       return state === undefined ? [] : [...state.messages];
     },
-    async append(messages: readonly Message[]): Promise<void> {
+    async append(messages: readonly Message[]): Promise<AppendResult> {
       await ensureSeeded();
-      if (messages.length === 0) return;
-      await store.append(id, messages);
+      if (messages.length === 0) return {};
+      return store.append(id, messages);
+    },
+    async setMetadata(nextMetadata: Record<string, unknown>): Promise<void> {
+      await ensureSeeded();
+      await store.setMetadata(id, nextMetadata);
+    },
+    async getMetadata(): Promise<Record<string, unknown> | undefined> {
+      await ensureSeeded();
+      const state = await store.load(id);
+      return state?.metadata === undefined ? undefined : { ...state.metadata };
     },
     async clear(): Promise<void> {
       // Let an in-flight seed write finish first so it can't `append` *after* we

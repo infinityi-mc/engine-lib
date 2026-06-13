@@ -21,9 +21,11 @@ import type { Logger, TelemetryHandle } from "../runtime/types";
 import type { GenerationSettings } from "../agent/types";
 import type { AgentRegistry } from "../agent/agent-registry";
 import type { ContextProvider, ContextWindowOptions } from "../context/types";
+import type { SessionResumeInfo } from "../session/resume";
 import type { Session } from "../session/types";
 import type { ToolResult } from "../tools/types";
 import type { RunSubscriber } from "../events/types";
+import type { ToolCallPart } from "../messages/types";
 
 /** New input for a run: raw text (→ a user message), a single message, or several. */
 export type RunInput = string | Message | Message[];
@@ -66,6 +68,24 @@ export type RunEvent =
    * preserved across the handoff.
    */
   | { readonly type: "agent.handoff"; readonly from: string; readonly to: string }
+  | {
+      readonly type: "session.resumed";
+      readonly sessionId: string;
+      readonly messageCount: number;
+      readonly reconciledToolCalls: number;
+      readonly resume?: SessionResumeInfo;
+    }
+  | {
+      readonly type: "session.compacted";
+      readonly sessionId: string;
+      readonly removed: number;
+      readonly summaryAdded: boolean;
+    }
+  | {
+      readonly type: "session.expired";
+      readonly sessionId: string;
+      readonly reason: "ttl" | "idle" | "purged";
+    }
   /**
    * An extension event emitted by an optional module or a custom tool through
    * {@link RunBridge.emit}. `name` namespaces the event (e.g. `"shell.exec.start"`)
@@ -91,6 +111,27 @@ export interface RunBridge {
   reportUsage(usage: Usage): void;
 }
 
+/** Checkpointing behavior for durable mid-run progress. */
+export interface CheckpointPolicy {
+  readonly mode?: "step" | "off";
+  onCheckpoint?(checkpoint: RunCheckpoint): void | Promise<void>;
+}
+
+/** Snapshot reported after a completed provider step. */
+export interface RunCheckpoint {
+  readonly sessionId?: string;
+  readonly agent: string;
+  readonly step: number;
+  readonly newMessages: readonly Message[];
+  readonly pending: readonly ToolCallPart[];
+  readonly status: "running";
+}
+
+/** Resume reconciliation behavior for interrupted tool-call turns. */
+export interface ResumeOptions {
+  readonly danglingToolCalls?: "synthesize-error" | "reexecute" | "drop";
+}
+
 /** Options for a single {@link runAgent} call. */
 export interface RunOptions {
   /** New input for this run. */
@@ -99,6 +140,12 @@ export interface RunOptions {
   readonly messages?: Message[];
   /** Durable conversation: history is read before the run and new messages appended after it. */
   readonly session?: Session;
+  /** Durable mid-run checkpointing. Defaults to off. */
+  readonly checkpoint?: CheckpointPolicy;
+  /** Resume reconciliation policy. Defaults to true with synthesized tool errors. */
+  readonly resume?: ResumeOptions | boolean;
+  /** Model/provider compatibility policy for resumed sessions. Defaults to "warn". */
+  readonly modelCompatibility?: "warn" | "error" | "ignore";
   /** Context providers injected into the system layer at run time (after instructions, before history). */
   readonly context?: readonly ContextProvider[];
   /** Token budgeting for the messages sent to the provider (does not affect persisted/returned history). */

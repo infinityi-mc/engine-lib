@@ -13,6 +13,7 @@
  */
 
 import type { Usage } from "./providers/types";
+import type { SessionModelIdentity } from "./session/types";
 
 /** Structured validation issue attached to {@link SchemaValidationError}. */
 export interface SchemaIssue {
@@ -152,6 +153,25 @@ export class ContextWindowError extends AgentError {
     this.name = "ContextWindowError";
     if (options?.tokens !== undefined) this.tokens = options.tokens;
     if (options?.limit !== undefined) this.limit = options.limit;
+  }
+}
+
+/** A resumed session was previously associated with a different provider/model. */
+export class SessionModelMismatchError extends AgentError {
+  readonly expected: SessionModelIdentity;
+  readonly actual: SessionModelIdentity;
+
+  constructor(
+    message: string,
+    options: ErrorOptions & {
+      expected: SessionModelIdentity;
+      actual: SessionModelIdentity;
+    },
+  ) {
+    super(message, options);
+    this.name = "SessionModelMismatchError";
+    this.expected = options.expected;
+    this.actual = options.actual;
   }
 }
 

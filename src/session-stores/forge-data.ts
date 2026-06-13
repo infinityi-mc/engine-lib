@@ -6,10 +6,18 @@ import { createSqliteDialect, createSqliteDriver } from "@infinityi/forge/data/d
 import type { SqliteDriverOptions } from "@infinityi/forge/data/dialects/sqlite";
 
 import type { Message } from "../messages/types";
-import type { SessionState, SessionStore } from "../session/types";
+import { encodeSessionListCursor, normalizeSessionListOptions } from "../session/list";
+import { readResumeInfo } from "../session/resume";
+import type {
+  AppendResult,
+  SessionListOptions,
+  SessionListPage,
+  SessionState,
+  SessionStore,
+} from "../session/types";
 import { decodeMessages, decodeMetadata, encodeMessages, encodeMetadata, jsonSessionStoreCodec } from "./codec";
 import { assertTablePrefix } from "./ids";
-import type { SessionStoreCodec } from "./types";
+import type { PurgeExpiredOptions, SessionStoreCodec } from "./types";
 import { SESSION_STORE_SCHEMA_VERSION } from "./versioning";
 
 const DEFAULT_TABLE_PREFIX = "engine_session";
@@ -17,10 +25,19 @@ const DEFAULT_TABLE_PREFIX = "engine_session";
 interface SessionRow {
   readonly id: string;
   readonly metadata: string | null;
+  readonly expires_at?: string | null;
 }
 
 interface MessageRow {
   readonly payload: string;
+}
+
+interface ListRow {
+  readonly id: string;
+  readonly metadata: string | null;
+  readonly created_at: string;
+  readonly updated_at: string;
+  readonly message_count: number | string | bigint;
 }
 
 interface SequenceRow {
@@ -29,6 +46,10 @@ interface SequenceRow {
 
 interface VersionRow {
   readonly value: string;
+}
+
+interface IdRow {
+  readonly id: string;
 }
 
 interface StoreTables {
@@ -94,13 +115,15 @@ export class ForgeDataSessionStore implements SessionStore {
   private readonly db: Db<DatabaseSchema>;
   private readonly codec: SessionStoreCodec;
   private readonly tables: StoreTables;
+  private readonly tablePrefix: string;
   private readonly closeDbOnClose: boolean;
   private writeQueue: Promise<void> = Promise.resolve();
 
   constructor(options: ForgeDataSessionStoreOptions) {
     this.db = options.db;
     this.codec = options.codec ?? jsonSessionStoreCodec;
-    this.tables = tablesFor(options.db, options.tablePrefix ?? DEFAULT_TABLE_PREFIX);
+    this.tablePrefix = assertTablePrefix(options.tablePrefix ?? DEFAULT_TABLE_PREFIX);
+    this.tables = tablesFor(options.db, this.tablePrefix);
     this.closeDbOnClose = options.closeDbOnClose ?? false;
   }
 
@@ -111,9 +134,12 @@ export class ForgeDataSessionStore implements SessionStore {
         metadata text null,
         next_seq integer not null default 0,
         created_at text not null,
-        updated_at text not null
+        updated_at text not null,
+        expires_at text null
       )
     `).execute();
+
+    await this.addExpiresAtColumnIfNeeded();
 
     await this.db.raw(sql`
       create table if not exists ${this.tables.messages} (
@@ -123,6 +149,16 @@ export class ForgeDataSessionStore implements SessionStore {
         created_at text not null,
         primary key (session_id, seq)
       )
+    `).execute();
+
+    await this.db.raw(sql`
+      create index if not exists ${this.indexName("sessions_updated_at_idx")}
+      on ${this.tables.sessions} (updated_at)
+    `).execute();
+
+    await this.db.raw(sql`
+      create index if not exists ${this.indexName("sessions_expires_at_idx")}
+      on ${this.tables.sessions} (expires_at)
     `).execute();
 
     await this.db.raw(sql`
@@ -149,9 +185,12 @@ export class ForgeDataSessionStore implements SessionStore {
   async load(id: string): Promise<SessionState | undefined> {
     await this.writeQueue.catch(() => {});
     const session = await this.db.raw<SessionRow>(sql`
-      select id, metadata from ${this.tables.sessions} where id = ${id}
+      select id, metadata, expires_at from ${this.tables.sessions} where id = ${id}
     `).executeTakeFirst();
     if (session === undefined) return undefined;
+    if (session.expires_at !== null && session.expires_at !== undefined && Date.parse(session.expires_at) <= Date.now()) {
+      return undefined;
+    }
 
     const rows = await this.db.raw<MessageRow>(sql`
       select payload from ${this.tables.messages}
@@ -164,8 +203,8 @@ export class ForgeDataSessionStore implements SessionStore {
     return stateOf(id, messages, metadata);
   }
 
-  async append(id: string, messages: readonly Message[]): Promise<void> {
-    if (messages.length === 0) return;
+  async append(id: string, messages: readonly Message[]): Promise<AppendResult> {
+    if (messages.length === 0) return {};
     const encoded = await encodeMessages(this.codec, messages);
     const now = new Date().toISOString();
 
@@ -192,6 +231,77 @@ export class ForgeDataSessionStore implements SessionStore {
         `).execute();
       }
     }));
+    return {};
+  }
+
+  async setMetadata(id: string, metadata: Record<string, unknown>): Promise<void> {
+    const encoded = await encodeMetadata(this.codec, metadata);
+    const now = new Date().toISOString();
+
+    await this.enqueueWrite(async () => this.db.uow(async (tx) => {
+      await tx.raw(sql`
+        insert into ${this.tables.sessions} (id, metadata, next_seq, created_at, updated_at, expires_at)
+        values (${id}, ${encoded ?? null}, 0, ${now}, ${now}, null)
+        on conflict (id) do update set
+          metadata = excluded.metadata,
+          updated_at = excluded.updated_at
+      `).execute();
+    }));
+  }
+
+  async list(options?: SessionListOptions): Promise<SessionListPage> {
+    await this.writeQueue.catch(() => {});
+    const normalized = normalizeSessionListOptions(options, "recent");
+    const prefix = normalized.prefix;
+    const limit = normalized.limit + 1;
+    const offset = normalized.offset;
+    const pattern = prefix === undefined ? undefined : `${prefix}%`;
+
+    const rows = normalized.order === "id"
+      ? await this.db.raw<ListRow>(sql`
+          select s.id, s.metadata, s.created_at, s.updated_at, count(m.seq) as message_count
+          from ${this.tables.sessions} s
+          left join ${this.tables.messages} m on m.session_id = s.id
+          where (s.expires_at is null or s.expires_at > ${new Date().toISOString()})
+          ${pattern === undefined ? sql`` : sql`and s.id like ${pattern}`}
+          group by s.id, s.metadata, s.created_at, s.updated_at
+          order by s.id asc
+          limit ${limit} offset ${offset}
+        `).execute()
+      : await this.db.raw<ListRow>(sql`
+          select s.id, s.metadata, s.created_at, s.updated_at, count(m.seq) as message_count
+          from ${this.tables.sessions} s
+          left join ${this.tables.messages} m on m.session_id = s.id
+          where (s.expires_at is null or s.expires_at > ${new Date().toISOString()})
+          ${pattern === undefined ? sql`` : sql`and s.id like ${pattern}`}
+          group by s.id, s.metadata, s.created_at, s.updated_at
+          order by s.updated_at desc, s.id asc
+          limit ${limit} offset ${offset}
+        `).execute();
+
+    const pageRows = rows.rows.slice(0, normalized.limit);
+    return {
+      sessions: await Promise.all(pageRows.map(async (row) => {
+        const metadata = await decodeMetadata(this.codec, row.metadata);
+        const resume = readResumeInfo(metadata);
+        return {
+          id: row.id,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+          messageCount: toNumber(row.message_count),
+          ...(resume !== undefined ? { resume } : {}),
+        };
+      })),
+      ...(rows.rows.length > normalized.limit
+        ? {
+            cursor: encodeSessionListCursor({
+              ...(normalized.prefix !== undefined ? { prefix: normalized.prefix } : {}),
+              order: normalized.order,
+              offset: normalized.offset + normalized.limit,
+            }),
+          }
+        : {}),
+    };
   }
 
   async save(state: SessionState): Promise<void> {
@@ -229,6 +339,36 @@ export class ForgeDataSessionStore implements SessionStore {
     }));
   }
 
+  async setExpiry(id: string, ttlMs: number): Promise<void> {
+    if (!Number.isFinite(ttlMs) || ttlMs < 0) {
+      throw new Error("ttlMs must be a non-negative finite number");
+    }
+    const now = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + ttlMs).toISOString();
+    await this.enqueueWrite(async () => this.db.uow(async (tx) => {
+      await tx.raw(sql`
+        insert into ${this.tables.sessions} (id, metadata, next_seq, created_at, updated_at, expires_at)
+        values (${id}, null, 0, ${now}, ${now}, ${expiresAt})
+        on conflict (id) do update set expires_at = excluded.expires_at
+      `).execute();
+    }));
+  }
+
+  async purgeExpired(options: PurgeExpiredOptions = {}): Promise<string[]> {
+    const now = new Date().toISOString();
+    const idleCutoff = options.maxIdleMs === undefined
+      ? undefined
+      : new Date(Date.now() - options.maxIdleMs).toISOString();
+
+    if (idleCutoff === undefined) {
+      return this.purgeWhere(sql`expires_at is not null and expires_at <= ${now}`, "ttl", options);
+    }
+
+    return this.purgeWhere(sql`
+      (expires_at is not null and expires_at <= ${now}) or updated_at <= ${idleCutoff}
+    `, "purged", options);
+  }
+
   async close(): Promise<void> {
     await this.writeQueue.catch(() => {});
     if (this.closeDbOnClose) await this.db.shutdown();
@@ -238,6 +378,49 @@ export class ForgeDataSessionStore implements SessionStore {
     const run = this.writeQueue.catch(() => {}).then(task);
     this.writeQueue = run.then(() => undefined, () => undefined);
     return run;
+  }
+
+  private indexName(name: string): SqlFragment {
+    return raw(this.db.dialect.quoteIdentifier(`${this.tablePrefix}_${name}`));
+  }
+
+  private async addExpiresAtColumnIfNeeded(): Promise<void> {
+    try {
+      await this.db.raw(sql`
+        alter table ${this.tables.sessions} add column expires_at text null
+      `).execute();
+    } catch (error) {
+      const cause = error instanceof Error ? error.cause : undefined;
+      const message = [
+        error instanceof Error ? error.message : String(error),
+        cause instanceof Error ? cause.message : "",
+      ].join(" ").toLowerCase();
+      if (!message.includes("duplicate") && !message.includes("exists")) throw error;
+    }
+  }
+
+  private async purgeWhere(
+    predicate: SqlFragment,
+    defaultReason: "ttl" | "idle" | "purged",
+    options: PurgeExpiredOptions,
+  ): Promise<string[]> {
+    const ids = await this.enqueueWrite(async () => this.db.uow(async (tx) => {
+      const rows = await tx.raw<IdRow>(sql`
+        select id from ${this.tables.sessions} where ${predicate}
+      `).execute();
+      const purgedIds = rows.rows.map((row) => row.id);
+      if (purgedIds.length === 0) return purgedIds;
+      for (const id of purgedIds) {
+        await tx.raw(sql`delete from ${this.tables.messages} where session_id = ${id}`).execute();
+      }
+      await tx.raw(sql`delete from ${this.tables.sessions} where ${predicate}`).execute();
+      return purgedIds;
+    }));
+
+    for (const id of ids) {
+      options.onEvent?.({ type: "session.expired", sessionId: id, reason: defaultReason });
+    }
+    return ids;
   }
 }
 

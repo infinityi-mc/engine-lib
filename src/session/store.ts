@@ -10,11 +10,22 @@
  */
 
 import type { Message } from "../messages/types";
-import type { SessionState, SessionStore } from "./types";
+import { readResumeInfo } from "./resume";
+import { encodeSessionListCursor, normalizeSessionListOptions } from "./list";
+import type {
+  AppendResult,
+  SessionListOptions,
+  SessionListPage,
+  SessionState,
+  SessionStore,
+} from "./types";
 
 interface Entry {
   messages: Message[];
   metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt?: string;
 }
 
 /** A process-local {@link SessionStore} backed by a `Map`. */
@@ -24,6 +35,7 @@ export class InMemorySessionStore implements SessionStore {
   load(id: string): Promise<SessionState | undefined> {
     const entry = this.entries.get(id);
     if (entry === undefined) return Promise.resolve(undefined);
+    if (isExpired(entry)) return Promise.resolve(undefined);
     const state: SessionState = {
       id,
       messages: [...entry.messages],
@@ -32,20 +44,77 @@ export class InMemorySessionStore implements SessionStore {
     return Promise.resolve(state);
   }
 
-  append(id: string, messages: readonly Message[]): Promise<void> {
+  append(id: string, messages: readonly Message[]): Promise<AppendResult> {
+    if (messages.length === 0) return Promise.resolve({});
+    const now = new Date().toISOString();
     const entry = this.entries.get(id);
     if (entry === undefined) {
-      this.entries.set(id, { messages: [...messages] });
+      this.entries.set(id, { messages: [...messages], createdAt: now, updatedAt: now });
     } else {
       entry.messages.push(...messages);
+      entry.updatedAt = now;
+    }
+    return Promise.resolve({});
+  }
+
+  setMetadata(id: string, metadata: Record<string, unknown>): Promise<void> {
+    const now = new Date().toISOString();
+    const entry = this.entries.get(id);
+    if (entry === undefined) {
+      this.entries.set(id, {
+        messages: [],
+        metadata: { ...metadata },
+        createdAt: now,
+        updatedAt: now,
+      });
+    } else {
+      entry.metadata = { ...metadata };
+      entry.updatedAt = now;
     }
     return Promise.resolve();
   }
 
+  list(options?: SessionListOptions): Promise<SessionListPage> {
+    const normalized = normalizeSessionListOptions(options, "recent");
+    const sessions = [...this.entries.entries()]
+      .filter(([id, entry]) => !isExpired(entry) && (normalized.prefix === undefined || id.startsWith(normalized.prefix)))
+      .sort(([aId, a], [bId, b]) => {
+        if (normalized.order === "id") return aId.localeCompare(bId);
+        const byRecent = b.updatedAt.localeCompare(a.updatedAt);
+        return byRecent === 0 ? aId.localeCompare(bId) : byRecent;
+      });
+
+    const page = sessions.slice(normalized.offset, normalized.offset + normalized.limit);
+    const hasMore = normalized.offset + normalized.limit < sessions.length;
+    return Promise.resolve({
+      sessions: page.map(([id, entry]) => ({
+        id,
+        createdAt: entry.createdAt,
+        updatedAt: entry.updatedAt,
+        messageCount: entry.messages.length,
+        ...(readResumeInfo(entry.metadata) !== undefined ? { resume: readResumeInfo(entry.metadata) } : {}),
+      })),
+      ...(hasMore
+        ? {
+            cursor: encodeSessionListCursor({
+              prefix: normalized.prefix,
+              order: normalized.order,
+              offset: normalized.offset + normalized.limit,
+            }),
+          }
+        : {}),
+    });
+  }
+
   save(state: SessionState): Promise<void> {
+    const now = new Date().toISOString();
+    const existing = this.entries.get(state.id);
     this.entries.set(state.id, {
       messages: [...state.messages],
       ...(state.metadata !== undefined ? { metadata: { ...state.metadata } } : {}),
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+      ...(existing?.expiresAt !== undefined ? { expiresAt: existing.expiresAt } : {}),
     });
     return Promise.resolve();
   }
@@ -54,4 +123,51 @@ export class InMemorySessionStore implements SessionStore {
     this.entries.delete(id);
     return Promise.resolve();
   }
+
+  setExpiry(id: string, ttlMs: number): Promise<void> {
+    if (!Number.isFinite(ttlMs) || ttlMs < 0) {
+      return Promise.reject(new Error("ttlMs must be a non-negative finite number"));
+    }
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const expiresAt = new Date(now.getTime() + ttlMs).toISOString();
+    const entry = this.entries.get(id);
+    if (entry === undefined) {
+      this.entries.set(id, {
+        messages: [],
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        expiresAt,
+      });
+    } else {
+      entry.expiresAt = expiresAt;
+    }
+    return Promise.resolve();
+  }
+
+  purgeExpired(options: {
+    readonly maxIdleMs?: number;
+    readonly onEvent?: (event: { readonly type: "session.expired"; readonly sessionId: string; readonly reason: "ttl" | "idle" | "purged" }) => void;
+  } = {}): Promise<string[]> {
+    const now = Date.now();
+    const purged: string[] = [];
+    for (const [id, entry] of this.entries) {
+      const ttlExpired = entry.expiresAt !== undefined && Date.parse(entry.expiresAt) <= now;
+      const idleExpired =
+        options.maxIdleMs !== undefined && Date.parse(entry.updatedAt) <= now - options.maxIdleMs;
+      if (!ttlExpired && !idleExpired) continue;
+      this.entries.delete(id);
+      purged.push(id);
+      options.onEvent?.({
+        type: "session.expired",
+        sessionId: id,
+        reason: ttlExpired ? "ttl" : "idle",
+      });
+    }
+    return Promise.resolve(purged);
+  }
+}
+
+function isExpired(entry: Entry): boolean {
+  return entry.expiresAt !== undefined && Date.parse(entry.expiresAt) <= Date.now();
 }

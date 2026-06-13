@@ -27,11 +27,14 @@ import {
   ExecutionError,
   MaxHandoffsExceededError,
   MaxStepsExceededError,
+  SessionModelMismatchError,
   type ProviderError,
 } from "../errors";
 import { system, user } from "../messages/factory";
-import type { Message, TextPart } from "../messages/types";
+import type { Message, TextPart, ToolCallPart } from "../messages/types";
 import type { CompletionRequest, CompletionResult, FinishReason, Usage } from "../providers/types";
+import { RESUME_SCHEMA_VERSION, readResumeInfo, withResumeInfo } from "../session/resume";
+import type { AppendResult, SessionModelIdentity } from "../session/types";
 import { StreamAccumulator } from "../providers/stream";
 import type { EngineContext } from "../runtime/types";
 import { resolveContext } from "../context/providers";
@@ -51,6 +54,7 @@ import type {
   RunInput,
   RunOptions,
   RunResult,
+  RunCheckpoint,
   StreamingRunOptions,
 } from "./types";
 import { addUsage, emptyUsage } from "./usage";
@@ -75,6 +79,70 @@ function extractText(message: Message): string {
     .filter((p): p is TextPart => p.type === "text")
     .map((p) => p.text)
     .join("");
+}
+
+function toolCallParts(message: Message): ToolCallPart[] {
+  return message.content.filter((part): part is ToolCallPart => part.type === "tool_call");
+}
+
+function toolResultIds(messages: readonly Message[]): Set<string> {
+  const ids = new Set<string>();
+  for (const message of messages) {
+    for (const part of message.content) {
+      if (part.type === "tool_result") ids.add(part.toolCallId);
+    }
+  }
+  return ids;
+}
+
+function trailingDanglingToolCalls(messages: readonly Message[]): {
+  readonly assistantIndex: number;
+  readonly calls: readonly ToolCallPart[];
+} | undefined {
+  let index = messages.length - 1;
+  while (index >= 0 && messages[index]!.role === "tool") index -= 1;
+  if (index < 0) return undefined;
+  const assistant = messages[index]!;
+  if (assistant.role !== "assistant") return undefined;
+  const calls = toolCallParts(assistant);
+  if (calls.length === 0) return undefined;
+  const results = toolResultIds(messages.slice(index + 1));
+  const dangling = calls.filter((call) => !results.has(call.id));
+  return dangling.length === 0 ? undefined : { assistantIndex: index, calls: dangling };
+}
+
+function checkpointEvent(result: AppendResult, sessionId: string): RunEvent | undefined {
+  return result.compacted === true
+    ? {
+        type: "session.compacted",
+        sessionId,
+        removed: result.removed ?? 0,
+        summaryAdded: result.summaryAdded === true,
+      }
+    : undefined;
+}
+
+function resolvedIdentity(agent: AgentDefinition, opts: RunOptions): SessionModelIdentity {
+  const provider = agent.provider;
+  return {
+    model: (opts.generation?.model ?? agent.generation?.model) ?? provider.defaultModel,
+    provider: provider.name,
+  };
+}
+
+function identitiesMismatch(
+  expected: SessionModelIdentity,
+  actual: SessionModelIdentity,
+): boolean {
+  return (
+    (expected.model !== undefined && actual.model !== undefined && expected.model !== actual.model) ||
+    (expected.provider !== undefined && actual.provider !== undefined && expected.provider !== actual.provider)
+  );
+}
+
+function checkpointFailure(error: unknown): ExecutionError {
+  const message = error instanceof Error ? error.message : String(error);
+  return new ExecutionError(`checkpoint callback failed: ${message}`, error instanceof Error ? { cause: error } : undefined);
 }
 
 /** Wrap an unknown throw as an {@link AgentError} (passing AgentErrors through). */
@@ -246,6 +314,51 @@ async function* executeAgent(
   // Hoisted above the try so the catch can stamp tokens-consumed-so-far onto
   // the error it throws.
   let usage = emptyUsage();
+  const checkpointMode = opts.checkpoint?.mode === "step";
+  let interruptedMarked = false;
+  let startingTotalUsage = emptyUsage();
+  let loadedResume = undefined as ReturnType<typeof readResumeInfo>;
+
+  const writeResumeStatus = async (
+    status: "completed" | "failed" | "interrupted",
+    usageSnapshot: Usage,
+  ): Promise<void> => {
+    const session = opts.session;
+    if (session === undefined) return;
+    const currentMetadata = await session.getMetadata() ?? {};
+    const identity = resolvedIdentity(active.agent, opts);
+    await session.setMetadata(withResumeInfo(currentMetadata, {
+      schemaVersion: RESUME_SCHEMA_VERSION,
+      agentName: active.agent.name,
+      ...(identity.model !== undefined ? { model: identity.model } : {}),
+      ...(identity.provider !== undefined ? { provider: identity.provider } : {}),
+      lastActiveAt: new Date().toISOString(),
+      lastRunStatus: status,
+      totalUsage: addUsage(startingTotalUsage, usageSnapshot),
+    }));
+  };
+
+  const runCheckpointCallback = async (
+    step: number,
+    newMessages: readonly Message[],
+    pending: readonly ToolCallPart[] = [],
+  ): Promise<void> => {
+    const callback = opts.checkpoint?.onCheckpoint;
+    if (callback === undefined) return;
+    const checkpoint: RunCheckpoint = {
+      ...(opts.session !== undefined ? { sessionId: opts.session.id } : {}),
+      agent: active.agent.name,
+      step,
+      newMessages: [...newMessages],
+      pending: [...pending],
+      status: "running",
+    };
+    try {
+      await callback(checkpoint);
+    } catch (error) {
+      throw checkpointFailure(error);
+    }
+  };
 
   try {
     throwIfAborted(opts.signal);
@@ -257,9 +370,105 @@ async function* executeAgent(
     // failing context provider or session-store load is wrapped as an AgentError,
     // surfaced as an `error` event, and routed through the onError hook.
     const instructions = await resolveInstructions(agent, engineCtx);
-    const prior =
-      opts.session !== undefined ? await opts.session.messages() : (opts.messages ?? []);
+    const session = opts.session;
+    let prior = session !== undefined ? await session.messages() : (opts.messages ?? []);
+    const sessionMetadata = session !== undefined ? await session.getMetadata() : undefined;
+    loadedResume = readResumeInfo(sessionMetadata);
+    startingTotalUsage = loadedResume?.totalUsage ?? emptyUsage();
+
+    if (session !== undefined) {
+      const expectedModel = session.expectedModel ?? loadedResume?.model;
+      const expectedProvider = session.expectedProvider ?? loadedResume?.provider;
+      const expected: SessionModelIdentity = {
+        ...(expectedModel !== undefined ? { model: expectedModel } : {}),
+        ...(expectedProvider !== undefined ? { provider: expectedProvider } : {}),
+      };
+      const actual = resolvedIdentity(active.agent, opts);
+      if (identitiesMismatch(expected, actual)) {
+        const policy = opts.modelCompatibility ?? "warn";
+        if (policy === "error") {
+          throw new SessionModelMismatchError("session model/provider mismatch", {
+            expected,
+            actual,
+          });
+        }
+        if (policy === "warn") {
+          engineCtx.logger?.warn("session model/provider mismatch", {
+            sessionId: session.id,
+            expected,
+            actual,
+          });
+          yield {
+            type: "custom",
+            name: "session.model_mismatch",
+            data: { sessionId: session.id, expected, actual },
+          };
+        }
+      }
+    }
+
+    if (session !== undefined && opts.resume !== false) {
+      const dangling = trailingDanglingToolCalls(prior);
+      if (dangling !== undefined) {
+        const resumeOptions = typeof opts.resume === "object" ? opts.resume : undefined;
+        const strategy = resumeOptions?.danglingToolCalls ?? "synthesize-error";
+        let reconciled = 0;
+
+        if (strategy === "drop") {
+          reconciled = dangling.calls.length;
+          prior = prior.slice(0, dangling.assistantIndex);
+        } else if (strategy === "synthesize-error") {
+          const synthesized = dangling.calls.map((call) => toToolResultMessage(call.id, {
+            ok: false,
+            error: `Prior run was interrupted before tool "${call.name}" (${call.id}) completed.`,
+          }));
+          if (synthesized.length > 0) {
+            const appendResult = await session.append(synthesized);
+            const event = checkpointEvent(appendResult, session.id);
+            if (event !== undefined) yield event;
+            prior = [...prior, ...synthesized];
+          }
+          reconciled = synthesized.length;
+        } else {
+          const toolMessages: Message[] = [];
+          for (const call of dangling.calls) {
+            yield { type: "tool.call", id: call.id, name: call.name, arguments: call.arguments };
+            const tool = active.registry.get(call.name);
+            if (tool !== undefined) await active.agent.hooks?.onToolCall?.({ call, tool }, engineCtx);
+            const outcome = await runOneTool(call);
+            usage = addUsage(usage, outcome.usage);
+            for (const childEvent of outcome.events) yield childEvent;
+            yield { type: "tool.result", id: call.id, name: call.name, result: outcome.result };
+            await active.agent.hooks?.onToolResult?.({ call, result: outcome.result }, engineCtx);
+            const message = toToolResultMessage(call.id, outcome.result);
+            toolMessages.push(message);
+            yield { type: "message", message };
+          }
+          if (toolMessages.length > 0) {
+            const appendResult = await session.append(toolMessages);
+            const event = checkpointEvent(appendResult, session.id);
+            if (event !== undefined) yield event;
+            prior = [...prior, ...toolMessages];
+          }
+          reconciled = toolMessages.length;
+        }
+
+        yield {
+          type: "session.resumed",
+          sessionId: session.id,
+          messageCount: prior.length,
+          reconciledToolCalls: reconciled,
+          ...(loadedResume !== undefined ? { resume: loadedResume } : {}),
+        };
+      }
+    }
+
     const inputMessages = normalizeInput(opts.input);
+    if (checkpointMode && session !== undefined && inputMessages.length > 0) {
+      const appendResult = await session.append(inputMessages);
+      const event = checkpointEvent(appendResult, session.id);
+      if (event !== undefined) yield event;
+    }
     const contextMessages = await resolveContext(opts.context, engineCtx, {
       agentName: agent.name,
       ...(instructions !== undefined ? { instructions } : {}),
@@ -349,8 +558,19 @@ async function* executeAgent(
       yield { type: "message", message: result.message };
       await active.agent.hooks?.onStep?.({ step: steps, result }, engineCtx);
 
+      if (checkpointMode && opts.session !== undefined) {
+        const appendResult = await opts.session.append([result.message]);
+        const event = checkpointEvent(appendResult, opts.session.id);
+        if (event !== undefined) yield event;
+        if (!interruptedMarked) {
+          await writeResumeStatus("interrupted", usage);
+          interruptedMarked = true;
+        }
+      }
+
       const calls = result.toolCalls;
       if (calls.length === 0) {
+        await runCheckpointCallback(steps, newMessages);
         const output = extractText(finalMessage);
         const runResult: RunResult = {
           output,
@@ -362,7 +582,12 @@ async function* executeAgent(
           agent: active.agent.name,
           handoffs: [...handoffTrail],
         };
-        await opts.session?.append(newMessages);
+        if (!checkpointMode && opts.session !== undefined) {
+          const appendResult = await opts.session.append(newMessages);
+          const event = checkpointEvent(appendResult, opts.session.id);
+          if (event !== undefined) yield event;
+        }
+        await writeResumeStatus("completed", usage);
         yield { type: "run.finish", result: runResult };
         await active.agent.hooks?.onFinish?.({ output, usage }, engineCtx);
         return runResult;
@@ -399,10 +624,12 @@ async function* executeAgent(
         yield { type: "tool.result", id: call.id, name: call.name, result: toolResult };
         await active.agent.hooks?.onToolResult?.({ call, result: toolResult }, engineCtx);
       }
+      const stepToolMessages: Message[] = [];
       for (const { call, outcome } of settled) {
         const message = toToolResultMessage(call.id, outcome.result);
         messages.push(message);
         newMessages.push(message);
+        stepToolMessages.push(message);
         yield { type: "message", message };
       }
 
@@ -424,6 +651,7 @@ async function* executeAgent(
         const ackMessage = toToolResultMessage(call.id, ack);
         messages.push(ackMessage);
         newMessages.push(ackMessage);
+        stepToolMessages.push(ackMessage);
         yield { type: "tool.result", id: call.id, name: call.name, result: ack };
         yield { type: "message", message: ackMessage };
 
@@ -443,6 +671,13 @@ async function* executeAgent(
           messages.push(system(nextInstructions));
         }
       }
+
+      if (checkpointMode && opts.session !== undefined && stepToolMessages.length > 0) {
+        const appendResult = await opts.session.append(stepToolMessages);
+        const event = checkpointEvent(appendResult, opts.session.id);
+        if (event !== undefined) yield event;
+      }
+      await runCheckpointCallback(steps, newMessages);
     }
 
     throw new MaxStepsExceededError(`exceeded max steps (${maxSteps})`, { steps: maxSteps });
@@ -452,6 +687,7 @@ async function* executeAgent(
     // run, via asTool) don't lose them. Don't clobber a usage already stamped
     // by a nested run.
     if (agentError.usage === undefined) agentError.usage = usage;
+    await writeResumeStatus("failed", usage).catch(() => {});
     yield { type: "error", error: agentError };
     try {
       await active.agent.hooks?.onError?.({ error: agentError }, engineCtx);

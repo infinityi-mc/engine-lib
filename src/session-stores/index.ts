@@ -10,21 +10,31 @@
  */
 
 export { jsonSessionStoreCodec } from "./codec";
+export { SUMMARY_METADATA_KEY, summarizingCompactor } from "./compactor";
 export { ForgeDataSessionStore, createPostgresSessionStore, createSqliteSessionStore } from "./forge-data";
 export { withSessionStoreHooks } from "./hooks";
 export { FilesystemJsonlSessionStore } from "./jsonl";
 export { RedisSessionStore } from "./redis";
-export { SESSION_STORE_SCHEMA_VERSION, isCloseableSessionStore, isVersionedSessionStore, migrateSessionStore } from "./versioning";
+export {
+  SESSION_STORE_SCHEMA_VERSION,
+  isCloseableSessionStore,
+  isExpiringSessionStore,
+  isVersionedSessionStore,
+  migrateSessionStore,
+} from "./versioning";
 
 export type {
   CreatePostgresSessionStoreOptions,
   CreateSqliteSessionStoreOptions,
   ForgeDataSessionStoreOptions,
 } from "./forge-data";
+export type { SummarizingCompactorOptions } from "./compactor";
 export type { FilesystemJsonlSessionStoreOptions } from "./jsonl";
 export type { RedisSessionStoreClient, RedisSessionStoreOptions, RedisSessionStoreTransaction } from "./redis";
 export type {
   CloseableSessionStore,
+  ExpiringSessionStore,
+  PurgeExpiredOptions,
   SessionArchiveRecord,
   SessionArchiver,
   SessionCompactionResult,

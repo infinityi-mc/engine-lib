@@ -13,8 +13,10 @@ import {
 import type { Message } from "../src/messages/index";
 import { user } from "../src/messages/index";
 import type {
+  AppendResult,
   CreateSessionOptions,
   Session,
+  SessionListPage,
   SessionState,
   SessionStore,
 } from "../src/session/index";
@@ -27,7 +29,15 @@ function assertSessionAndContextTypes(): void {
       return undefined;
     }
 
-    async append(_id: string, _messages: readonly Message[]): Promise<void> {}
+    async append(_id: string, _messages: readonly Message[]): Promise<AppendResult> {
+      return {};
+    }
+
+    async setMetadata(_id: string, _metadata: Record<string, unknown>): Promise<void> {}
+
+    async list(): Promise<SessionListPage> {
+      return { sessions: [] };
+    }
 
     async save(_state: SessionState): Promise<void> {}
 
@@ -126,8 +136,15 @@ function assertSessionAndContextTypes(): void {
   };
   void strategyCtx;
 
-  // @ts-expect-error SessionStore.append receives a readonly message array.
-  const badStore: SessionStore = { load: async () => undefined, append: async (_id: string, _messages: string[]) => {}, save: async () => {}, delete: async () => {} };
+  const badStore: SessionStore = {
+    load: async () => undefined,
+    // @ts-expect-error SessionStore.append receives a readonly message array.
+    append: async (_id: string, _messages: string[]) => ({}),
+    setMetadata: async () => {},
+    list: async () => ({ sessions: [] }),
+    save: async () => {},
+    delete: async () => {},
+  };
   // @ts-expect-error maxTokens is required for context-window options.
   const badWindow: ContextWindowOptions = { strategy: syncStrategy };
   void [badStore, badWindow];

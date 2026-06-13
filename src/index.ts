@@ -31,6 +31,7 @@ export {
   MaxStepsExceededError,
   ProviderError,
   SchemaValidationError,
+  SessionModelMismatchError,
   ToolError,
   ToolValidationError,
 } from "./errors";
@@ -118,7 +119,10 @@ export { runAgent } from "./execution/index";
 export type {
   AnyRunOptions,
   BufferedRunOptions,
+  CheckpointPolicy,
+  ResumeOptions,
   RunBridge,
+  RunCheckpoint,
   RunEvent,
   RunHandle,
   RunInput,
@@ -128,12 +132,28 @@ export type {
 } from "./execution/index";
 
 // Session (Phase 5)
-export { createSession, InMemorySessionStore } from "./session/index";
+export {
+  RESUME_METADATA_KEY,
+  RESUME_SCHEMA_VERSION,
+  createSession,
+  InMemorySessionStore,
+  readResumeInfo,
+  withResumeInfo,
+} from "./session/index";
 export type {
+  AppendResult,
   CreateSessionOptions,
   Session,
+  SessionListItem,
+  SessionListOptions,
+  SessionListOrder,
+  SessionListPage,
+  SessionModelIdentity,
+  SessionResumeInfo,
+  SessionRunStatus,
   SessionState,
   SessionStore,
+  SessionUsage,
 } from "./session/index";
 
 // Context (Phase 5)
@@ -142,6 +162,7 @@ export {
   staticContext,
   summarizeOldest,
   truncateOldest,
+  truncateToolAware,
 } from "./context/index";
 export type {
   ContextItem,

@@ -2,10 +2,18 @@ import { appendFile, mkdir, readdir, readFile, rename, rm, writeFile } from "nod
 import { join } from "node:path";
 
 import type { Message } from "../messages/types";
-import type { SessionState, SessionStore } from "../session/types";
+import { encodeSessionListCursor, normalizeSessionListOptions } from "../session/list";
+import { readResumeInfo } from "../session/resume";
+import type {
+  AppendResult,
+  SessionListOptions,
+  SessionListPage,
+  SessionState,
+  SessionStore,
+} from "../session/types";
 import { decodeMessages, decodeMetadata, encodeMessages, encodeMetadata, jsonSessionStoreCodec } from "./codec";
 import { sessionFileName } from "./ids";
-import type { SessionStoreCodec } from "./types";
+import type { PurgeExpiredOptions, SessionStoreCodec } from "./types";
 import { SESSION_STORE_SCHEMA_VERSION } from "./versioning";
 
 export interface FilesystemJsonlSessionStoreOptions {
@@ -13,11 +21,16 @@ export interface FilesystemJsonlSessionStoreOptions {
   readonly codec?: SessionStoreCodec;
 }
 
-type JsonlRecord = JsonlAppendRecord | JsonlSaveRecord | JsonlDeleteRecord;
+type JsonlRecord =
+  | JsonlAppendRecord
+  | JsonlSaveRecord
+  | JsonlMetadataRecord
+  | JsonlExpiryRecord
+  | JsonlDeleteRecord;
 
 interface JsonlBaseRecord {
   readonly version: typeof SESSION_STORE_SCHEMA_VERSION;
-  readonly op: "append" | "save" | "delete";
+  readonly op: "append" | "save" | "metadata" | "expiry" | "delete";
   readonly id: string;
   readonly at: string;
 }
@@ -33,6 +46,16 @@ interface JsonlSaveRecord extends JsonlBaseRecord {
   readonly metadata?: string;
 }
 
+interface JsonlMetadataRecord extends JsonlBaseRecord {
+  readonly op: "metadata";
+  readonly metadata?: string;
+}
+
+interface JsonlExpiryRecord extends JsonlBaseRecord {
+  readonly op: "expiry";
+  readonly expiresAt: string;
+}
+
 interface JsonlDeleteRecord extends JsonlBaseRecord {
   readonly op: "delete";
 }
@@ -40,6 +63,9 @@ interface JsonlDeleteRecord extends JsonlBaseRecord {
 interface ReplayedState {
   readonly id: string | undefined;
   readonly state: SessionState | undefined;
+  readonly createdAt?: string;
+  readonly updatedAt?: string;
+  readonly expiresAt?: string;
 }
 
 function isMissingFile(error: unknown): boolean {
@@ -79,8 +105,8 @@ export class FilesystemJsonlSessionStore implements SessionStore {
     return (await this.replayFile(this.pathFor(id), id)).state;
   }
 
-  async append(id: string, messages: readonly Message[]): Promise<void> {
-    if (messages.length === 0) return;
+  async append(id: string, messages: readonly Message[]): Promise<AppendResult> {
+    if (messages.length === 0) return {};
     await this.enqueue(id, async () => {
       const record: JsonlAppendRecord = {
         version: SESSION_STORE_SCHEMA_VERSION,
@@ -91,6 +117,71 @@ export class FilesystemJsonlSessionStore implements SessionStore {
       };
       await this.appendRecord(id, record);
     });
+    return {};
+  }
+
+  async setMetadata(id: string, metadata: Record<string, unknown>): Promise<void> {
+    await this.enqueue(id, async () => {
+      const encoded = await encodeMetadata(this.codec, metadata);
+      const record: JsonlMetadataRecord = {
+        version: SESSION_STORE_SCHEMA_VERSION,
+        op: "metadata",
+        id,
+        at: new Date().toISOString(),
+        ...(encoded !== undefined ? { metadata: encoded } : {}),
+      };
+      await this.appendRecord(id, record);
+    });
+  }
+
+  async list(options?: SessionListOptions): Promise<SessionListPage> {
+    await this.migrate();
+    const normalized = normalizeSessionListOptions(options, "recent");
+    const entries = await readdir(this.directory, { withFileTypes: true });
+    const rows: Array<{
+      id: string;
+      createdAt?: string;
+      updatedAt?: string;
+      messageCount: number;
+      resume?: ReturnType<typeof readResumeInfo>;
+    }> = [];
+
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+      const replayed = await this.replayFile(join(this.directory, entry.name));
+      if (replayed.id === undefined || replayed.state === undefined) continue;
+      if (isExpired(replayed.expiresAt)) continue;
+      if (normalized.prefix !== undefined && !replayed.id.startsWith(normalized.prefix)) continue;
+      const resume = readResumeInfo(replayed.state);
+      rows.push({
+        id: replayed.id,
+        ...(replayed.createdAt !== undefined ? { createdAt: replayed.createdAt } : {}),
+        ...(replayed.updatedAt !== undefined ? { updatedAt: replayed.updatedAt } : {}),
+        messageCount: replayed.state.messages.length,
+        ...(resume !== undefined ? { resume } : {}),
+      });
+    }
+
+    rows.sort((a, b) => {
+      if (normalized.order === "id") return a.id.localeCompare(b.id);
+      const byRecent = (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "");
+      return byRecent === 0 ? a.id.localeCompare(b.id) : byRecent;
+    });
+
+    const page = rows.slice(normalized.offset, normalized.offset + normalized.limit);
+    const hasMore = normalized.offset + normalized.limit < rows.length;
+    return {
+      sessions: page,
+      ...(hasMore
+        ? {
+            cursor: encodeSessionListCursor({
+              ...(normalized.prefix !== undefined ? { prefix: normalized.prefix } : {}),
+              order: normalized.order,
+              offset: normalized.offset + normalized.limit,
+            }),
+          }
+        : {}),
+    };
   }
 
   async save(state: SessionState): Promise<void> {
@@ -117,6 +208,49 @@ export class FilesystemJsonlSessionStore implements SessionStore {
         at: new Date().toISOString(),
       });
     });
+  }
+
+  async setExpiry(id: string, ttlMs: number): Promise<void> {
+    if (!Number.isFinite(ttlMs) || ttlMs < 0) {
+      throw new Error("ttlMs must be a non-negative finite number");
+    }
+    await this.enqueue(id, async () => {
+      await this.appendRecord(id, {
+        version: SESSION_STORE_SCHEMA_VERSION,
+        op: "expiry",
+        id,
+        at: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + ttlMs).toISOString(),
+      });
+    });
+  }
+
+  async purgeExpired(options: PurgeExpiredOptions = {}): Promise<string[]> {
+    await this.migrate();
+    const now = Date.now();
+    const idleCutoff = options.maxIdleMs === undefined ? undefined : now - options.maxIdleMs;
+    const purged: string[] = [];
+    const entries = await readdir(this.directory, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+      const path = join(this.directory, entry.name);
+      const replayed = await this.replayFile(path, undefined, true);
+      if (replayed.id === undefined || replayed.state === undefined) continue;
+      const ttlExpired = isExpired(replayed.expiresAt);
+      const idleExpired =
+        idleCutoff !== undefined &&
+        replayed.updatedAt !== undefined &&
+        Date.parse(replayed.updatedAt) <= idleCutoff;
+      if (!ttlExpired && !idleExpired) continue;
+      await rm(path, { force: true });
+      purged.push(replayed.id);
+      options.onEvent?.({
+        type: "session.expired",
+        sessionId: replayed.id,
+        reason: ttlExpired ? "ttl" : "idle",
+      });
+    }
+    return purged;
   }
 
   async compact(id?: string): Promise<void> {
@@ -158,7 +292,11 @@ export class FilesystemJsonlSessionStore implements SessionStore {
     await appendFile(this.pathFor(id), `${JSON.stringify(record)}\n`, "utf8");
   }
 
-  private async replayFile(path: string, expectedId?: string): Promise<ReplayedState> {
+  private async replayFile(
+    path: string,
+    expectedId?: string,
+    includeExpired = false,
+  ): Promise<ReplayedState> {
     let text: string;
     try {
       text = await readFile(path, "utf8");
@@ -171,6 +309,9 @@ export class FilesystemJsonlSessionStore implements SessionStore {
     let messages: Message[] = [];
     let metadata: Readonly<Record<string, unknown>> | undefined;
     let exists = false;
+    let createdAt: string | undefined;
+    let updatedAt: string | undefined;
+    let expiresAt: string | undefined;
 
     for (const rawLine of text.split(/\r?\n/)) {
       const line = rawLine.trim();
@@ -178,23 +319,34 @@ export class FilesystemJsonlSessionStore implements SessionStore {
       const record = JSON.parse(line) as JsonlRecord;
       if (id === undefined) id = record.id;
       if (record.id !== id) continue;
+      if (createdAt === undefined) createdAt = record.at;
+      updatedAt = record.at;
 
       if (record.op === "delete") {
         exists = false;
         messages = [];
         metadata = undefined;
+        expiresAt = undefined;
       } else if (record.op === "save") {
         exists = true;
         messages = await decodeMessages(this.codec, record.messages);
         metadata = await decodeMetadata(this.codec, record.metadata);
-      } else {
+      } else if (record.op === "append") {
         exists = true;
         messages.push(...await decodeMessages(this.codec, record.messages));
+      } else if (record.op === "metadata") {
+        exists = true;
+        metadata = await decodeMetadata(this.codec, record.metadata);
+      } else if (record.op === "expiry") {
+        exists = true;
+        expiresAt = record.expiresAt;
       }
     }
 
-    if (!exists || id === undefined) return { id, state: undefined };
-    return { id, state: buildState(id, messages, metadata) };
+    if (!exists || id === undefined || (!includeExpired && isExpired(expiresAt))) {
+      return { id, state: undefined, createdAt, updatedAt, expiresAt };
+    }
+    return { id, state: buildState(id, messages, metadata), createdAt, updatedAt, expiresAt };
   }
 
   private async compactFile(path: string, expectedId?: string): Promise<void> {
@@ -218,4 +370,8 @@ export class FilesystemJsonlSessionStore implements SessionStore {
     await writeFile(tmp, `${JSON.stringify(record)}\n`, "utf8");
     await rename(tmp, path);
   }
+}
+
+function isExpired(expiresAt: string | undefined): boolean {
+  return expiresAt !== undefined && Date.parse(expiresAt) <= Date.now();
 }
