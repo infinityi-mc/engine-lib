@@ -94,6 +94,20 @@ export function eventFields(event: RunEvent): Record<string, string | number | b
       return { agent: event.agent, depth: event.depth, child: event.event.type };
     case "agent.handoff":
       return { from: event.from, to: event.to };
+    case "session.resumed":
+      return {
+        sessionId: event.sessionId,
+        messageCount: event.messageCount,
+        reconciledToolCalls: event.reconciledToolCalls,
+      };
+    case "session.compacted":
+      return {
+        sessionId: event.sessionId,
+        removed: event.removed,
+        summaryAdded: event.summaryAdded,
+      };
+    case "session.expired":
+      return { sessionId: event.sessionId, reason: event.reason };
     case "custom":
       return { name: event.name };
   }
@@ -132,6 +146,21 @@ export function eventPayload(event: RunEvent): Record<string, unknown> {
       return { agent: event.agent, depth: event.depth, event: eventPayload(event.event) };
     case "agent.handoff":
       return { from: event.from, to: event.to };
+    case "session.resumed":
+      return {
+        sessionId: event.sessionId,
+        messageCount: event.messageCount,
+        reconciledToolCalls: event.reconciledToolCalls,
+        resume: event.resume,
+      };
+    case "session.compacted":
+      return {
+        sessionId: event.sessionId,
+        removed: event.removed,
+        summaryAdded: event.summaryAdded,
+      };
+    case "session.expired":
+      return { sessionId: event.sessionId, reason: event.reason };
     case "custom":
       return { name: event.name, data: event.data };
   }

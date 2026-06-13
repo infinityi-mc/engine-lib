@@ -22,6 +22,13 @@ import { InMemorySessionStore } from "../session/index";
 import { collectStream } from "../providers/stream";
 import type { StreamEvent } from "../providers/stream";
 
+export { runSessionStoreConformance } from "./store-conformance";
+export type {
+  SessionStoreConformanceOptions,
+  SessionStoreConformanceTestApi,
+  SessionStoreFixture,
+} from "./store-conformance";
+
 /** Build a `Message[]` from arguments, for readable test fixtures. */
 export function conversation(...messages: Message[]): Message[] {
   return messages;

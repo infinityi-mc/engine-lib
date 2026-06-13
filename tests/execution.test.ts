@@ -2,14 +2,22 @@ import { describe, expect, it } from "bun:test";
 
 import { defineAgent, defineTool } from "../src/agent/index";
 import { staticContext } from "../src/context/index";
-import { AgentError, CancelledError, ContextWindowError, MaxStepsExceededError } from "../src/errors";
+import {
+  AgentError,
+  CancelledError,
+  ContextWindowError,
+  ExecutionError,
+  MaxStepsExceededError,
+  SessionModelMismatchError,
+} from "../src/errors";
 import { runAgent } from "../src/execution/index";
 import type { RunEvent } from "../src/execution/index";
 import { assistant, user } from "../src/messages/index";
 import type { Message } from "../src/messages/types";
 import type { CompletionResult, ToolCall, Usage } from "../src/providers/types";
 import { s } from "../src/schema/index";
-import { createSession } from "../src/session/index";
+import { createSession, InMemorySessionStore, readResumeInfo, withResumeInfo } from "../src/session/index";
+import { withSessionStoreHooks } from "../src/session-stores/index";
 import { mockProvider } from "../src/testing/index";
 
 function textOf(message: Message): string {
@@ -477,5 +485,249 @@ describe("runAgent — sessions & context (Phase 5)", () => {
       MaxStepsExceededError,
     );
     expect(await session.messages()).toHaveLength(0);
+  });
+
+  it("writes typed resume metadata without clobbering host metadata", async () => {
+    const session = createSession({ id: "resume-info", metadata: { host: true } });
+    const usage: Usage = { inputTokens: 1, outputTokens: 2, totalTokens: 3 };
+    const agent = defineAgent({ name: "resume-agent", provider: scriptedProvider([textResult("ok", usage)]) });
+
+    await runAgent(agent, { input: "hi", session });
+
+    const metadata = await session.getMetadata();
+    expect(metadata?.host).toBe(true);
+    const resume = readResumeInfo(metadata);
+    expect(resume).toMatchObject({
+      schemaVersion: 1,
+      agentName: "resume-agent",
+      model: "mock-model",
+      provider: "mock",
+      lastRunStatus: "completed",
+      totalUsage: usage,
+    });
+    expect(typeof resume?.lastActiveAt).toBe("string");
+  });
+
+  it("persists each completed step in checkpoint step mode without duplicating final messages", async () => {
+    const makeAgent = () => defineAgent({
+      name: "checkpoint-agent",
+      tools: [echo],
+      provider: scriptedProvider([
+        toolCallResult([{ id: "c1", name: "echo", arguments: { value: "yo" } }]),
+        textResult("done"),
+      ]),
+    });
+    const normalSession = createSession({ id: "normal" });
+    const checkpointSession = createSession({ id: "checkpoint" });
+
+    await runAgent(makeAgent(), { input: "go", session: normalSession });
+    await runAgent(makeAgent(), {
+      input: "go",
+      session: checkpointSession,
+      checkpoint: { mode: "step" },
+    });
+
+    expect(await checkpointSession.messages()).toEqual(await normalSession.messages());
+    expect(readResumeInfo(await checkpointSession.getMetadata())?.lastRunStatus).toBe("completed");
+  });
+
+  it("marks checkpointed sessions interrupted before terminal completion", async () => {
+    const session = createSession({ id: "interrupt-marker" });
+    const seen: string[] = [];
+    const agent = defineAgent({ name: "checkpoint-agent", provider: scriptedProvider([textResult("done")]) });
+
+    await runAgent(agent, {
+      input: "go",
+      session,
+      checkpoint: {
+        mode: "step",
+        onCheckpoint: async () => {
+          const resume = readResumeInfo(await session.getMetadata());
+          if (resume !== undefined) seen.push(resume.lastRunStatus);
+        },
+      },
+    });
+
+    expect(seen).toEqual(["interrupted"]);
+    expect(readResumeInfo(await session.getMetadata())?.lastRunStatus).toBe("completed");
+  });
+
+  it("fails the run when onCheckpoint rejects and emits an error event", async () => {
+    const seen: string[] = [];
+    const agent = defineAgent({ name: "checkpoint-agent", provider: scriptedProvider([textResult("done")]) });
+
+    await expect(
+      runAgent(agent, {
+        input: "go",
+        checkpoint: {
+          onCheckpoint: () => {
+            throw new Error("checkpoint lost");
+          },
+        },
+        onEvent: (event) => seen.push(event.type),
+      }),
+    ).rejects.toBeInstanceOf(ExecutionError);
+    expect(seen).toContain("error");
+  });
+
+  it("synthesizes an error tool result for dangling calls on resume by default", async () => {
+    const store = new InMemorySessionStore();
+    await store.save({
+      id: "dangling",
+      messages: [
+        user("go"),
+        assistant([{ type: "tool_call", id: "c1", name: "echo", arguments: { value: "yo" } }]),
+      ],
+      metadata: withResumeInfo({ host: true }, {
+        schemaVersion: 1,
+        agentName: "resume-agent",
+        model: "mock-model",
+        provider: "mock",
+        lastActiveAt: new Date().toISOString(),
+        lastRunStatus: "interrupted",
+      }),
+    });
+
+    let toolRuns = 0;
+    let request: Message[] = [];
+    let resumedBeforeRequest = false;
+    let providerSawResume = false;
+    const guardedEcho = defineTool({
+      name: "echo",
+      parameters: s.object({ value: s.string() }),
+      execute: ({ value }) => {
+        toolRuns += 1;
+        return { ok: true, content: value };
+      },
+    });
+    const agent = defineAgent({
+      name: "resume-agent",
+      tools: [guardedEcho],
+      provider: mockProvider({
+        result: () => textResult("after"),
+        onRequest: (req) => {
+          providerSawResume = resumedBeforeRequest;
+          request = req.messages;
+        },
+      }),
+    });
+
+    const events: RunEvent[] = [];
+    await runAgent(agent, {
+      session: createSession({ id: "dangling", store }),
+      onEvent: (event) => {
+        events.push(event);
+        if (event.type === "session.resumed") resumedBeforeRequest = true;
+      },
+    });
+
+    expect(toolRuns).toBe(0);
+    expect(providerSawResume).toBe(true);
+    expect(events.filter((event) => event.type === "session.resumed")).toHaveLength(1);
+    expect(request.some((message) => message.content.some((part) => (
+      part.type === "tool_result" && part.toolCallId === "c1" && part.isError === true
+    )))).toBe(true);
+  });
+
+  it("can reexecute dangling calls on resume when requested", async () => {
+    const store = new InMemorySessionStore();
+    await store.save({
+      id: "reexecute",
+      messages: [
+        user("go"),
+        assistant([{ type: "tool_call", id: "c1", name: "echo", arguments: { value: "yo" } }]),
+      ],
+      metadata: withResumeInfo(undefined, {
+        schemaVersion: 1,
+        agentName: "resume-agent",
+        model: "mock-model",
+        provider: "mock",
+        lastActiveAt: new Date().toISOString(),
+        lastRunStatus: "interrupted",
+      }),
+    });
+
+    let toolRuns = 0;
+    const countingEcho = defineTool({
+      name: "echo",
+      parameters: s.object({ value: s.string() }),
+      execute: ({ value }) => {
+        toolRuns += 1;
+        return { ok: true, content: value };
+      },
+    });
+    const agent = defineAgent({
+      name: "resume-agent",
+      tools: [countingEcho],
+      provider: scriptedProvider([textResult("after")]),
+    });
+
+    await runAgent(agent, {
+      session: createSession({ id: "reexecute", store }),
+      resume: { danglingToolCalls: "reexecute" },
+    });
+
+    expect(toolRuns).toBe(1);
+    expect((await store.load("reexecute"))?.messages.some((message) => message.role === "tool")).toBe(true);
+  });
+
+  it("enforces and warns on model compatibility policies", async () => {
+    const metadata = withResumeInfo(undefined, {
+      schemaVersion: 1,
+      agentName: "old",
+      model: "gpt-4",
+      provider: "mock",
+      lastActiveAt: new Date().toISOString(),
+      lastRunStatus: "completed",
+    });
+
+    const errorStore = new InMemorySessionStore();
+    await errorStore.save({ id: "mismatch-error", messages: [user("prior")], metadata });
+    let providerCalls = 0;
+    const errorAgent = defineAgent({
+      name: "new",
+      provider: mockProvider({
+        defaultModel: "claude-3-opus",
+        onRequest: () => {
+          providerCalls += 1;
+        },
+      }),
+    });
+    await expect(
+      runAgent(errorAgent, {
+        session: createSession({ id: "mismatch-error", store: errorStore }),
+        modelCompatibility: "error",
+      }),
+    ).rejects.toBeInstanceOf(SessionModelMismatchError);
+    expect(providerCalls).toBe(0);
+
+    const warnStore = new InMemorySessionStore();
+    await warnStore.save({ id: "mismatch-warn", messages: [user("prior")], metadata });
+    const events: RunEvent[] = [];
+    await runAgent(errorAgent, {
+      session: createSession({ id: "mismatch-warn", store: warnStore }),
+      onEvent: (event) => events.push(event),
+    });
+    expect(events.some((event) => event.type === "custom" && event.name === "session.model_mismatch")).toBe(true);
+  });
+
+  it("emits session.compacted when a session append triggers store compaction", async () => {
+    const store = withSessionStoreHooks(new InMemorySessionStore(), {
+      compactor: {
+        shouldCompact: (state) => state.messages.length > 1,
+        compact: (state) => ({
+          state: { id: state.id, messages: state.messages.slice(-1), metadata: state.metadata },
+          archive: { messages: state.messages.slice(0, -1), reason: "test" },
+        }),
+      },
+    });
+    const session = createSession({ id: "compact-run", store });
+    const events: RunEvent[] = [];
+    const agent = defineAgent({ name: "compact-agent", provider: scriptedProvider([textResult("done")]) });
+
+    await runAgent(agent, { input: "go", session, onEvent: (event) => events.push(event) });
+
+    const compacted = events.find((event) => event.type === "session.compacted");
+    expect(compacted?.type === "session.compacted" && compacted.removed).toBeGreaterThan(0);
   });
 });

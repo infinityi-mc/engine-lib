@@ -9,6 +9,25 @@
 export { createSession } from "./session";
 export type { CreateSessionOptions } from "./session";
 
+export {
+  RESUME_METADATA_KEY,
+  RESUME_SCHEMA_VERSION,
+  readResumeInfo,
+  withResumeInfo,
+} from "./resume";
 export { InMemorySessionStore } from "./store";
 
-export type { Session, SessionState, SessionStore } from "./types";
+export type {
+  AppendResult,
+  Session,
+  SessionListItem,
+  SessionListOptions,
+  SessionListOrder,
+  SessionListPage,
+  SessionModelIdentity,
+  SessionResumeInfo,
+  SessionRunStatus,
+  SessionState,
+  SessionStore,
+  SessionUsage,
+} from "./types";

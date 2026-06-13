@@ -1,5 +1,6 @@
 import type { Message } from "../messages/types";
 import type { SessionState, SessionStore } from "../session/types";
+import type { RunEvent } from "../execution/types";
 
 /** Encodes persisted session payloads. Wrap this to add encryption at rest. */
 export interface SessionStoreCodec {
@@ -17,6 +18,17 @@ export interface VersionedSessionStore extends SessionStore {
 /** A store that owns resources that should be released at shutdown. */
 export interface CloseableSessionStore extends SessionStore {
   close(): Promise<void>;
+}
+
+export interface PurgeExpiredOptions {
+  readonly maxIdleMs?: number;
+  readonly onEvent?: (event: Extract<RunEvent, { type: "session.expired" }>) => void;
+}
+
+/** A store with opt-in expiry/idle-purge support. */
+export interface ExpiringSessionStore extends SessionStore {
+  setExpiry(id: string, ttlMs: number): Promise<void>;
+  purgeExpired(options?: PurgeExpiredOptions): Promise<string[]>;
 }
 
 export type SessionStoreHookOperation = "append" | "save";
