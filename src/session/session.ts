@@ -86,9 +86,8 @@ export function createSession(opts: CreateSessionOptions = {}): Session {
             : existing?.metadata !== undefined
               ? { metadata: existing.metadata }
               : {}),
-          ...(existing?.version !== undefined
-            ? { version: existing.version }
-            : {}),
+          version: existing?.version ?? 1,
+          ...(tenantId !== undefined ? { tenantId } : {}),
         });
       }
     })();
@@ -97,6 +96,7 @@ export function createSession(opts: CreateSessionOptions = {}): Session {
 
   return {
     id,
+    store,
     ...(metadata !== undefined ? { metadata } : {}),
     ...(tenantId !== undefined ? { tenantId } : {}),
     ...(opts.expectedModel !== undefined

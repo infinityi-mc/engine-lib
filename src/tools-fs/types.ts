@@ -1,4 +1,5 @@
 import type { ToolContext, ToolDefinition } from "../tools/types";
+import type { PolicyEngine } from "../governance/policy";
 
 export interface ValidationCommandResult {
   readonly ok: boolean;
@@ -23,6 +24,8 @@ export interface FilesystemToolsConfig {
   readonly maxWriteBytes?: number;
   readonly maxEntries?: number;
   readonly maxResults?: number;
+  /** Optional unified policy engine for filesystem operations. */
+  readonly policy?: PolicyEngine;
   /**
    * Optional host hook for validation commands requested by edit tools.
    * When omitted, requested commands are reported as skipped rather than run.

@@ -1,19 +1,5 @@
-/**
- * Typed error taxonomy for `@infinityi/engine-lib`.
- *
- * Every error the library throws is a subclass of {@link AgentError},
- * so consumers can branch with a single `instanceof AgentError` check
- * or narrow to a specific category.
- *
- * The full hierarchy is defined up-front so later phases import stable
- * symbols; only {@link SchemaValidationError} and
- * {@link ToolValidationError} are thrown by Phase-1 code.
- *
- * @module
- */
-
-import type { Usage } from "./providers/types";
 import type { SessionModelIdentity } from "./session/types";
+import type { Usage } from "./providers/types";
 
 /** Structured validation issue attached to {@link SchemaValidationError}. */
 export interface SchemaIssue {
@@ -80,6 +66,29 @@ export class BudgetExceededError extends AgentError {
     this.field = options.field;
     this.limit = options.limit;
     this.usage = options.usage;
+  }
+}
+
+export interface SessionAgentIdentity {
+  readonly version?: string;
+  readonly toolNames: readonly string[];
+}
+
+export class SessionAgentMismatchError extends AgentError {
+  readonly expected: SessionAgentIdentity;
+  readonly actual: SessionAgentIdentity;
+
+  constructor(
+    message: string,
+    options: ErrorOptions & {
+      expected: SessionAgentIdentity;
+      actual: SessionAgentIdentity;
+    },
+  ) {
+    super(message, options);
+    this.name = "SessionAgentMismatchError";
+    this.expected = options.expected;
+    this.actual = options.actual;
   }
 }
 

@@ -17,6 +17,7 @@
 import { defineTool } from "../tools/define";
 import type { ToolContext, ToolResult } from "../tools/types";
 import { s } from "../schema/builder";
+import type { PolicyDecision } from "../governance/policy";
 
 import {
   emitApproval,
@@ -75,6 +76,15 @@ type ShellArgs = {
 /** Normalize the host's `approve` return into an {@link ApprovalDecision}. */
 function toDecision(value: boolean | ApprovalDecision): ApprovalDecision {
   return typeof value === "boolean" ? { approved: value } : value;
+}
+
+function policyVerdict(decision: PolicyDecision): {
+  readonly ok: boolean;
+  readonly reason?: string;
+} {
+  return decision.allowed
+    ? { ok: true }
+    : { ok: false, reason: decision.reason };
 }
 
 /**
@@ -136,6 +146,38 @@ export function shellTools(config: ShellToolsConfig): ShellTools {
           args: cmdArgs,
           mode,
         });
+
+        if (config.enginePolicy !== undefined) {
+          const decision = await config.enginePolicy.evaluate(
+            {
+              tool: name,
+              operation: "exec",
+              target: args.command,
+              arguments: args,
+            },
+            {
+              agentName: ctx.agentName ?? "unknown",
+              ...(ctx.tenantId !== undefined ? { tenantId: ctx.tenantId } : {}),
+              ...(ctx.principal !== undefined
+                ? { principal: ctx.principal }
+                : {}),
+              messages: [],
+            },
+          );
+          const verdict = policyVerdict(decision);
+          if (!verdict.ok) {
+            emitPolicy(
+              ctx,
+              "deny",
+              { command: args.command, args: cmdArgs, mode },
+              verdict.reason,
+            );
+            return {
+              ok: false,
+              error: verdict.reason ?? "command denied by policy",
+            };
+          }
+        }
 
         const timeoutMs = Math.min(
           args.timeoutMs !== undefined && args.timeoutMs > 0

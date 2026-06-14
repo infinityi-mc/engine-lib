@@ -284,9 +284,31 @@ export function createHttpToolClient(config: HttpToolsConfig): HttpToolClient {
     req: HttpClientRequest,
     ctx?: ToolContext,
   ): Promise<HttpRequestResult> {
-    let method = req.method;
-    let url = validateUrl(req.url);
-    checkUrl(url, normalized, ctx);
+      let method = req.method;
+      let url = validateUrl(req.url);
+      checkUrl(url, normalized, ctx);
+      if (config.policy !== undefined) {
+        const decision = await config.policy.evaluate(
+          {
+            tool: method === "GET" ? "http_get" : "http_post",
+            operation: "network",
+            target: url.href,
+            arguments: req,
+          },
+          {
+            agentName: ctx?.agentName ?? "unknown",
+            ...(ctx?.tenantId !== undefined ? { tenantId: ctx.tenantId } : {}),
+            ...(ctx?.principal !== undefined
+              ? { principal: ctx.principal }
+              : {}),
+            messages: [],
+          },
+        );
+        if (!decision.allowed) {
+          throw new HttpPolicyError(decision.reason);
+        }
+      }
+
 
     const timeoutMs = timeoutFor(normalized, req.timeoutMs);
     const maxBytes = bytesFor(normalized, req.maxBytes);

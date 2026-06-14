@@ -30,6 +30,7 @@ import {
   ExecutionError,
   MaxHandoffsExceededError,
   MaxStepsExceededError,
+  SessionAgentMismatchError,
   SessionModelMismatchError,
   type ProviderError,
 } from "../errors";
@@ -46,7 +47,7 @@ import {
   readResumeInfo,
   withResumeInfo,
 } from "../session/resume";
-import type { AppendResult, SessionModelIdentity } from "../session/types";
+import type { AppendResult, Session, SessionModelIdentity } from "../session/types";
 import { StreamAccumulator } from "../providers/stream";
 import type { EngineContext } from "../runtime/types";
 import { resolveContext } from "../context/providers";
@@ -83,6 +84,9 @@ import { evaluateBudget } from "../resilience/budget";
 import { isTokenRateLimiter } from "../resilience/rate-limit";
 import { withProviderRetry } from "../resilience/retry";
 import { filterMessagesText } from "../governance/filters";
+import type { PolicyDecision } from "../governance/policy";
+import { activeToolNames, compareAgentResume } from "../session/agent-compat";
+import { isCasSessionStore, isVersionMismatch, withVersionRetry } from "../session-stores/index";
 
 /** Default cap on provider turns when {@link RunOptions.maxSteps} is omitted. */
 export const DEFAULT_MAX_STEPS = 16;
@@ -203,6 +207,27 @@ async function* stampRunEvents(
   }
 }
 
+function argumentsDigest(value: unknown): string {
+  const hash = createHash("sha256")
+    .update(
+      JSON.stringify(value, (_key, v) =>
+        typeof v === "bigint" ? String(v) : v,
+      ) ?? "null",
+    )
+    .digest("hex");
+  return `sha256:${hash}`;
+}
+
+function applyDecisionArguments(
+  original: unknown,
+  decision: PolicyDecision | { readonly allowed: true; readonly argumentsOverride?: unknown },
+): unknown {
+  if ("transformArguments" in decision) return decision.transformArguments;
+  if ("argumentsOverride" in decision)
+    return decision.argumentsOverride ?? original;
+  return original;
+}
+
 function resolvedIdentity(
   agent: AgentDefinition,
   opts: RunOptions,
@@ -286,29 +311,30 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function stableStringify(value: unknown): string {
-  const seen = new WeakSet<object>();
-  return (
-    JSON.stringify(value, (_key, child) => {
-      if (typeof child !== "object" || child === null) return child;
-      if (seen.has(child)) return "[Circular]";
-      seen.add(child);
-      if (Array.isArray(child)) return child;
-      const out: Record<string, unknown> = {};
-      for (const key of Object.keys(child).sort()) {
-        out[key] = (child as Record<string, unknown>)[key];
-      }
-      return out;
-    }) ?? String(value)
-  );
-}
-
-function argumentsDigest(value: unknown): string {
-  const encoded = stableStringify(value) ?? String(value);
-  return `sha256:${createHash("sha256").update(encoded).digest("hex").slice(0, 16)}`;
+async function appendToSession(
+  session: Session,
+  messages: readonly Message[],
+): Promise<AppendResult> {
+  const store = session.store;
+  if (isCasSessionStore(store)) {
+    const result = await withVersionRetry(async (attempt) => {
+      const version = await store
+        .load(session.id)
+        .then((s) => s?.version ?? 0);
+      return store.appendIfVersion(session.id, messages, version);
+    });
+    if (isVersionMismatch(result)) {
+      throw new ExecutionError(
+        `session append failed due to version mismatch conflict (expected version: ${result.currentVersion})`,
+      );
+    }
+    return result;
+  }
+  return session.append(messages);
 }
 
 function textLengthOfMessages(messages: readonly Message[]): number {
+
   let length = 0;
   for (const message of messages) {
     for (const part of message.content) {
@@ -502,6 +528,11 @@ async function* executeAgent(
       toolCallId: call.id,
       agentName: active.agent.name,
       ...(opts.humanInput !== undefined ? { humanInput: opts.humanInput } : {}),
+      ...(opts.session?.tenantId !== undefined
+        ? { tenantId: opts.session.tenantId }
+        : {}),
+      ...(opts.principal !== undefined ? { principal: opts.principal } : {}),
+      ...(opts.policy !== undefined ? { policy: opts.policy } : {}),
       run: bridge,
     };
     const span = tel.startSpan(SPAN_TOOL, {
@@ -542,17 +573,21 @@ async function* executeAgent(
       readonly arguments: unknown;
     }[],
     messageSnapshot: readonly Message[],
+    forcedApprovalRequired: ReadonlySet<string> = new Set(),
   ): Promise<{
     readonly failures: ReadonlyMap<string, ToolResult>;
     readonly events: readonly RunEventDraft[];
+    readonly approvedArgs: ReadonlyMap<string, unknown>;
   }> => {
     const policy = opts.approval;
-    if (policy === undefined || calls.length === 0) {
-      return { failures: new Map(), events: [] };
+    if (calls.length === 0) {
+      return { failures: new Map(), events: [], approvedArgs: new Map() };
     }
 
     const failures = new Map<string, ToolResult>();
     const events: RunEventDraft[] = [];
+    const approvedArgs = new Map<string, unknown>();
+
     const pendingCalls: ApprovalPendingCall[] = [];
     const parsedById = new Map<string, unknown>();
     const messages = messageSnapshot;
@@ -573,6 +608,26 @@ async function* executeAgent(
     for (const call of calls) {
       if (!parsedById.has(call.id)) continue;
       const parsedArguments = parsedById.get(call.id);
+
+      const requiresApprovalByPolicy = forcedApprovalRequired.has(call.id);
+
+      if (policy === undefined) {
+        if (requiresApprovalByPolicy) {
+          const reason = `tool "${call.name}" requires approval but no approval policy is configured`;
+          events.push({
+            type: "tool.approval_decided",
+            id: call.id,
+            name: call.name,
+            approved: false,
+            reason,
+          });
+          failures.set(call.id, { ok: false, error: reason });
+        } else {
+          approvedArgs.set(call.id, parsedArguments);
+        }
+        continue;
+      }
+
       const request: ApprovalRequest = {
         toolCallId: call.id,
         name: call.name,
@@ -584,27 +639,35 @@ async function* executeAgent(
       };
 
       let requiresApproval = false;
-      try {
-        throwIfAborted(opts.signal);
-        requiresApproval = await waitWithAbort(
-          Promise.resolve(policy.requiresApproval(request, engineCtx)),
-          opts.signal,
-        );
-      } catch (error) {
-        if (error instanceof CancelledError && opts.signal?.aborted)
-          throw error;
-        const reason = messageOf(error);
-        events.push({
-          type: "tool.approval_decided",
-          id: call.id,
-          name: call.name,
-          approved: false,
-          reason,
-        });
-        failures.set(call.id, { ok: false, error: reason });
+      if (requiresApprovalByPolicy) {
+        requiresApproval = true;
+      } else {
+        try {
+          throwIfAborted(opts.signal);
+          requiresApproval = await waitWithAbort(
+            Promise.resolve(policy.requiresApproval(request, engineCtx)),
+            opts.signal,
+          );
+        } catch (error) {
+          if (error instanceof CancelledError && opts.signal?.aborted)
+            throw error;
+          const reason = messageOf(error);
+          events.push({
+            type: "tool.approval_decided",
+            id: call.id,
+            name: call.name,
+            approved: false,
+            reason,
+          });
+          failures.set(call.id, { ok: false, error: reason });
+          continue;
+        }
+      }
+
+      if (!requiresApproval) {
+        approvedArgs.set(call.id, parsedArguments);
         continue;
       }
-      if (!requiresApproval) continue;
 
       events.push({
         type: "tool.approval_requested",
@@ -631,6 +694,8 @@ async function* executeAgent(
             ok: false,
             error: decision.reason ?? `tool "${call.name}" was not approved`,
           });
+        } else {
+          approvedArgs.set(call.id, parsedArguments);
         }
       } catch (error) {
         if (error instanceof CancelledError && opts.signal?.aborted)
@@ -647,10 +712,201 @@ async function* executeAgent(
       }
     }
 
-    return { failures, events };
+    return { failures, events, approvedArgs };
   };
 
-  // Hoisted above the try so the catch can stamp tokens-consumed-so-far onto
+  const evaluatePolicies = async (
+    calls: readonly {
+      readonly id: string;
+      readonly name: string;
+      readonly arguments: unknown;
+    }[],
+    messageSnapshot: readonly Message[],
+    inboundOverrides: ReadonlyMap<string, unknown> = new Map(),
+  ): Promise<{
+    readonly failures: ReadonlyMap<string, ToolResult>;
+    readonly events: readonly RunEventDraft[];
+    readonly transformedArgs: ReadonlyMap<string, unknown>;
+    readonly approvalRequired: ReadonlySet<string>;
+  }> => {
+    const policy = opts.policy;
+    if (policy === undefined || calls.length === 0) {
+      return {
+        failures: new Map(),
+        events: [],
+        transformedArgs: new Map(),
+        approvalRequired: new Set(),
+      };
+    }
+
+    const failures = new Map<string, ToolResult>();
+    const events: RunEventDraft[] = [];
+    const transformedArgs = new Map<string, unknown>();
+    const approvalRequired = new Set<string>();
+
+    for (const call of calls) {
+      const tool = active.registry.get(call.name);
+      if (tool === undefined) continue;
+      const parsed = tool.parameters.safeParse(call.arguments);
+      if (!parsed.success) continue;
+      const inbound = inboundOverrides.get(call.id) ?? parsed.data;
+      const validatedInbound = tool.parameters.safeParse(inbound);
+      const evaluatedArgs = validatedInbound.success ? validatedInbound.data : inbound;
+      try {
+        const decision = await Promise.resolve(
+          policy.evaluate(
+            {
+              tool: call.name,
+              operation: call.name.startsWith("http_")
+                ? "network"
+                : call.name.includes("command")
+                  ? "exec"
+                  : call.name.startsWith("write") || call.name.startsWith("edit")
+                    ? "write"
+                    : call.name.startsWith("delete")
+                      ? "delete"
+                      : "read",
+              target:
+                typeof evaluatedArgs === "object" &&
+                evaluatedArgs !== null &&
+                "url" in evaluatedArgs &&
+                typeof (evaluatedArgs as { readonly url?: unknown }).url === "string"
+                  ? ((evaluatedArgs as { readonly url: string }).url)
+                  : typeof evaluatedArgs === "object" &&
+                      evaluatedArgs !== null &&
+                      "command" in evaluatedArgs &&
+                      typeof (evaluatedArgs as { readonly command?: unknown }).command ===
+                        "string"
+                    ? ((evaluatedArgs as { readonly command: string }).command)
+                    : typeof evaluatedArgs === "object" &&
+                        evaluatedArgs !== null &&
+                        "path" in evaluatedArgs &&
+                        typeof (evaluatedArgs as { readonly path?: unknown }).path ===
+                          "string"
+                      ? ((evaluatedArgs as { readonly path: string }).path)
+                      : call.name,
+              arguments: evaluatedArgs,
+            },
+            {
+              agentName: active.agent.name,
+              ...(opts.session !== undefined ? { sessionId: opts.session.id } : {}),
+              ...(opts.session?.tenantId !== undefined
+                ? { tenantId: opts.session.tenantId }
+                : {}),
+              ...(opts.principal !== undefined ? { principal: opts.principal } : {}),
+              messages: messageSnapshot,
+            },
+          ),
+        );
+        events.push({
+          type: "policy.decision",
+          id: call.id,
+          name: call.name,
+          allowed: decision.allowed,
+          ...(decision.allowed ? {} : { reason: decision.reason }),
+          ...("requiresApproval" in decision && decision.requiresApproval
+            ? { requiresApproval: true }
+            : {}),
+          ...("transformArguments" in decision ? { transformed: true } : {}),
+          argumentsDigest: argumentsDigest(evaluatedArgs),
+        });
+        if (!decision.allowed) {
+          failures.set(call.id, { ok: false, error: decision.reason });
+          continue;
+        }
+        const nextArgs = applyDecisionArguments(evaluatedArgs, decision);
+        transformedArgs.set(call.id, nextArgs);
+        if ("requiresApproval" in decision && decision.requiresApproval) {
+          approvalRequired.add(call.id);
+        }
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        events.push({
+          type: "policy.decision",
+          id: call.id,
+          name: call.name,
+          allowed: false,
+          reason,
+          argumentsDigest: argumentsDigest(evaluatedArgs),
+        });
+        failures.set(call.id, { ok: false, error: reason });
+      }
+    }
+
+    return { failures, events, transformedArgs, approvalRequired };
+  };
+
+  const evaluateAuthorizations = async (
+    calls: readonly {
+      readonly id: string;
+      readonly name: string;
+      readonly arguments: unknown;
+    }[],
+    messageSnapshot: readonly Message[],
+  ): Promise<{
+    readonly failures: ReadonlyMap<string, ToolResult>;
+    readonly events: readonly RunEventDraft[];
+    readonly transformedArgs: ReadonlyMap<string, unknown>;
+  }> => {
+    const authorizer = opts.authorizer;
+    if (authorizer === undefined || calls.length === 0) {
+      return { failures: new Map(), events: [], transformedArgs: new Map() };
+    }
+    const failures = new Map<string, ToolResult>();
+    const events: RunEventDraft[] = [];
+    const transformedArgs = new Map<string, unknown>();
+    for (const call of calls) {
+      const tool = active.registry.get(call.name);
+      if (tool === undefined) continue;
+      const parsed = tool.parameters.safeParse(call.arguments);
+      if (!parsed.success) continue;
+      try {
+        const decision = await Promise.resolve(
+          authorizer.authorize(
+            { name: call.name, arguments: parsed.data },
+            {
+              name: call.name,
+              arguments: parsed.data,
+              agentName: active.agent.name,
+              ...(opts.session !== undefined ? { sessionId: opts.session.id } : {}),
+              ...(opts.session?.tenantId !== undefined
+                ? { tenantId: opts.session.tenantId }
+                : {}),
+              ...(opts.principal !== undefined ? { principal: opts.principal } : {}),
+              ...(opts.roles !== undefined ? { roles: opts.roles } : {}),
+              messages: messageSnapshot,
+            },
+          ),
+        );
+        events.push({
+          type: "tool.authorization_decided",
+          id: call.id,
+          name: call.name,
+          allowed: decision.allowed,
+          ...(decision.allowed ? {} : { reason: decision.reason }),
+          argumentsDigest: argumentsDigest(parsed.data),
+        });
+        if (!decision.allowed) {
+          failures.set(call.id, { ok: false, error: decision.reason });
+          continue;
+        }
+        transformedArgs.set(call.id, applyDecisionArguments(parsed.data, decision));
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        events.push({
+          type: "tool.authorization_decided",
+          id: call.id,
+          name: call.name,
+          allowed: false,
+          reason,
+          argumentsDigest: argumentsDigest(parsed.data),
+        });
+        failures.set(call.id, { ok: false, error: reason });
+      }
+    }
+    return { failures, events, transformedArgs };
+  };
+
   // the error it throws.
   let usage = emptyUsage();
   const checkpointMode = opts.checkpoint?.mode === "step";
@@ -797,6 +1053,32 @@ async function* executeAgent(
           };
         }
       }
+      const agentMismatch = compareAgentResume(loadedResume, active.agent);
+      if (agentMismatch !== undefined) {
+        const policy = opts.agentCompatibility ?? "warn";
+        if (policy === "error") {
+          throw new SessionAgentMismatchError(
+            "session agent/tool mismatch",
+            agentMismatch,
+          );
+        }
+        if (policy === "warn") {
+          engineCtx.logger?.warn("session agent/tool mismatch", {
+            sessionId: session.id,
+            expected: agentMismatch.expected,
+            actual: agentMismatch.actual,
+          });
+          yield {
+            type: "custom",
+            name: "session.agent_mismatch",
+            data: {
+              sessionId: session.id,
+              expected: agentMismatch.expected,
+              actual: agentMismatch.actual,
+            },
+          };
+        }
+      }
     }
 
     if (session !== undefined && opts.resume !== false) {
@@ -829,7 +1111,7 @@ async function* executeAgent(
             );
           }
           if (synthesized.length > 0) {
-            const appendResult = await session.append(synthesized);
+            const appendResult = await appendToSession(session, synthesized);
             const event = checkpointEvent(appendResult, session.id);
             if (event !== undefined) yield event;
             prior = [...prior, ...synthesized];
@@ -871,7 +1153,7 @@ async function* executeAgent(
             yield { type: "message", message };
           }
           if (toolMessages.length > 0) {
-            const appendResult = await session.append(toolMessages);
+            const appendResult = await appendToSession(session, toolMessages);
             const event = checkpointEvent(appendResult, session.id);
             if (event !== undefined) yield event;
             prior = [...prior, ...toolMessages];
@@ -891,7 +1173,7 @@ async function* executeAgent(
 
     const inputMessages = normalizeInput(opts.input);
     if (checkpointMode && session !== undefined && inputMessages.length > 0) {
-      const appendResult = await session.append(inputMessages);
+      const appendResult = await appendToSession(session, inputMessages);
       const event = checkpointEvent(appendResult, session.id);
       if (event !== undefined) yield event;
     }
@@ -1057,7 +1339,7 @@ async function* executeAgent(
       await active.agent.hooks?.onStep?.({ step: steps, result }, engineCtx);
 
       if (checkpointMode && opts.session !== undefined) {
-        const appendResult = await opts.session.append([result.message]);
+        const appendResult = await appendToSession(opts.session, [result.message]);
         const event = checkpointEvent(appendResult, opts.session.id);
         if (event !== undefined) yield event;
         if (!interruptedMarked) {
@@ -1082,7 +1364,7 @@ async function* executeAgent(
           handoffs: [...handoffTrail],
         };
         if (!checkpointMode && opts.session !== undefined) {
-          const appendResult = await opts.session.append(newMessages);
+          const appendResult = await appendToSession(opts.session, newMessages);
           const event = checkpointEvent(appendResult, opts.session.id);
           if (event !== undefined) yield event;
         }
@@ -1115,14 +1397,40 @@ async function* executeAgent(
           await active.agent.hooks?.onToolCall?.({ call, tool }, engineCtx);
       }
 
-      const approval = await evaluateApprovals(regularCalls, messages);
+      const authorization = await evaluateAuthorizations(regularCalls, messages);
+      for (const event of authorization.events) yield event;
+      const policy = await evaluatePolicies(regularCalls, messages, authorization.transformedArgs);
+      for (const event of policy.events) yield event;
+      const approvalInput = regularCalls.map((call) => ({
+        ...call,
+        arguments:
+          policy.transformedArgs.get(call.id) ??
+          authorization.transformedArgs.get(call.id) ??
+          call.arguments,
+      }));
+      const approval = await evaluateApprovals(approvalInput, messages, policy.approvalRequired);
       for (const event of approval.events) yield event;
 
       const settled = await Promise.all(
-        regularCalls.map(async (call) => ({
-          call,
-          outcome: await runOneTool(call, approval.failures.get(call.id)),
-        })),
+        regularCalls.map(async (call) => {
+          const denied =
+            authorization.failures.get(call.id) ??
+            policy.failures.get(call.id) ??
+            approval.failures.get(call.id);
+          const nextArgs =
+            approval.approvedArgs.get(call.id) ??
+            policy.transformedArgs.get(call.id) ??
+            authorization.transformedArgs.get(call.id) ??
+            call.arguments;
+          return {
+            call:
+              denied === undefined ? { ...call, arguments: nextArgs } : call,
+            outcome: await runOneTool(
+              denied === undefined ? { ...call, arguments: nextArgs } : call,
+              denied,
+            ),
+          };
+        }),
       );
 
       // Fold each tool's bridged usage (e.g. a sub-agent's tokens) before the
@@ -1245,7 +1553,7 @@ async function* executeAgent(
         opts.session !== undefined &&
         stepToolMessages.length > 0
       ) {
-        const appendResult = await opts.session.append(stepToolMessages);
+        const appendResult = await appendToSession(opts.session, stepToolMessages);
         const event = checkpointEvent(appendResult, opts.session.id);
         if (event !== undefined) yield event;
       }

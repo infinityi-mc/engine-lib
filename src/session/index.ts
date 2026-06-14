@@ -15,6 +15,11 @@ export {
   readResumeInfo,
   withResumeInfo,
 } from "./resume";
+export {
+  activeToolNames,
+  assertAgentResumeCompatible,
+  compareAgentResume,
+} from "./agent-compat";
 export { InMemorySessionStore } from "./store";
 
 export type {

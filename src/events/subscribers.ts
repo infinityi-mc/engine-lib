@@ -170,6 +170,20 @@ export function eventFields(
         sessionId: event.sessionId,
         reason: event.reason,
       };
+    case "tool.authorization_decided":
+      return {
+        runId: event.runId,
+        id: event.id,
+        name: event.name,
+        allowed: event.allowed,
+      };
+    case "policy.decision":
+      return {
+        runId: event.runId,
+        id: event.id,
+        name: event.name,
+        allowed: event.allowed,
+      };
     case "custom":
       return { runId: event.runId, name: event.name };
   }
@@ -292,6 +306,26 @@ export function eventPayload(event: RunEvent): Record<string, unknown> {
         runId: event.runId,
         sessionId: event.sessionId,
         reason: event.reason,
+      };
+    case "tool.authorization_decided":
+      return {
+        runId: event.runId,
+        id: event.id,
+        name: event.name,
+        allowed: event.allowed,
+        reason: event.reason,
+        argumentsDigest: event.argumentsDigest,
+      };
+    case "policy.decision":
+      return {
+        runId: event.runId,
+        id: event.id,
+        name: event.name,
+        allowed: event.allowed,
+        reason: event.reason,
+        requiresApproval: event.requiresApproval,
+        transformed: event.transformed,
+        argumentsDigest: event.argumentsDigest,
       };
     case "custom":
       return { runId: event.runId, name: event.name, data: event.data };

@@ -14,6 +14,7 @@
 import type { Message } from "../messages/types";
 import type { Usage } from "../providers/types";
 import type { SessionResumeInfo } from "./resume";
+import type { VersionMismatch } from "../session-stores/concurrency";
 
 /** Outcome returned by {@link SessionStore.append}. */
 export interface AppendResult {
@@ -95,6 +96,12 @@ export interface SessionStore {
   load(id: string): Promise<SessionState | undefined>;
   /** Append `messages` to the tail of `id`'s history (creating it if absent). */
   append(id: string, messages: readonly Message[]): Promise<AppendResult>;
+  /** Append only when current version matches expectedVersion. */
+  appendIfVersion?(
+    id: string,
+    messages: readonly Message[],
+    expectedVersion: number,
+  ): Promise<AppendResult | VersionMismatch>;
   /** Replace the metadata object for `id` (creating an empty session if absent). */
   setMetadata(id: string, metadata: Record<string, unknown>): Promise<void>;
   /** Enumerate stored sessions. */
@@ -131,6 +138,8 @@ export interface Session {
   readonly expectedModel?: string;
   /** Expected provider used as the provider-compatibility baseline for resumes. */
   readonly expectedProvider?: string;
+  /** Underlying persistence seam. Exposed for run-loop helpers (CAS, codec). */
+  readonly store: SessionStore;
   /** Snapshot of the current ordered history. */
   messages(): Promise<Message[]>;
   /** Append messages to the conversation and persist them. */
