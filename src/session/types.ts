@@ -99,7 +99,11 @@ export interface SessionStore {
   setMetadata(id: string, metadata: Record<string, unknown>): Promise<void>;
   /** Enumerate stored sessions. */
   list(options?: SessionListOptions): Promise<SessionListPage>;
-  /** Replace the full state for `state.id`. */
+  /** Replace the full state for `state.id`. Last-writer-wins: concurrent `save` calls
+   *  for the same id may silently overwrite each other. Use `claimTenant` for
+   *  atomic first-use ownership of a new tenant, and reach for an
+   *  `expectedVersion` CAS path (not yet part of this contract) when you need
+   *  optimistic concurrency for general updates. */
   save(state: SessionState): Promise<void>;
   /**
    * Atomically bind a session id to `tenantId`, optionally applying first-use

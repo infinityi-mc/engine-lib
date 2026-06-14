@@ -16,7 +16,12 @@ import { assistant, user } from "../src/messages/index";
 import type { Message } from "../src/messages/types";
 import type { CompletionResult, ToolCall, Usage } from "../src/providers/types";
 import { s } from "../src/schema/index";
-import { createSession, InMemorySessionStore, readResumeInfo, withResumeInfo } from "../src/session/index";
+import {
+  createSession,
+  InMemorySessionStore,
+  readResumeInfo,
+  withResumeInfo,
+} from "../src/session/index";
 import { withSessionStoreHooks } from "../src/session-stores/index";
 import { mockProvider } from "../src/testing/index";
 
@@ -44,7 +49,12 @@ function toolCallResult(calls: ToolCall[], usage?: Usage): CompletionResult {
   return {
     message: {
       role: "assistant",
-      content: calls.map((c) => ({ type: "tool_call", id: c.id, name: c.name, arguments: c.arguments })),
+      content: calls.map((c) => ({
+        type: "tool_call",
+        id: c.id,
+        name: c.name,
+        arguments: c.arguments,
+      })),
     },
     toolCalls: calls,
     finishReason: "tool_calls",
@@ -55,10 +65,15 @@ function toolCallResult(calls: ToolCall[], usage?: Usage): CompletionResult {
 }
 
 /** A provider that returns each scripted result in turn (last one repeats). */
-function scriptedProvider(results: CompletionResult[], opts?: { capabilities?: { streaming?: boolean } }) {
+function scriptedProvider(
+  results: CompletionResult[],
+  opts?: { capabilities?: { streaming?: boolean } },
+) {
   let i = 0;
   return mockProvider({
-    ...(opts?.capabilities !== undefined ? { capabilities: opts.capabilities } : {}),
+    ...(opts?.capabilities !== undefined
+      ? { capabilities: opts.capabilities }
+      : {}),
     result: () => results[Math.min(i++, results.length - 1)]!,
   });
 }
@@ -82,7 +97,10 @@ const boom = defineTool({
 
 describe("runAgent — buffered", () => {
   it("returns the final answer in a single turn", async () => {
-    const agent = defineAgent({ name: "a", provider: scriptedProvider([textResult("hello")]) });
+    const agent = defineAgent({
+      name: "a",
+      provider: scriptedProvider([textResult("hello")]),
+    });
     const result = await runAgent(agent, { input: "hi" });
     expect(result.output).toBe("hello");
     expect(result.runId).toMatch(/^run_/);
@@ -94,20 +112,34 @@ describe("runAgent — buffered", () => {
 
   it("uses one generated runId across events and result", async () => {
     const events: RunEvent[] = [];
-    const agent = defineAgent({ name: "a", provider: scriptedProvider([textResult("hello")]) });
+    const agent = defineAgent({
+      name: "a",
+      provider: scriptedProvider([textResult("hello")]),
+    });
 
-    const result = await runAgent(agent, { input: "hi", onEvent: (event) => events.push(event) });
+    const result = await runAgent(agent, {
+      input: "hi",
+      onEvent: (event) => events.push(event),
+    });
 
     expect(result.runId).toMatch(/^run_/);
     expect(events.length).toBeGreaterThan(0);
-    expect(new Set(events.map((event) => event.runId))).toEqual(new Set([result.runId]));
+    expect(new Set(events.map((event) => event.runId))).toEqual(
+      new Set([result.runId]),
+    );
     expect(events[0]).toMatchObject({ type: "run.start", runId: result.runId });
-    expect(events.at(-1)).toMatchObject({ type: "run.finish", runId: result.runId });
+    expect(events.at(-1)).toMatchObject({
+      type: "run.finish",
+      runId: result.runId,
+    });
   });
 
   it("uses a host-supplied runId verbatim across events and result", async () => {
     const events: RunEvent[] = [];
-    const agent = defineAgent({ name: "a", provider: scriptedProvider([textResult("hello")]) });
+    const agent = defineAgent({
+      name: "a",
+      provider: scriptedProvider([textResult("hello")]),
+    });
 
     const result = await runAgent(agent, {
       input: "hi",
@@ -120,9 +152,14 @@ describe("runAgent — buffered", () => {
   });
 
   it("rejects an empty host-supplied runId", async () => {
-    const agent = defineAgent({ name: "a", provider: scriptedProvider([textResult("hello")]) });
+    const agent = defineAgent({
+      name: "a",
+      provider: scriptedProvider([textResult("hello")]),
+    });
 
-    expect(() => runAgent(agent, { input: "hi", runId: "" })).toThrow("runId must be a non-empty string");
+    expect(() => runAgent(agent, { input: "hi", runId: "" })).toThrow(
+      "runId must be a non-empty string",
+    );
   });
 
   it("prepends resolved instructions as a system message", async () => {
@@ -132,7 +169,10 @@ describe("runAgent — buffered", () => {
       instructions: (c) => `I am ${c.agent.name}`,
     });
     const result = await runAgent(agent, { input: "hi" });
-    expect(result.messages[0]).toEqual({ role: "system", content: [{ type: "text", text: "I am a" }] });
+    expect(result.messages[0]).toEqual({
+      role: "system",
+      content: [{ type: "text", text: "I am a" }],
+    });
   });
 
   it("runs a tool round-trip and feeds the result back", async () => {
@@ -140,7 +180,9 @@ describe("runAgent — buffered", () => {
       name: "a",
       tools: [echo],
       provider: scriptedProvider([
-        toolCallResult([{ id: "c1", name: "echo", arguments: { value: "yo" } }]),
+        toolCallResult([
+          { id: "c1", name: "echo", arguments: { value: "yo" } },
+        ]),
         textResult("done"),
       ]),
     });
@@ -148,7 +190,10 @@ describe("runAgent — buffered", () => {
     expect(result.output).toBe("done");
     expect(result.steps).toBe(2);
     const tool = result.messages.find((m) => m.role === "tool");
-    expect(tool?.content[0]).toMatchObject({ type: "tool_result", toolCallId: "c1" });
+    expect(tool?.content[0]).toMatchObject({
+      type: "tool_result",
+      toolCallId: "c1",
+    });
     expect(tool?.content[0]).not.toHaveProperty("isError");
   });
 
@@ -164,7 +209,10 @@ describe("runAgent — buffered", () => {
     const result = await runAgent(agent, { input: "go" });
     expect(result.output).toBe("recovered");
     const tool = result.messages.find((m) => m.role === "tool");
-    expect(tool?.content[0]).toMatchObject({ type: "tool_result", isError: true });
+    expect(tool?.content[0]).toMatchObject({
+      type: "tool_result",
+      isError: true,
+    });
   });
 
   it("isolates a throwing tool as an isError result", async () => {
@@ -179,8 +227,13 @@ describe("runAgent — buffered", () => {
     const result = await runAgent(agent, { input: "go" });
     expect(result.output).toBe("after");
     const tool = result.messages.find((m) => m.role === "tool");
-    expect(tool?.content[0]).toMatchObject({ type: "tool_result", isError: true });
-    expect((tool?.content[0] as { content: { text: string }[] }).content[0]?.text).toContain("kaboom");
+    expect(tool?.content[0]).toMatchObject({
+      type: "tool_result",
+      isError: true,
+    });
+    expect(
+      (tool?.content[0] as { content: { text: string }[] }).content[0]?.text,
+    ).toContain("kaboom");
   });
 
   it("reports an unknown tool as an isError result", async () => {
@@ -194,7 +247,10 @@ describe("runAgent — buffered", () => {
     });
     const result = await runAgent(agent, { input: "go" });
     const tool = result.messages.find((m) => m.role === "tool");
-    expect(tool?.content[0]).toMatchObject({ type: "tool_result", isError: true });
+    expect(tool?.content[0]).toMatchObject({
+      type: "tool_result",
+      isError: true,
+    });
   });
 
   it("stamps nested draft child events emitted through the run bridge", async () => {
@@ -221,11 +277,62 @@ describe("runAgent — buffered", () => {
     });
     const events: RunEvent[] = [];
 
-    const result = await runAgent(agent, { input: "go", onEvent: (event) => events.push(event) });
+    const result = await runAgent(agent, {
+      input: "go",
+      onEvent: (event) => events.push(event),
+    });
 
-    const child = events.find((event): event is Extract<RunEvent, { type: "agent.child" }> => event.type === "agent.child");
+    const child = events.find(
+      (event): event is Extract<RunEvent, { type: "agent.child" }> =>
+        event.type === "agent.child",
+    );
     expect(child?.runId).toBe(result.runId);
     expect(child?.event.runId).toBe(result.runId);
+  });
+
+  it("preserves a pre-stamped child runId while stamping the wrapper", async () => {
+    const nested = defineTool({
+      name: "nested",
+      parameters: s.object({}),
+      execute: (_args, ctx) => {
+        // A nested sub-agent emits a fully stamped child event with its own
+        // runId; the parent run must keep that inner runId for correlation
+        // while stamping the wrapper event with the parent's runId.
+        ctx.run?.emit({
+          type: "agent.child",
+          agent: "child",
+          depth: 1,
+          event: {
+            type: "custom",
+            name: "child.custom",
+            data: {},
+            runId: "inner-run",
+          } as never,
+        });
+        return { ok: true, content: "nested" };
+      },
+    });
+    const agent = defineAgent({
+      name: "a",
+      tools: [nested],
+      provider: scriptedProvider([
+        toolCallResult([{ id: "c1", name: "nested", arguments: {} }]),
+        textResult("done"),
+      ]),
+    });
+    const events: RunEvent[] = [];
+
+    const result = await runAgent(agent, {
+      input: "go",
+      onEvent: (event) => events.push(event),
+    });
+
+    const child = events.find(
+      (event): event is Extract<RunEvent, { type: "agent.child" }> =>
+        event.type === "agent.child",
+    );
+    expect(child?.runId).toBe(result.runId);
+    expect(child?.event.runId).toBe("inner-run");
   });
 
   it("executes parallel tool calls from one turn", async () => {
@@ -243,7 +350,9 @@ describe("runAgent — buffered", () => {
     const result = await runAgent(agent, { input: "go" });
     const toolMsgs = result.messages.filter((m) => m.role === "tool");
     expect(toolMsgs).toHaveLength(2);
-    expect(toolMsgs.map((m) => (m.content[0] as { toolCallId: string }).toolCallId)).toEqual(["c1", "c2"]);
+    expect(
+      toolMsgs.map((m) => (m.content[0] as { toolCallId: string }).toolCallId),
+    ).toEqual(["c1", "c2"]);
   });
 
   it("aggregates usage across turns", async () => {
@@ -252,30 +361,44 @@ describe("runAgent — buffered", () => {
       name: "a",
       tools: [echo],
       provider: scriptedProvider([
-        toolCallResult([{ id: "c1", name: "echo", arguments: { value: "x" } }], u),
+        toolCallResult(
+          [{ id: "c1", name: "echo", arguments: { value: "x" } }],
+          u,
+        ),
         textResult("done", u),
       ]),
     });
     const result = await runAgent(agent, { input: "go" });
-    expect(result.usage).toEqual({ inputTokens: 20, outputTokens: 10, totalTokens: 30 });
+    expect(result.usage).toEqual({
+      inputTokens: 20,
+      outputTokens: 10,
+      totalTokens: 30,
+    });
   });
 
   it("throws MaxStepsExceededError when the model never stops calling tools", async () => {
     const agent = defineAgent({
       name: "a",
       tools: [echo],
-      provider: scriptedProvider([toolCallResult([{ id: "c1", name: "echo", arguments: { value: "x" } }])]),
+      provider: scriptedProvider([
+        toolCallResult([{ id: "c1", name: "echo", arguments: { value: "x" } }]),
+      ]),
     });
-    await expect(runAgent(agent, { input: "go", maxSteps: 2 })).rejects.toBeInstanceOf(MaxStepsExceededError);
+    await expect(
+      runAgent(agent, { input: "go", maxSteps: 2 }),
+    ).rejects.toBeInstanceOf(MaxStepsExceededError);
   });
 
   it("throws CancelledError when the signal is already aborted", async () => {
     const controller = new AbortController();
     controller.abort();
-    const agent = defineAgent({ name: "a", provider: scriptedProvider([textResult("never")]) });
-    await expect(runAgent(agent, { input: "go", signal: controller.signal })).rejects.toBeInstanceOf(
-      CancelledError,
-    );
+    const agent = defineAgent({
+      name: "a",
+      provider: scriptedProvider([textResult("never")]),
+    });
+    await expect(
+      runAgent(agent, { input: "go", signal: controller.signal }),
+    ).rejects.toBeInstanceOf(CancelledError);
   });
 
   it("invokes lifecycle hooks in order", async () => {
@@ -296,7 +419,14 @@ describe("runAgent — buffered", () => {
       },
     });
     await runAgent(agent, { input: "go" });
-    expect(order).toEqual(["start", "step1", "toolCall", "toolResult", "step2", "finish"]);
+    expect(order).toEqual([
+      "start",
+      "step1",
+      "toolCall",
+      "toolResult",
+      "step2",
+      "finish",
+    ]);
   });
 
   it("calls onError and rejects on a non-recoverable failure", async () => {
@@ -304,10 +434,14 @@ describe("runAgent — buffered", () => {
     const agent = defineAgent({
       name: "a",
       tools: [echo],
-      provider: scriptedProvider([toolCallResult([{ id: "c1", name: "echo", arguments: { value: "x" } }])]),
+      provider: scriptedProvider([
+        toolCallResult([{ id: "c1", name: "echo", arguments: { value: "x" } }]),
+      ]),
       hooks: { onError: ({ error }) => void order.push(error.name) },
     });
-    await expect(runAgent(agent, { input: "go", maxSteps: 1 })).rejects.toBeInstanceOf(MaxStepsExceededError);
+    await expect(
+      runAgent(agent, { input: "go", maxSteps: 1 }),
+    ).rejects.toBeInstanceOf(MaxStepsExceededError);
     expect(order).toEqual(["MaxStepsExceededError"]);
   });
 
@@ -316,7 +450,9 @@ describe("runAgent — buffered", () => {
     const agent = defineAgent({
       name: "a",
       tools: [echo],
-      provider: scriptedProvider([toolCallResult([{ id: "c1", name: "echo", arguments: { value: "x" } }])]),
+      provider: scriptedProvider([
+        toolCallResult([{ id: "c1", name: "echo", arguments: { value: "x" } }]),
+      ]),
       hooks: {
         onError: ({ error }) => {
           order.push(error.name);
@@ -325,7 +461,9 @@ describe("runAgent — buffered", () => {
       },
     });
 
-    await expect(runAgent(agent, { input: "go", maxSteps: 1 })).rejects.toBeInstanceOf(MaxStepsExceededError);
+    await expect(
+      runAgent(agent, { input: "go", maxSteps: 1 }),
+    ).rejects.toBeInstanceOf(MaxStepsExceededError);
     expect(order).toEqual(["MaxStepsExceededError"]);
   });
 });
@@ -353,7 +491,9 @@ describe("runAgent — streaming", () => {
     expect(types.at(-1)).toBe("run.finish");
 
     const finish = events.at(-1);
-    expect(finish?.type === "run.finish" && finish.result.output).toBe("streamed");
+    expect(finish?.type === "run.finish" && finish.result.output).toBe(
+      "streamed",
+    );
 
     const result = await handle.completed;
     expect(result.output).toBe("streamed");
@@ -364,7 +504,9 @@ describe("runAgent — streaming", () => {
     const agent = defineAgent({
       name: "a",
       tools: [echo],
-      provider: scriptedProvider([toolCallResult([{ id: "c1", name: "echo", arguments: { value: "x" } }])]),
+      provider: scriptedProvider([
+        toolCallResult([{ id: "c1", name: "echo", arguments: { value: "x" } }]),
+      ]),
     });
     const handle = runAgent(agent, { input: "go", stream: true, maxSteps: 1 });
 
@@ -377,7 +519,9 @@ describe("runAgent — streaming", () => {
     }
     expect(iterationError).toBeInstanceOf(MaxStepsExceededError);
     expect(events.map((e) => e.type)).toContain("error");
-    await expect(handle.completed).rejects.toBeInstanceOf(MaxStepsExceededError);
+    await expect(handle.completed).rejects.toBeInstanceOf(
+      MaxStepsExceededError,
+    );
   });
 
   it("closes the provider stream when iteration stops early", async () => {
@@ -409,20 +553,27 @@ describe("runAgent — streaming", () => {
     const agent = defineAgent({
       name: "a",
       tools: [echo],
-      provider: scriptedProvider([toolCallResult([{ id: "c1", name: "echo", arguments: { value: "x" } }])]),
+      provider: scriptedProvider([
+        toolCallResult([{ id: "c1", name: "echo", arguments: { value: "x" } }]),
+      ]),
     });
     const handle = runAgent(agent, { input: "go", stream: true, maxSteps: 1 });
     // Intentionally never touch `handle.completed`.
-    await expect((async () => {
-      for await (const _ of handle) void _;
-    })()).rejects.toBeInstanceOf(MaxStepsExceededError);
+    await expect(
+      (async () => {
+        for await (const _ of handle) void _;
+      })(),
+    ).rejects.toBeInstanceOf(MaxStepsExceededError);
     // Give the microtask queue a tick; an unhandled rejection would surface here.
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
   it("forwards events to the onEvent callback in buffered mode", async () => {
     const seen: string[] = [];
-    const agent = defineAgent({ name: "a", provider: scriptedProvider([textResult("ok")]) });
+    const agent = defineAgent({
+      name: "a",
+      provider: scriptedProvider([textResult("ok")]),
+    });
     await runAgent(agent, { input: "go", onEvent: (e) => seen.push(e.type) });
     expect(seen[0]).toBe("run.start");
     expect(seen.at(-1)).toBe("run.finish");
@@ -431,7 +582,10 @@ describe("runAgent — streaming", () => {
 
 describe("runAgent — sessions & context (Phase 5)", () => {
   it("reads session history before the run and persists only new messages after", async () => {
-    const session = createSession({ id: "s1", messages: [user("prior question")] });
+    const session = createSession({
+      id: "s1",
+      messages: [user("prior question")],
+    });
     let seenRequest: Message[] = [];
     const agent = defineAgent({
       name: "a",
@@ -446,7 +600,10 @@ describe("runAgent — sessions & context (Phase 5)", () => {
     const result = await runAgent(agent, { input: "new question", session });
 
     // The provider saw prior history + new input.
-    expect(seenRequest.map((m) => textOf(m))).toEqual(["prior question", "new question"]);
+    expect(seenRequest.map((m) => textOf(m))).toEqual([
+      "prior question",
+      "new question",
+    ]);
     // The session now holds prior + new input + assistant answer (no system/context dupes).
     const persisted = await session.messages();
     expect(persisted.map((m) => `${m.role}:${textOf(m)}`)).toEqual([
@@ -464,15 +621,24 @@ describe("runAgent — sessions & context (Phase 5)", () => {
       instructions: "be terse",
       provider: scriptedProvider([textResult("ok")]),
     });
-    await runAgent(agent, { input: "hi", session, context: [staticContext("secret fact")] });
+    await runAgent(agent, {
+      input: "hi",
+      session,
+      context: [staticContext("secret fact")],
+    });
     const persisted = await session.messages();
     expect(persisted.map((m) => m.role)).toEqual(["user", "assistant"]);
-    expect(persisted.some((m) => textOf(m).includes("secret fact"))).toBe(false);
+    expect(persisted.some((m) => textOf(m).includes("secret fact"))).toBe(
+      false,
+    );
   });
 
   it("resumes a conversation across runs by reusing the same session", async () => {
     const session = createSession({ id: "tab" });
-    const agent = defineAgent({ name: "a", provider: scriptedProvider([textResult("r")]) });
+    const agent = defineAgent({
+      name: "a",
+      provider: scriptedProvider([textResult("r")]),
+    });
     await runAgent(agent, { input: "first", session });
     const second = await runAgent(agent, { input: "second", session });
     // second run's full history includes both turns
@@ -496,9 +662,16 @@ describe("runAgent — sessions & context (Phase 5)", () => {
         },
       }),
     });
-    await runAgent(agent, { input: "hi", context: [staticContext("injected fact")] });
+    await runAgent(agent, {
+      input: "hi",
+      context: [staticContext("injected fact")],
+    });
     // [system(instructions), system(context), user(input)]
-    expect(seenRequest.map((m) => m.role)).toEqual(["system", "system", "user"]);
+    expect(seenRequest.map((m) => m.role)).toEqual([
+      "system",
+      "system",
+      "user",
+    ]);
     expect(textOf(seenRequest[1]!)).toContain("injected fact");
   });
 
@@ -549,7 +722,11 @@ describe("runAgent — sessions & context (Phase 5)", () => {
     const agent = defineAgent({
       name: "a",
       provider: scriptedProvider([textResult("ok")]),
-      hooks: { onError: () => { onErrorSeen = true; } },
+      hooks: {
+        onError: () => {
+          onErrorSeen = true;
+        },
+      },
     });
     const exploding = {
       name: "boom",
@@ -558,7 +735,11 @@ describe("runAgent — sessions & context (Phase 5)", () => {
       },
     };
     await expect(
-      runAgent(agent, { input: "hi", context: [exploding], onEvent: (e) => seen.push(e.type) }),
+      runAgent(agent, {
+        input: "hi",
+        context: [exploding],
+        onEvent: (e) => seen.push(e.type),
+      }),
     ).rejects.toBeInstanceOf(AgentError);
     expect(seen).toContain("error");
     expect(onErrorSeen).toBe(true);
@@ -569,16 +750,21 @@ describe("runAgent — sessions & context (Phase 5)", () => {
     const agent = defineAgent({
       name: "a",
       tools: [echo],
-      provider: scriptedProvider([toolCallResult([{ id: "c1", name: "echo", arguments: { value: "x" } }])]),
+      provider: scriptedProvider([
+        toolCallResult([{ id: "c1", name: "echo", arguments: { value: "x" } }]),
+      ]),
     });
-    await expect(runAgent(agent, { input: "go", session, maxSteps: 1 })).rejects.toBeInstanceOf(
-      MaxStepsExceededError,
-    );
+    await expect(
+      runAgent(agent, { input: "go", session, maxSteps: 1 }),
+    ).rejects.toBeInstanceOf(MaxStepsExceededError);
     expect(await session.messages()).toHaveLength(0);
   });
 
   it("writes typed resume metadata without clobbering host metadata", async () => {
-    const session = createSession({ id: "resume-info", metadata: { host: true } });
+    const session = createSession({
+      id: "resume-info",
+      metadata: { host: true },
+    });
     const usage: Usage = { inputTokens: 1, outputTokens: 2, totalTokens: 3 };
     const agent = defineAgent({
       name: "resume-agent",
@@ -606,14 +792,17 @@ describe("runAgent — sessions & context (Phase 5)", () => {
   });
 
   it("persists each completed step in checkpoint step mode without duplicating final messages", async () => {
-    const makeAgent = () => defineAgent({
-      name: "checkpoint-agent",
-      tools: [echo],
-      provider: scriptedProvider([
-        toolCallResult([{ id: "c1", name: "echo", arguments: { value: "yo" } }]),
-        textResult("done"),
-      ]),
-    });
+    const makeAgent = () =>
+      defineAgent({
+        name: "checkpoint-agent",
+        tools: [echo],
+        provider: scriptedProvider([
+          toolCallResult([
+            { id: "c1", name: "echo", arguments: { value: "yo" } },
+          ]),
+          textResult("done"),
+        ]),
+      });
     const normalSession = createSession({ id: "normal" });
     const checkpointSession = createSession({ id: "checkpoint" });
 
@@ -624,14 +813,21 @@ describe("runAgent — sessions & context (Phase 5)", () => {
       checkpoint: { mode: "step" },
     });
 
-    expect(await checkpointSession.messages()).toEqual(await normalSession.messages());
-    expect(readResumeInfo(await checkpointSession.getMetadata())?.lastRunStatus).toBe("completed");
+    expect(await checkpointSession.messages()).toEqual(
+      await normalSession.messages(),
+    );
+    expect(
+      readResumeInfo(await checkpointSession.getMetadata())?.lastRunStatus,
+    ).toBe("completed");
   });
 
   it("marks checkpointed sessions interrupted before terminal completion", async () => {
     const session = createSession({ id: "interrupt-marker" });
     const seen: string[] = [];
-    const agent = defineAgent({ name: "checkpoint-agent", provider: scriptedProvider([textResult("done")]) });
+    const agent = defineAgent({
+      name: "checkpoint-agent",
+      provider: scriptedProvider([textResult("done")]),
+    });
 
     await runAgent(agent, {
       input: "go",
@@ -646,12 +842,17 @@ describe("runAgent — sessions & context (Phase 5)", () => {
     });
 
     expect(seen).toEqual(["interrupted"]);
-    expect(readResumeInfo(await session.getMetadata())?.lastRunStatus).toBe("completed");
+    expect(readResumeInfo(await session.getMetadata())?.lastRunStatus).toBe(
+      "completed",
+    );
   });
 
   it("fails the run when onCheckpoint rejects and emits an error event", async () => {
     const seen: string[] = [];
-    const agent = defineAgent({ name: "checkpoint-agent", provider: scriptedProvider([textResult("done")]) });
+    const agent = defineAgent({
+      name: "checkpoint-agent",
+      provider: scriptedProvider([textResult("done")]),
+    });
 
     await expect(
       runAgent(agent, {
@@ -669,7 +870,10 @@ describe("runAgent — sessions & context (Phase 5)", () => {
 
   it("stamps checkpoints with the runId", async () => {
     let checkpointRunId: string | undefined;
-    const agent = defineAgent({ name: "checkpoint-agent", provider: scriptedProvider([textResult("done")]) });
+    const agent = defineAgent({
+      name: "checkpoint-agent",
+      provider: scriptedProvider([textResult("done")]),
+    });
 
     const result = await runAgent(agent, {
       input: "go",
@@ -691,16 +895,26 @@ describe("runAgent — sessions & context (Phase 5)", () => {
       id: "dangling",
       messages: [
         user("go"),
-        assistant([{ type: "tool_call", id: "c1", name: "echo", arguments: { value: "yo" } }]),
+        assistant([
+          {
+            type: "tool_call",
+            id: "c1",
+            name: "echo",
+            arguments: { value: "yo" },
+          },
+        ]),
       ],
-      metadata: withResumeInfo({ host: true }, {
-        schemaVersion: 1,
-        agentName: "resume-agent",
-        model: "mock-model",
-        provider: "mock",
-        lastActiveAt: new Date().toISOString(),
-        lastRunStatus: "interrupted",
-      }),
+      metadata: withResumeInfo(
+        { host: true },
+        {
+          schemaVersion: 1,
+          agentName: "resume-agent",
+          model: "mock-model",
+          provider: "mock",
+          lastActiveAt: new Date().toISOString(),
+          lastRunStatus: "interrupted",
+        },
+      ),
     });
 
     let toolRuns = 0;
@@ -738,10 +952,19 @@ describe("runAgent — sessions & context (Phase 5)", () => {
 
     expect(toolRuns).toBe(0);
     expect(providerSawResume).toBe(true);
-    expect(events.filter((event) => event.type === "session.resumed")).toHaveLength(1);
-    expect(request.some((message) => message.content.some((part) => (
-      part.type === "tool_result" && part.toolCallId === "c1" && part.isError === true
-    )))).toBe(true);
+    expect(
+      events.filter((event) => event.type === "session.resumed"),
+    ).toHaveLength(1);
+    expect(
+      request.some((message) =>
+        message.content.some(
+          (part) =>
+            part.type === "tool_result" &&
+            part.toolCallId === "c1" &&
+            part.isError === true,
+        ),
+      ),
+    ).toBe(true);
   });
 
   it("can reexecute dangling calls on resume when requested", async () => {
@@ -750,7 +973,14 @@ describe("runAgent — sessions & context (Phase 5)", () => {
       id: "reexecute",
       messages: [
         user("go"),
-        assistant([{ type: "tool_call", id: "c1", name: "echo", arguments: { value: "yo" } }]),
+        assistant([
+          {
+            type: "tool_call",
+            id: "c1",
+            name: "echo",
+            arguments: { value: "yo" },
+          },
+        ]),
       ],
       metadata: withResumeInfo(undefined, {
         schemaVersion: 1,
@@ -783,7 +1013,11 @@ describe("runAgent — sessions & context (Phase 5)", () => {
     });
 
     expect(toolRuns).toBe(1);
-    expect((await store.load("reexecute"))?.messages.some((message) => message.role === "tool")).toBe(true);
+    expect(
+      (await store.load("reexecute"))?.messages.some(
+        (message) => message.role === "tool",
+      ),
+    ).toBe(true);
   });
 
   it("enforces and warns on model compatibility policies", async () => {
@@ -797,7 +1031,11 @@ describe("runAgent — sessions & context (Phase 5)", () => {
     });
 
     const errorStore = new InMemorySessionStore();
-    await errorStore.save({ id: "mismatch-error", messages: [user("prior")], metadata });
+    await errorStore.save({
+      id: "mismatch-error",
+      messages: [user("prior")],
+      metadata,
+    });
     let providerCalls = 0;
     const errorAgent = defineAgent({
       name: "new",
@@ -817,13 +1055,22 @@ describe("runAgent — sessions & context (Phase 5)", () => {
     expect(providerCalls).toBe(0);
 
     const warnStore = new InMemorySessionStore();
-    await warnStore.save({ id: "mismatch-warn", messages: [user("prior")], metadata });
+    await warnStore.save({
+      id: "mismatch-warn",
+      messages: [user("prior")],
+      metadata,
+    });
     const events: RunEvent[] = [];
     await runAgent(errorAgent, {
       session: createSession({ id: "mismatch-warn", store: warnStore }),
       onEvent: (event) => events.push(event),
     });
-    expect(events.some((event) => event.type === "custom" && event.name === "session.model_mismatch")).toBe(true);
+    expect(
+      events.some(
+        (event) =>
+          event.type === "custom" && event.name === "session.model_mismatch",
+      ),
+    ).toBe(true);
   });
 
   it("emits session.compacted when a session append triggers store compaction", async () => {
@@ -831,18 +1078,33 @@ describe("runAgent — sessions & context (Phase 5)", () => {
       compactor: {
         shouldCompact: (state) => state.messages.length > 1,
         compact: (state) => ({
-          state: { id: state.id, messages: state.messages.slice(-1), metadata: state.metadata },
+          state: {
+            id: state.id,
+            messages: state.messages.slice(-1),
+            metadata: state.metadata,
+          },
           archive: { messages: state.messages.slice(0, -1), reason: "test" },
         }),
       },
     });
     const session = createSession({ id: "compact-run", store });
     const events: RunEvent[] = [];
-    const agent = defineAgent({ name: "compact-agent", provider: scriptedProvider([textResult("done")]) });
+    const agent = defineAgent({
+      name: "compact-agent",
+      provider: scriptedProvider([textResult("done")]),
+    });
 
-    await runAgent(agent, { input: "go", session, onEvent: (event) => events.push(event) });
+    await runAgent(agent, {
+      input: "go",
+      session,
+      onEvent: (event) => events.push(event),
+    });
 
-    const compacted = events.find((event) => event.type === "session.compacted");
-    expect(compacted?.type === "session.compacted" && compacted.removed).toBeGreaterThan(0);
+    const compacted = events.find(
+      (event) => event.type === "session.compacted",
+    );
+    expect(
+      compacted?.type === "session.compacted" && compacted.removed,
+    ).toBeGreaterThan(0);
   });
 });
