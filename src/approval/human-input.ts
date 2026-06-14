@@ -50,6 +50,11 @@ function withAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const onAbort = () => reject(abortError());
     signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) {
+      signal.removeEventListener("abort", onAbort);
+      reject(abortError());
+      return;
+    }
     promise.then(
       (value) => {
         signal.removeEventListener("abort", onAbort);
@@ -140,6 +145,11 @@ export function deferredHumanInputGateway(): DeferredHumanInputGateway {
           reject(abortError());
         };
         ctx.signal?.addEventListener("abort", onAbort, { once: true });
+        if (ctx.signal?.aborted) {
+          cleanup();
+          reject(abortError());
+          return;
+        }
         pending.set(req.requestId, {
           request: req,
           resolve: (answer) => {

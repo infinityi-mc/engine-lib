@@ -8,6 +8,11 @@ export function redactingCodec(
   inner: SessionStoreCodec,
   filters: readonly ContentFilter[],
 ): SessionStoreCodec {
+  const metadataCodec =
+    inner.encodeMetadata !== undefined && inner.decodeMetadata !== undefined
+      ? inner
+      : jsonSessionStoreCodec;
+
   return {
     async encodeMessage(message: Message): Promise<string> {
       const filtered = await filterMessageText(
@@ -22,14 +27,10 @@ export function redactingCodec(
       return inner.decodeMessage(payload);
     },
     async encodeMetadata(metadata) {
-      if (inner.encodeMetadata !== undefined)
-        return inner.encodeMetadata(metadata);
-      return jsonSessionStoreCodec.encodeMetadata!(metadata);
+      return metadataCodec.encodeMetadata!(metadata);
     },
     decodeMetadata(payload) {
-      if (inner.decodeMetadata !== undefined)
-        return inner.decodeMetadata(payload);
-      return jsonSessionStoreCodec.decodeMetadata!(payload);
+      return metadataCodec.decodeMetadata!(payload);
     },
   };
 }

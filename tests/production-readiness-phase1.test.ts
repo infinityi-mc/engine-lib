@@ -16,8 +16,14 @@ import { runAgent, type RunEvent } from "../src/execution/index";
 import type { Message } from "../src/messages/types";
 import { toProviderError } from "../src/providers/http";
 import type { CompletionRequest, Provider } from "../src/providers/types";
-import { regexRedactor } from "../src/governance/index";
-import { circuitBreaker, withProviderRetry } from "../src/resilience/index";
+import { redactingCodec, regexRedactor } from "../src/governance/index";
+import {
+  circuitBreaker,
+  evaluateBudget,
+  fixedWindowRateLimiter,
+  tokenBucketRateLimiter,
+  withProviderRetry,
+} from "../src/resilience/index";
 import { s } from "../src/schema/index";
 import { mockProvider, textResult, toolCallResult } from "../src/testing/index";
 
@@ -36,6 +42,27 @@ function scriptedProvider(results: readonly ReturnType<typeof textResult>[]) {
   return mockProvider({
     result: () => results[Math.min(i++, results.length - 1)]!,
   });
+}
+
+function abortAfterListenerRegistration(): AbortSignal {
+  const signal = {
+    aborted: false,
+    addEventListener() {
+      signal.aborted = true;
+    },
+    removeEventListener() {},
+  };
+  return signal as unknown as AbortSignal;
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
 }
 
 describe("production readiness Phase 1", () => {
@@ -166,6 +193,50 @@ describe("production readiness Phase 1", () => {
     ).toBe(true);
   });
 
+  it("handles human-input aborts that land during listener registration", async () => {
+    const tool = askHumanTool();
+    const toolOutcome = await Promise.race([
+      Promise.resolve(
+        tool.execute(
+          { question: "Continue?" },
+          {
+            toolCallId: "h1",
+            signal: abortAfterListenerRegistration(),
+            humanInput: {
+              request: () => new Promise<string>(() => {}),
+            },
+          },
+        ),
+      ).then(
+        () => "resolved",
+        (error) => error,
+      ),
+      new Promise((resolve) => setTimeout(() => resolve("timed out"), 20)),
+    ]);
+    expect(toolOutcome).toBeInstanceOf(CancelledError);
+
+    const gateway = deferredHumanInputGateway();
+    const gatewayOutcome = await Promise.race([
+      gateway
+        .request(
+          {
+            requestId: "h2",
+            question: "Continue?",
+            agentName: "phase1",
+            toolCallId: "h2",
+          },
+          { signal: abortAfterListenerRegistration() },
+        )
+        .then(
+          () => "resolved",
+          (error) => error,
+        ),
+      new Promise((resolve) => setTimeout(() => resolve("timed out"), 20)),
+    ]);
+    expect(gatewayOutcome).toBeInstanceOf(CancelledError);
+    expect(gateway.pending()).toEqual([]);
+  });
+
   it("throws BudgetExceededError after a provider turn exceeds a stop budget", async () => {
     const agent = defineAgent({
       name: "phase1",
@@ -184,6 +255,20 @@ describe("production readiness Phase 1", () => {
         budget: { maxTotalTokens: 100 },
       }),
     ).rejects.toBeInstanceOf(BudgetExceededError);
+  });
+
+  it("rejects invalid budget limits before comparing usage", () => {
+    const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
+
+    expect(() => evaluateBudget({ maxTotalTokens: Number.NaN }, usage)).toThrow(
+      TypeError,
+    );
+    expect(() => evaluateBudget({ maxInputTokens: Infinity }, usage)).toThrow(
+      TypeError,
+    );
+    expect(() => evaluateBudget({ maxOutputTokens: -1 }, usage)).toThrow(
+      TypeError,
+    );
   });
 
   it("emits retry and rate-limit events around provider calls", async () => {
@@ -223,6 +308,15 @@ describe("production readiness Phase 1", () => {
     expect(events.some((event) => event.type === "rate_limit.wait")).toBe(true);
   });
 
+  it("rejects rate-limit acquisitions that can never fit", async () => {
+    await expect(
+      fixedWindowRateLimiter({ limit: 1, windowMs: 60_000 }).acquire(2),
+    ).rejects.toThrow("weight must not exceed limit");
+    await expect(
+      tokenBucketRateLimiter({ capacity: 1, refillPerSec: 1 }).acquire(2),
+    ).rejects.toThrow("weight must not exceed capacity");
+  });
+
   it("does not open the circuit breaker on non-retryable provider errors", async () => {
     let attempts = 0;
     const provider: Provider = {
@@ -248,6 +342,71 @@ describe("production readiness Phase 1", () => {
       "unauthorized",
     );
     expect(attempts).toBe(2);
+  });
+
+  it("validates half-open circuit breaker concurrency", () => {
+    expect(() =>
+      circuitBreaker(mockProvider(), {
+        failureThreshold: 1,
+        cooldownMs: 1_000,
+        halfOpenMax: 0,
+      }),
+    ).toThrow("halfOpenMax must be a positive integer");
+    expect(() =>
+      circuitBreaker(mockProvider(), {
+        failureThreshold: 1,
+        cooldownMs: 1_000,
+        halfOpenMax: 1.5,
+      }),
+    ).toThrow("halfOpenMax must be a positive integer");
+  });
+
+  it("keeps a circuit open when a stale half-open success follows a failure", async () => {
+    let calls = 0;
+    const failingProbe = deferred<ReturnType<typeof textResult>>();
+    const succeedingProbe = deferred<ReturnType<typeof textResult>>();
+    const provider: Provider = {
+      ...mockProvider(),
+      async complete() {
+        calls += 1;
+        if (calls === 1) {
+          throw new ProviderError("initial failure", {
+            provider: "mock",
+            status: 503,
+          });
+        }
+        if (calls === 2) return failingProbe.promise;
+        if (calls === 3) return succeedingProbe.promise;
+        return textResult("unexpected");
+      },
+    };
+    const protectedProvider = circuitBreaker(provider, {
+      failureThreshold: 1,
+      cooldownMs: 1,
+      halfOpenMax: 2,
+    });
+
+    await expect(protectedProvider.complete({ messages: [] })).rejects.toThrow(
+      "initial failure",
+    );
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    const failing = protectedProvider.complete({ messages: [] });
+    const succeeding = protectedProvider.complete({ messages: [] });
+    failingProbe.reject(
+      new ProviderError("probe failure", {
+        provider: "mock",
+        status: 503,
+      }),
+    );
+    await expect(failing).rejects.toThrow("probe failure");
+    succeedingProbe.resolve(textResult("recovered"));
+    await expect(succeeding).resolves.toMatchObject({ model: "mock-model" });
+
+    await expect(protectedProvider.complete({ messages: [] })).rejects.toThrow(
+      "provider circuit breaker is open",
+    );
+    expect(calls).toBe(3);
   });
 
   it("uses the same retryability fallback for HTTP-wrapped and manual provider errors", async () => {
@@ -382,5 +541,27 @@ describe("production readiness Phase 1", () => {
     expect(
       textOf(requests[1]!.messages.find((message) => message.role === "tool")!),
     ).toContain("[SSN]");
+  });
+
+  it("falls back to JSON metadata codec unless encode and decode are paired", async () => {
+    const codec = redactingCodec(
+      {
+        encodeMessage: (message) => JSON.stringify(message),
+        decodeMessage: (payload) => JSON.parse(payload) as Message,
+        encodeMetadata: (metadata) =>
+          metadata === undefined
+            ? undefined
+            : `custom:${JSON.stringify(metadata)}`,
+      },
+      [],
+    );
+
+    const payload = await codec.encodeMetadata!({ owner: "private" });
+    expect(payload).toBe('{"owner":"private"}');
+    await expect(
+      Promise.resolve(codec.decodeMetadata!(payload)),
+    ).resolves.toEqual({
+      owner: "private",
+    });
   });
 });

@@ -122,6 +122,12 @@ export function circuitBreaker(
   if (opts.cooldownMs <= 0) {
     throw new TypeError("cooldownMs must be greater than zero");
   }
+  if (
+    opts.halfOpenMax !== undefined &&
+    (!Number.isInteger(opts.halfOpenMax) || opts.halfOpenMax <= 0)
+  ) {
+    throw new TypeError("halfOpenMax must be a positive integer");
+  }
 
   let failures = 0;
   let openedAt = 0;
@@ -135,7 +141,11 @@ export function circuitBreaker(
       : ("open" as const);
   };
 
-  const before = () => {
+  type Admission =
+    | { readonly state: "closed" }
+    | { readonly state: "half-open"; readonly openedAt: number };
+
+  const before = (): Admission => {
     const current = state();
     if (current === "open") {
       throw new ProviderError("provider circuit breaker is open", {
@@ -151,19 +161,26 @@ export function circuitBreaker(
         });
       }
       halfOpenInFlight += 1;
+      return { state: "half-open", openedAt };
     }
+    return { state: "closed" };
   };
 
-  const success = () => {
+  const releaseProbe = (admission: Admission) => {
+    if (admission.state === "half-open") {
+      halfOpenInFlight = Math.max(0, halfOpenInFlight - 1);
+    }
+  };
+  const success = (admission: Admission) => {
+    releaseProbe(admission);
+    if (admission.state === "half-open" && openedAt !== admission.openedAt) {
+      return;
+    }
     failures = 0;
     openedAt = 0;
-    halfOpenInFlight = Math.max(0, halfOpenInFlight - 1);
   };
-  const releaseProbe = () => {
-    halfOpenInFlight = Math.max(0, halfOpenInFlight - 1);
-  };
-  const failure = () => {
-    releaseProbe();
+  const failure = (admission: Admission) => {
+    releaseProbe(admission);
     failures += 1;
     if (failures >= opts.failureThreshold) openedAt = Date.now();
   };
@@ -171,25 +188,25 @@ export function circuitBreaker(
   return {
     ...provider,
     async complete(req, ctx) {
-      before();
+      const admission = before();
       try {
         const result = await provider.complete(req, ctx);
-        success();
+        success(admission);
         return result;
       } catch (error) {
-        if (shouldCountBreakerFailure(error)) failure();
-        else releaseProbe();
+        if (shouldCountBreakerFailure(error)) failure(admission);
+        else releaseProbe(admission);
         throw error;
       }
     },
     async *stream(req, ctx) {
-      before();
+      const admission = before();
       try {
         for await (const event of provider.stream(req, ctx)) yield event;
-        success();
+        success(admission);
       } catch (error) {
-        if (shouldCountBreakerFailure(error)) failure();
-        else releaseProbe();
+        if (shouldCountBreakerFailure(error)) failure(admission);
+        else releaseProbe(admission);
         throw error;
       }
     },

@@ -64,6 +64,9 @@ export function fixedWindowRateLimiter(opts: {
   return {
     async acquire(weight = 1, ctx = {}) {
       validatePositive("weight", weight);
+      if (weight > opts.limit) {
+        throw new TypeError("weight must not exceed limit");
+      }
       for (;;) {
         throwIfAborted(ctx.signal);
         const now = Date.now();
@@ -142,6 +145,9 @@ export function tokenBucketRateLimiter(opts: {
   return {
     async acquire(weight = 1, ctx = {}) {
       validatePositive("weight", weight);
+      if (weight > opts.capacity) {
+        throw new TypeError("weight must not exceed capacity");
+      }
       for (;;) {
         throwIfAborted(ctx.signal);
         refill();

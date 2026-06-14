@@ -16,10 +16,21 @@ export interface BudgetBreach {
   readonly limit: number;
 }
 
+function validateLimit(name: string, value: number | undefined): void {
+  if (value === undefined) return;
+  if (!Number.isFinite(value) || value < 0) {
+    throw new TypeError(`${name} must be a finite non-negative number`);
+  }
+}
+
 export function evaluateBudget(
   budget: RunBudget,
   usage: Usage,
 ): readonly BudgetBreach[] {
+  validateLimit("maxTotalTokens", budget.maxTotalTokens);
+  validateLimit("maxInputTokens", budget.maxInputTokens);
+  validateLimit("maxOutputTokens", budget.maxOutputTokens);
+
   const breaches: BudgetBreach[] = [];
   if (
     budget.maxTotalTokens !== undefined &&
