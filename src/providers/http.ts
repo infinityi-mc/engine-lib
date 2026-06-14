@@ -243,5 +243,9 @@ export function toProviderError(
     status !== undefined
       ? `${provider} request failed (HTTP ${status}): ${detail}`
       : `${provider} request failed: ${detail}`;
-  return new ProviderError(message, { provider, cause: error });
+  return new ProviderError(message, {
+    provider,
+    status,
+    cause: error,
+  });
 }

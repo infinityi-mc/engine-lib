@@ -27,10 +27,10 @@ function assertToolAndSchemaTypes(): void {
 
   // @ts-expect-error path is required.
   const missingRequired: Params = { mode: "text" };
-  // @ts-expect-error maxBytes is a number when present.
   const wrongOptionalType: Params = {
     path: "README.md",
     mode: "text",
+    // @ts-expect-error maxBytes is a number when present.
     maxBytes: "1024",
   };
   void [missingRequired, wrongOptionalType];

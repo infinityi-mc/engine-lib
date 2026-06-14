@@ -96,6 +96,38 @@ export function eventFields(
         name: event.name,
         ok: event.result.ok,
       };
+    case "tool.approval_requested":
+      return { runId: event.runId, id: event.id, name: event.name };
+    case "tool.approval_decided":
+      return {
+        runId: event.runId,
+        id: event.id,
+        name: event.name,
+        approved: event.approved,
+      };
+    case "human.input_requested":
+      return { runId: event.runId, requestId: event.requestId };
+    case "human.input_provided":
+      return {
+        runId: event.runId,
+        requestId: event.requestId,
+        cancelled: event.cancelled,
+      };
+    case "budget.warning":
+      return {
+        runId: event.runId,
+        field: event.field,
+        used: event.used,
+        limit: event.limit,
+      };
+    case "provider.retry":
+      return {
+        runId: event.runId,
+        attempt: event.attempt,
+        delayMs: event.delayMs,
+      };
+    case "rate_limit.wait":
+      return { runId: event.runId, waitedMs: event.waitedMs };
     case "run.finish":
       return {
         runId: event.runId,
@@ -172,6 +204,50 @@ export function eventPayload(event: RunEvent): Record<string, unknown> {
         name: event.name,
         result: event.result,
       };
+    case "tool.approval_requested":
+      return {
+        runId: event.runId,
+        id: event.id,
+        name: event.name,
+        argumentsDigest: event.argumentsDigest,
+      };
+    case "tool.approval_decided":
+      return {
+        runId: event.runId,
+        id: event.id,
+        name: event.name,
+        approved: event.approved,
+        reason: event.reason,
+      };
+    case "human.input_requested":
+      return {
+        runId: event.runId,
+        requestId: event.requestId,
+        question: event.question,
+        context: event.context,
+      };
+    case "human.input_provided":
+      return {
+        runId: event.runId,
+        requestId: event.requestId,
+        cancelled: event.cancelled,
+      };
+    case "budget.warning":
+      return {
+        runId: event.runId,
+        field: event.field,
+        used: event.used,
+        limit: event.limit,
+      };
+    case "provider.retry":
+      return {
+        runId: event.runId,
+        attempt: event.attempt,
+        delayMs: event.delayMs,
+        status: event.status,
+      };
+    case "rate_limit.wait":
+      return { runId: event.runId, waitedMs: event.waitedMs };
     case "run.finish":
       return {
         runId: event.runId,

@@ -104,11 +104,13 @@ function assertAgentAuthoringTypes(): void {
 
   // @ts-expect-error handoff targets must be an AgentDefinition or string.
   defineAgent({ name: "bad-router", provider, handoffs: [123] });
-  // @ts-expect-error toolChoice is constrained to the public ToolChoice union.
   defineAgent({
     name: "bad-generation",
     provider,
-    generation: { toolChoice: "sometimes" },
+    generation: {
+      // @ts-expect-error toolChoice is constrained to the public ToolChoice union.
+      toolChoice: "sometimes",
+    },
   });
 
   const registry = createAgentRegistry([billing]);
