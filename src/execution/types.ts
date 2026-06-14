@@ -26,6 +26,9 @@ import type { Session } from "../session/types";
 import type { ToolResult } from "../tools/types";
 import type { RunSubscriber } from "../events/types";
 import type { ToolCallPart } from "../messages/types";
+import type { ApprovalPolicy, HumanInputGateway } from "../approval/types";
+import type { ContentFilterConfig } from "../governance/filters";
+import type { RateLimiter, RetryPolicy, RunBudget } from "../resilience/index";
 
 /** New input for a run: raw text (→ a user message), a single message, or several. */
 export type RunInput = string | Message | Message[];
@@ -62,6 +65,43 @@ export type RunEventDraft =
       readonly name: string;
       readonly result: ToolResult;
     }
+  | {
+      readonly type: "tool.approval_requested";
+      readonly id: string;
+      readonly name: string;
+      readonly argumentsDigest: string;
+    }
+  | {
+      readonly type: "tool.approval_decided";
+      readonly id: string;
+      readonly name: string;
+      readonly approved: boolean;
+      readonly reason?: string;
+    }
+  | {
+      readonly type: "human.input_requested";
+      readonly requestId: string;
+      readonly question: string;
+      readonly context?: string;
+    }
+  | {
+      readonly type: "human.input_provided";
+      readonly requestId: string;
+      readonly cancelled: boolean;
+    }
+  | {
+      readonly type: "budget.warning";
+      readonly field: "totalTokens" | "inputTokens" | "outputTokens";
+      readonly used: number;
+      readonly limit: number;
+    }
+  | {
+      readonly type: "provider.retry";
+      readonly attempt: number;
+      readonly delayMs: number;
+      readonly status?: number;
+    }
+  | { readonly type: "rate_limit.wait"; readonly waitedMs: number }
   | { readonly type: "run.finish"; readonly result: RunResult }
   | { readonly type: "error"; readonly error: AgentError }
   /**
@@ -185,6 +225,18 @@ export interface RunOptions {
   readonly modelCompatibility?: "warn" | "error" | "ignore";
   /** Context providers injected into the system layer at run time (after instructions, before history). */
   readonly context?: readonly ContextProvider[];
+  /** Optional run-loop approval gate applied to every regular tool call. */
+  readonly approval?: ApprovalPolicy;
+  /** Optional channel used by `ask_human` tools to wait for host-provided input. */
+  readonly humanInput?: HumanInputGateway;
+  /** Optional provider-token budget enforced before and after provider turns. */
+  readonly budget?: RunBudget;
+  /** Optional limiter acquired before each provider call. */
+  readonly rateLimiter?: RateLimiter;
+  /** Optional retry policy wrapping provider calls. */
+  readonly retry?: RetryPolicy;
+  /** Optional content filters for provider input and tool output. */
+  readonly filters?: ContentFilterConfig;
   /** Token budgeting for the messages sent to the provider (does not affect persisted/returned history). */
   readonly contextWindow?: ContextWindowOptions;
   /** Per-run generation overrides, merged over the agent's `generation` defaults. */

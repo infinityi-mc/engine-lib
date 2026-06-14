@@ -16,6 +16,8 @@
  * @module
  */
 
+import { createHash } from "node:crypto";
+
 import type { AgentDefinition } from "../agent/types";
 import { createToolRegistry } from "../agent/registry";
 import type { ToolRegistry } from "../agent/registry";
@@ -23,6 +25,7 @@ import { handoffProviderTools, resolveHandoffTargets } from "../agent/handoff";
 import type { InstructionContext } from "../agent/types";
 import {
   AgentError,
+  BudgetExceededError,
   CancelledError,
   ExecutionError,
   MaxHandoffsExceededError,
@@ -48,7 +51,7 @@ import { StreamAccumulator } from "../providers/stream";
 import type { EngineContext } from "../runtime/types";
 import { resolveContext } from "../context/providers";
 import { applyContextWindow } from "../context/window";
-import { toToolResultMessage } from "../tools/result";
+import { toFilteredToolResultMessage } from "../tools/result";
 import type { ToolContext, ToolDefinition, ToolResult } from "../tools/types";
 import { createEventHub } from "../events/hub";
 import type { EventHub } from "../events/types";
@@ -75,6 +78,11 @@ import type {
 } from "./types";
 import { addUsage, emptyUsage } from "./usage";
 import { generateRunId } from "./run-id";
+import type { ApprovalPendingCall, ApprovalRequest } from "../approval/types";
+import { evaluateBudget } from "../resilience/budget";
+import { isTokenRateLimiter } from "../resilience/rate-limit";
+import { withProviderRetry } from "../resilience/retry";
+import { filterMessagesText } from "../governance/filters";
 
 /** Default cap on provider turns when {@link RunOptions.maxSteps} is omitted. */
 export const DEFAULT_MAX_STEPS = 16;
@@ -274,6 +282,90 @@ function buildRequest(
   };
 }
 
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function stableStringify(value: unknown): string {
+  const seen = new WeakSet<object>();
+  return (
+    JSON.stringify(value, (_key, child) => {
+      if (typeof child !== "object" || child === null) return child;
+      if (seen.has(child)) return "[Circular]";
+      seen.add(child);
+      if (Array.isArray(child)) return child;
+      const out: Record<string, unknown> = {};
+      for (const key of Object.keys(child).sort()) {
+        out[key] = (child as Record<string, unknown>)[key];
+      }
+      return out;
+    }) ?? String(value)
+  );
+}
+
+function argumentsDigest(value: unknown): string {
+  const encoded = stableStringify(value) ?? String(value);
+  return `sha256:${createHash("sha256").update(encoded).digest("hex").slice(0, 16)}`;
+}
+
+function textLengthOfMessages(messages: readonly Message[]): number {
+  let length = 0;
+  for (const message of messages) {
+    for (const part of message.content) {
+      if (part.type === "text") length += part.text.length;
+      if (part.type === "tool_result") {
+        for (const textPart of part.content) length += textPart.text.length;
+      }
+    }
+  }
+  return length;
+}
+
+function estimateInputTokens(req: CompletionRequest): number {
+  return Math.ceil(textLengthOfMessages(req.messages) / 4);
+}
+
+function waitWithAbort<T>(
+  promise: Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  if (signal === undefined) return promise;
+  if (signal.aborted)
+    return Promise.reject(new CancelledError("run cancelled"));
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new CancelledError("run cancelled"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
+async function acquireProviderRateLimit(
+  opts: RunOptions,
+  req: CompletionRequest,
+): Promise<number | undefined> {
+  const limiter = opts.rateLimiter;
+  if (limiter === undefined) return undefined;
+  const startedAt = Date.now();
+  const acquire = isTokenRateLimiter(limiter)
+    ? limiter.acquireForTokens(
+        estimateInputTokens(req),
+        req.maxOutputTokens ?? 0,
+        { signal: opts.signal },
+      )
+    : limiter.acquire(1, { signal: opts.signal });
+  await waitWithAbort(acquire, opts.signal);
+  return Date.now() - startedAt;
+}
+
 /** Resolve static or dynamic instructions to a string. */
 async function resolveInstructions(
   agent: AgentDefinition,
@@ -358,14 +450,19 @@ async function* executeAgent(
     readonly events: RunBridgeEvent[];
     /** Token usage the tool reported (e.g. a sub-agent's run usage). */
     readonly usage: Usage;
+    /** Cancellation requested by a tool after it had already emitted bridge events. */
+    readonly cancelled?: CancelledError;
   }
 
   /** Run a single tool call with full error isolation (never throws). */
-  const runOneTool = async (call: {
-    id: string;
-    name: string;
-    arguments: unknown;
-  }): Promise<ToolOutcome> => {
+  const runOneTool = async (
+    call: {
+      id: string;
+      name: string;
+      arguments: unknown;
+    },
+    approvalFailure?: ToolResult,
+  ): Promise<ToolOutcome> => {
     const events: RunBridgeEvent[] = [];
     let usage = emptyUsage();
     const bridge: RunBridge = {
@@ -397,10 +494,14 @@ async function* executeAgent(
         usage,
       };
     }
+    if (approvalFailure !== undefined) {
+      return { result: approvalFailure, events, usage };
+    }
     const toolCtx: ToolContext = {
       ...engineCtx,
       toolCallId: call.id,
       agentName: active.agent.name,
+      ...(opts.humanInput !== undefined ? { humanInput: opts.humanInput } : {}),
       run: bridge,
     };
     const span = tel.startSpan(SPAN_TOOL, {
@@ -417,7 +518,14 @@ async function* executeAgent(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       span.fail(message);
-      return { result: { ok: false, error: message }, events, usage };
+      return err instanceof CancelledError && opts.signal?.aborted
+        ? {
+            result: { ok: false, error: message },
+            events,
+            usage,
+            cancelled: err,
+          }
+        : { result: { ok: false, error: message }, events, usage };
     } finally {
       span.end();
       tel.recordTool(
@@ -427,6 +535,121 @@ async function* executeAgent(
     }
   };
 
+  const evaluateApprovals = async (
+    calls: readonly {
+      readonly id: string;
+      readonly name: string;
+      readonly arguments: unknown;
+    }[],
+    messageSnapshot: readonly Message[],
+  ): Promise<{
+    readonly failures: ReadonlyMap<string, ToolResult>;
+    readonly events: readonly RunEventDraft[];
+  }> => {
+    const policy = opts.approval;
+    if (policy === undefined || calls.length === 0) {
+      return { failures: new Map(), events: [] };
+    }
+
+    const failures = new Map<string, ToolResult>();
+    const events: RunEventDraft[] = [];
+    const pendingCalls: ApprovalPendingCall[] = [];
+    const parsedById = new Map<string, unknown>();
+    const messages = messageSnapshot;
+
+    for (const call of calls) {
+      const tool = active.registry.get(call.name);
+      if (tool === undefined) continue;
+      const parsed = tool.parameters.safeParse(call.arguments);
+      if (!parsed.success) continue;
+      parsedById.set(call.id, parsed.data);
+      pendingCalls.push({
+        id: call.id,
+        name: call.name,
+        arguments: parsed.data,
+      });
+    }
+
+    for (const call of calls) {
+      if (!parsedById.has(call.id)) continue;
+      const parsedArguments = parsedById.get(call.id);
+      const request: ApprovalRequest = {
+        toolCallId: call.id,
+        name: call.name,
+        arguments: parsedArguments,
+        agentName: active.agent.name,
+        messages,
+        pendingCalls,
+        ...(opts.session !== undefined ? { sessionId: opts.session.id } : {}),
+      };
+
+      let requiresApproval = false;
+      try {
+        throwIfAborted(opts.signal);
+        requiresApproval = await waitWithAbort(
+          Promise.resolve(policy.requiresApproval(request, engineCtx)),
+          opts.signal,
+        );
+      } catch (error) {
+        if (error instanceof CancelledError && opts.signal?.aborted)
+          throw error;
+        const reason = messageOf(error);
+        events.push({
+          type: "tool.approval_decided",
+          id: call.id,
+          name: call.name,
+          approved: false,
+          reason,
+        });
+        failures.set(call.id, { ok: false, error: reason });
+        continue;
+      }
+      if (!requiresApproval) continue;
+
+      events.push({
+        type: "tool.approval_requested",
+        id: call.id,
+        name: call.name,
+        argumentsDigest: argumentsDigest(parsedArguments),
+      });
+
+      try {
+        throwIfAborted(opts.signal);
+        const decision = await waitWithAbort(
+          Promise.resolve(policy.decide(request, engineCtx)),
+          opts.signal,
+        );
+        events.push({
+          type: "tool.approval_decided",
+          id: call.id,
+          name: call.name,
+          approved: decision.approved === true,
+          ...(decision.reason !== undefined ? { reason: decision.reason } : {}),
+        });
+        if (decision.approved !== true) {
+          failures.set(call.id, {
+            ok: false,
+            error: decision.reason ?? `tool "${call.name}" was not approved`,
+          });
+        }
+      } catch (error) {
+        if (error instanceof CancelledError && opts.signal?.aborted)
+          throw error;
+        const reason = messageOf(error);
+        events.push({
+          type: "tool.approval_decided",
+          id: call.id,
+          name: call.name,
+          approved: false,
+          reason,
+        });
+        failures.set(call.id, { ok: false, error: reason });
+      }
+    }
+
+    return { failures, events };
+  };
+
   // Hoisted above the try so the catch can stamp tokens-consumed-so-far onto
   // the error it throws.
   let usage = emptyUsage();
@@ -434,6 +657,42 @@ async function* executeAgent(
   let interruptedMarked = false;
   let startingTotalUsage = emptyUsage();
   let loadedResume = undefined as ReturnType<typeof readResumeInfo>;
+  const warnedBudgetFields = new Set<string>();
+
+  const usageForBudget = (snapshot: Usage): Usage =>
+    opts.budget?.scope === "session"
+      ? addUsage(startingTotalUsage, snapshot)
+      : snapshot;
+
+  const evaluateRunBudget = (snapshot: Usage): readonly RunEventDraft[] => {
+    const budget = opts.budget;
+    if (budget === undefined) return [];
+    const breaches = evaluateBudget(budget, usageForBudget(snapshot));
+    if (breaches.length === 0) return [];
+    if ((budget.onBudgetExceeded ?? "stop") === "stop") {
+      const breach = breaches[0]!;
+      throw new BudgetExceededError(
+        `run budget exceeded: ${breach.field} used ${breach.used} > ${breach.limit}`,
+        {
+          field: breach.field,
+          limit: breach.limit,
+          usage: usageForBudget(snapshot),
+        },
+      );
+    }
+    const events: RunEventDraft[] = [];
+    for (const breach of breaches) {
+      if (warnedBudgetFields.has(breach.field)) continue;
+      warnedBudgetFields.add(breach.field);
+      events.push({
+        type: "budget.warning",
+        field: breach.field,
+        used: breach.used,
+        limit: breach.limit,
+      });
+    }
+    return events;
+  };
 
   const writeResumeStatus = async (
     status: "completed" | "failed" | "interrupted",
@@ -552,12 +811,23 @@ async function* executeAgent(
           reconciled = dangling.calls.length;
           prior = prior.slice(0, dangling.assistantIndex);
         } else if (strategy === "synthesize-error") {
-          const synthesized = dangling.calls.map((call) =>
-            toToolResultMessage(call.id, {
-              ok: false,
-              error: `Prior run was interrupted before tool "${call.name}" (${call.id}) completed.`,
-            }),
-          );
+          const synthesized: Message[] = [];
+          for (const call of dangling.calls) {
+            synthesized.push(
+              await toFilteredToolResultMessage(
+                call.id,
+                {
+                  ok: false,
+                  error: `Prior run was interrupted before tool "${call.name}" (${call.id}) completed.`,
+                },
+                opts.filters,
+                {
+                  agentName: active.agent.name,
+                  sessionId: session.id,
+                },
+              ),
+            );
+          }
           if (synthesized.length > 0) {
             const appendResult = await session.append(synthesized);
             const event = checkpointEvent(appendResult, session.id);
@@ -579,6 +849,7 @@ async function* executeAgent(
               await active.agent.hooks?.onToolCall?.({ call, tool }, engineCtx);
             const outcome = await runOneTool(call);
             usage = addUsage(usage, outcome.usage);
+            for (const event of evaluateRunBudget(usage)) yield event;
             for (const childEvent of outcome.events) yield childEvent;
             yield {
               type: "tool.result",
@@ -590,7 +861,12 @@ async function* executeAgent(
               { call, result: outcome.result },
               engineCtx,
             );
-            const message = toToolResultMessage(call.id, outcome.result);
+            const message = await toFilteredToolResultMessage(
+              call.id,
+              outcome.result,
+              opts.filters,
+              { agentName: active.agent.name, sessionId: session.id },
+            );
             toolMessages.push(message);
             yield { type: "message", message };
           }
@@ -654,6 +930,7 @@ async function* executeAgent(
 
     while (steps < maxSteps) {
       throwIfAborted(opts.signal);
+      for (const event of evaluateRunBudget(usage)) yield event;
       steps++;
 
       const provider = active.agent.provider;
@@ -672,12 +949,31 @@ async function* executeAgent(
           engine: engineCtx,
         },
       );
+      const filteredRequestMessages =
+        opts.filters?.providerInput !== undefined
+          ? await filterMessagesText(
+              requestMessages,
+              opts.filters.providerInput,
+              {
+                stage: "provider-input",
+                agentName: active.agent.name,
+                ...(opts.session !== undefined
+                  ? { sessionId: opts.session.id }
+                  : {}),
+              },
+              opts.filters.onError,
+            )
+          : requestMessages;
       const req = buildRequest(
         active.agent,
         opts,
         active.providerTools,
-        requestMessages,
+        filteredRequestMessages,
       );
+      const waitedMs = await acquireProviderRateLimit(opts, req);
+      if (waitedMs !== undefined && waitedMs > 0) {
+        yield { type: "rate_limit.wait", waitedMs };
+      }
 
       const useStreaming = stream && provider.capabilities.streaming;
       const providerSpan = tel.startSpan(SPAN_PROVIDER, {
@@ -688,8 +984,24 @@ async function* executeAgent(
         "agent.step": steps,
       });
       let result: CompletionResult;
-      try {
+      const retryEvents: RunEventDraft[] = [];
+      const collectProviderCall = async (): Promise<CompletionResult> => {
         if (useStreaming) {
+          const acc = new StreamAccumulator();
+          let streamError: ProviderError | undefined;
+          for await (const event of provider.stream(req, engineCtx)) {
+            acc.push(event);
+            if (event.type === "error") {
+              streamError = event.error;
+            }
+          }
+          if (streamError !== undefined) throw streamError;
+          return acc.result(model);
+        }
+        return provider.complete(req, engineCtx);
+      };
+      try {
+        if (opts.retry === undefined && useStreaming) {
           const acc = new StreamAccumulator();
           let streamError: ProviderError | undefined;
           for await (const event of provider.stream(req, engineCtx)) {
@@ -703,17 +1015,32 @@ async function* executeAgent(
           if (streamError !== undefined) throw streamError;
           result = acc.result(model);
         } else {
-          result = await provider.complete(req, engineCtx);
-          if (stream) {
-            const buffered = extractText(result.message);
-            if (buffered !== "") yield { type: "token", delta: buffered };
-          }
+          result =
+            opts.retry === undefined
+              ? await provider.complete(req, engineCtx)
+              : await withProviderRetry(
+                  collectProviderCall,
+                  opts.retry,
+                  engineCtx,
+                  (event) => {
+                    retryEvents.push({ type: "provider.retry", ...event });
+                  },
+                );
+        }
+        for (const event of retryEvents) yield event;
+        if (stream && (!useStreaming || opts.retry !== undefined)) {
+          const buffered = extractText(result.message);
+          if (buffered !== "") yield { type: "token", delta: buffered };
         }
         providerSpan.setAttributes({
           "provider.finish_reason": result.finishReason,
+          "provider.retry_count": retryEvents.filter(
+            (event) => event.type === "provider.retry",
+          ).length,
         });
         providerSpan.ok();
       } catch (err) {
+        for (const event of retryEvents) yield event;
         providerSpan.fail(err instanceof Error ? err.message : String(err));
         throw err;
       } finally {
@@ -721,6 +1048,7 @@ async function* executeAgent(
       }
 
       usage = addUsage(usage, result.usage);
+      for (const event of evaluateRunBudget(usage)) yield event;
       finishReason = result.finishReason;
       finalMessage = result.message;
       messages.push(result.message);
@@ -787,10 +1115,13 @@ async function* executeAgent(
           await active.agent.hooks?.onToolCall?.({ call, tool }, engineCtx);
       }
 
+      const approval = await evaluateApprovals(regularCalls, messages);
+      for (const event of approval.events) yield event;
+
       const settled = await Promise.all(
         regularCalls.map(async (call) => ({
           call,
-          outcome: await runOneTool(call),
+          outcome: await runOneTool(call, approval.failures.get(call.id)),
         })),
       );
 
@@ -798,6 +1129,17 @@ async function* executeAgent(
       // abort check, so a cancellation detected here still accounts for tokens
       // already spent by the tools that just ran.
       for (const { outcome } of settled) usage = addUsage(usage, outcome.usage);
+      const cancelled = settled.find(
+        ({ outcome }) => outcome.cancelled !== undefined,
+      )?.outcome.cancelled;
+      if (cancelled !== undefined || opts.signal?.aborted) {
+        for (const { outcome } of settled) {
+          for (const childEvent of outcome.events) yield childEvent;
+        }
+        if (cancelled !== undefined) throw cancelled;
+        throwIfAborted(opts.signal);
+      }
+      for (const event of evaluateRunBudget(usage)) yield event;
       throwIfAborted(opts.signal);
 
       for (const { call, outcome } of settled) {
@@ -818,7 +1160,17 @@ async function* executeAgent(
       }
       const stepToolMessages: Message[] = [];
       for (const { call, outcome } of settled) {
-        const message = toToolResultMessage(call.id, outcome.result);
+        const message = await toFilteredToolResultMessage(
+          call.id,
+          outcome.result,
+          opts.filters,
+          {
+            agentName: active.agent.name,
+            ...(opts.session !== undefined
+              ? { sessionId: opts.session.id }
+              : {}),
+          },
+        );
         messages.push(message);
         newMessages.push(message);
         stepToolMessages.push(message);
@@ -846,7 +1198,17 @@ async function* executeAgent(
           ok: true,
           content: `Transferred to "${target.name}".`,
         };
-        const ackMessage = toToolResultMessage(call.id, ack);
+        const ackMessage = await toFilteredToolResultMessage(
+          call.id,
+          ack,
+          opts.filters,
+          {
+            agentName: active.agent.name,
+            ...(opts.session !== undefined
+              ? { sessionId: opts.session.id }
+              : {}),
+          },
+        );
         messages.push(ackMessage);
         newMessages.push(ackMessage);
         stepToolMessages.push(ackMessage);

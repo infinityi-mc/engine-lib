@@ -11,6 +11,7 @@ export type { ToolSpec } from "./define";
 
 export {
   renderToolContent,
+  toFilteredToolResultMessage,
   toProviderTool,
   toToolResultMessage,
 } from "./result";

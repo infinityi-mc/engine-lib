@@ -10,6 +10,10 @@
  * @module
  */
 
+import type { ApprovalDecision as CoreApprovalDecision } from "../approval/types";
+
+export type ApprovalDecision = CoreApprovalDecision;
+
 /**
  * A command the model asked to run, after schema validation but before any
  * policy/approval gating. Passed to {@link ShellToolsConfig.requiresApproval}
@@ -76,13 +80,6 @@ export interface EnvPolicy {
   readonly deny?: readonly string[];
   /** Extra vars merged on top of the (filtered) inherited set. */
   readonly extra?: Readonly<Record<string, string>>;
-}
-
-/** A host's decision on an approval request. */
-export interface ApprovalDecision {
-  readonly approved: boolean;
-  /** Optional human-readable reason, surfaced in the approval event and on denial. */
-  readonly reason?: string;
 }
 
 /** Host-side configuration for {@link shellTools}. Never exposed to the model. */

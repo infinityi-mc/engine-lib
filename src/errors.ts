@@ -43,11 +43,43 @@ export class AgentError extends Error {
 /** A provider / LLM call failed (HTTP, protocol, refusal). */
 export class ProviderError extends AgentError {
   readonly provider?: string;
+  readonly status?: number;
+  readonly retryable?: boolean;
 
-  constructor(message: string, options?: ErrorOptions & { provider?: string }) {
+  constructor(
+    message: string,
+    options?: ErrorOptions & {
+      provider?: string;
+      status?: number;
+      retryable?: boolean;
+    },
+  ) {
     super(message, options);
     this.name = "ProviderError";
     if (options?.provider !== undefined) this.provider = options.provider;
+    if (options?.status !== undefined) this.status = options.status;
+    if (options?.retryable !== undefined) this.retryable = options.retryable;
+  }
+}
+
+/** The configured run token budget was exceeded. */
+export class BudgetExceededError extends AgentError {
+  readonly field: "totalTokens" | "inputTokens" | "outputTokens";
+  readonly limit: number;
+
+  constructor(
+    message: string,
+    options: ErrorOptions & {
+      field: "totalTokens" | "inputTokens" | "outputTokens";
+      limit: number;
+      usage: Usage;
+    },
+  ) {
+    super(message, options);
+    this.name = "BudgetExceededError";
+    this.field = options.field;
+    this.limit = options.limit;
+    this.usage = options.usage;
   }
 }
 

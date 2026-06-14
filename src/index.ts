@@ -23,6 +23,7 @@
 // Errors
 export {
   AgentError,
+  BudgetExceededError,
   CancelledError,
   ContextWindowError,
   ExecutionError,
@@ -199,3 +200,67 @@ export type {
   MessageBusSubscriberOptions,
   RunSubscriber,
 } from "./events/index";
+
+// Approval / HITL
+export {
+  TRUST_METADATA_KEY,
+  askHumanTool,
+  compareTrust,
+  deferredHumanInputGateway,
+  trustApprovalPolicy,
+} from "./approval/index";
+export type {
+  ApprovalDecision,
+  ApprovalGrant,
+  ApprovalPendingCall,
+  ApprovalPolicy,
+  ApprovalRequest,
+  AskHumanConfig,
+  DeferredHumanInputGateway,
+  HumanInputGateway,
+  HumanInputRequest,
+  TrustApprovalOptions,
+  TrustLevel,
+  TrustState,
+} from "./approval/index";
+
+// Resilience
+export {
+  circuitBreaker,
+  evaluateBudget,
+  fixedWindowRateLimiter,
+  isTokenRateLimiter,
+  slidingWindowRateLimiter,
+  tokenBucketRateLimiter,
+  withProviderRetry,
+} from "./resilience/index";
+export type {
+  BudgetBreach,
+  BudgetField,
+  CircuitBreakerOptions,
+  ProviderRetryEvent,
+  RateLimitAcquireContext,
+  RateLimiter,
+  RetryPolicy,
+  RunBudget,
+  TokenRateLimiter,
+} from "./resilience/index";
+
+// Governance / DLP
+export {
+  applyFilters,
+  defaultRedactionPatterns,
+  filterMessageText,
+  filterMessagesText,
+  redactTextForPersistence,
+  redactingCodec,
+  regexRedactor,
+  schemaSensitiveRedactor,
+} from "./governance/index";
+export type {
+  ContentFilter,
+  ContentFilterConfig,
+  FilterContext,
+  FilterStage,
+  RedactionPattern,
+} from "./governance/index";
