@@ -1,5 +1,5 @@
 import type { Message } from "../messages/types";
-import type { AppendResult, SessionListOptions, SessionListPage, SessionState, SessionStore } from "../session/types";
+import type { AppendResult, SessionListOptions, SessionListPage, SessionTenantClaim, SessionState, SessionStore } from "../session/types";
 import type { CloseableSessionStore, ExpiringSessionStore, SessionCompactionResult, SessionStoreHookContext, SessionStoreHooks, VersionedSessionStore } from "./types";
 import { isCloseableSessionStore, isVersionedSessionStore } from "./versioning";
 
@@ -91,6 +91,12 @@ export function withSessionStoreHooks<T extends SessionStore>(
     async save(state: SessionState): Promise<void> {
       await store.save(state);
       await runHooks("save", state.id);
+    },
+
+    async claimTenant(claim: SessionTenantClaim): Promise<boolean> {
+      const changed = await store.claimTenant(claim);
+      if (changed) await runHooks("save", claim.id);
+      return changed;
     },
 
     delete(id: string) {

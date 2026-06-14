@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { user } from "../src/messages/index";
-import { RESUME_SCHEMA_VERSION, createSession, InMemorySessionStore, readResumeInfo, withResumeInfo } from "../src/session/index";
+import { createSession, InMemorySessionStore, readResumeInfo, withResumeInfo } from "../src/session/index";
 
 describe("InMemorySessionStore", () => {
   it("load returns undefined for an unknown id", async () => {
@@ -128,12 +128,32 @@ describe("createSession", () => {
 
     await expect(session.messages()).rejects.toThrow('session "owned-session" is owned by a different tenant');
   });
+
+  it("rejects concurrent conflicting tenant claims", async () => {
+    const store = new InMemorySessionStore();
+    const first = createSession({ id: "tenant-race", store, tenantId: "t1", messages: [user("first")] });
+    const second = createSession({ id: "tenant-race", store, tenantId: "t2", messages: [user("second")] });
+
+    const results = await Promise.allSettled([first.messages(), second.messages()]);
+    const fulfilled = results.filter((result) => result.status === "fulfilled");
+    const rejected = results.filter((result) => result.status === "rejected");
+
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(Error);
+    expect(((rejected[0] as PromiseRejectedResult).reason as Error).message).toBe(
+      'session "tenant-race" is owned by a different tenant',
+    );
+    const state = await store.load("tenant-race");
+    expect(new Set(["t1", "t2"]).has(state?.tenantId ?? "")).toBe(true);
+    expect(state?.messages).toHaveLength(1);
+  });
 });
 
 describe("resume metadata", () => {
   it("reads v2 agent compatibility fields", () => {
     const metadata = withResumeInfo(undefined, {
-      schemaVersion: RESUME_SCHEMA_VERSION,
+      schemaVersion: 2,
       agentName: "agent",
       agentVersion: "1.2.3",
       toolNames: ["a", "b"],

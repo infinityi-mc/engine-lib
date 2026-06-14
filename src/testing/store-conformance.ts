@@ -168,6 +168,43 @@ export function runSessionStoreConformance(
       });
     });
 
+    it("claims tenant ownership once", async () => {
+      await withStore(async (store) => {
+        await expect(store.claimTenant({
+          id: "claim/session",
+          tenantId: "t1",
+          messages: [user("seed")],
+          metadata: { created: true },
+        })).resolves.toBe(true);
+
+        const claimed = await store.load("claim/session");
+        expect(claimed?.tenantId).toBe("t1");
+        expect(claimed?.metadata).toEqual({ created: true });
+        expect(messageTexts(claimed)).toEqual(["seed"]);
+
+        await expect(store.claimTenant({
+          id: "claim/session",
+          tenantId: "t1",
+          messages: [user("ignored")],
+          metadata: { ignored: true },
+        })).resolves.toBe(false);
+        expect(messageTexts(await store.load("claim/session"))).toEqual(["seed"]);
+
+        await expect(store.claimTenant({ id: "claim/session", tenantId: "t2" }))
+          .rejects.toThrow('session "claim/session" is owned by a different tenant');
+
+        await store.save({ id: "claim/global-empty", messages: [] });
+        await expect(store.claimTenant({
+          id: "claim/global-empty",
+          tenantId: "t1",
+          messages: [user("attached")],
+        })).resolves.toBe(true);
+        const attached = await store.load("claim/global-empty");
+        expect(attached?.tenantId).toBe("t1");
+        expect(messageTexts(attached)).toEqual(["attached"]);
+      });
+    });
+
     it("exposes opt-in expiry without background deletion", async () => {
       await withStore(async (store) => {
         if (!isExpiringSessionStore(store)) return;

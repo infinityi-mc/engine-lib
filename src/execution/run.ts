@@ -153,12 +153,20 @@ async function* stampRunEvents(
   gen: AsyncGenerator<RunBridgeEvent, RunResult>,
   runId: string,
 ): AsyncGenerator<RunEvent, RunResult> {
-  let next = await gen.next();
-  while (!next.done) {
-    yield stampRunEvent(runId, next.value);
-    next = await gen.next();
+  let completed = false;
+  try {
+    let next = await gen.next();
+    while (!next.done) {
+      yield stampRunEvent(runId, next.value);
+      next = await gen.next();
+    }
+    completed = true;
+    return next.value;
+  } finally {
+    if (!completed) {
+      await gen.return(undefined as never).catch(() => {});
+    }
   }
-  return next.value;
 }
 
 function resolvedIdentity(agent: AgentDefinition, opts: RunOptions): SessionModelIdentity {

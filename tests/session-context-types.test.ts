@@ -41,6 +41,10 @@ function assertSessionAndContextTypes(): void {
 
     async save(_state: SessionState): Promise<void> {}
 
+    async claimTenant(): Promise<boolean> {
+      return true;
+    }
+
     async delete(_id: string): Promise<void> {}
   }
 
@@ -143,6 +147,7 @@ function assertSessionAndContextTypes(): void {
     setMetadata: async () => {},
     list: async () => ({ sessions: [] }),
     save: async () => {},
+    claimTenant: async () => true,
     delete: async () => {},
   };
   // @ts-expect-error maxTokens is required for context-window options.

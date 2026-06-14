@@ -8,6 +8,7 @@ import type {
   AppendResult,
   SessionListOptions,
   SessionListPage,
+  SessionTenantClaim,
   SessionState,
   SessionStore,
 } from "../session/types";
@@ -213,6 +214,40 @@ export class FilesystemJsonlSessionStore implements SessionStore {
         ...(tenantId !== undefined ? { tenantId } : {}),
       };
       await this.appendRecord(state.id, record);
+    });
+  }
+
+  async claimTenant(claim: SessionTenantClaim): Promise<boolean> {
+    return this.enqueue(claim.id, async () => {
+      const existing = (await this.replayFile(this.pathFor(claim.id), claim.id)).state;
+      if (existing?.tenantId !== undefined && existing.tenantId !== claim.tenantId) {
+        throw new Error(`session "${claim.id}" is owned by a different tenant`);
+      }
+
+      const shouldSeedMessages =
+        claim.messages !== undefined &&
+        claim.messages.length > 0 &&
+        (existing === undefined || existing.messages.length === 0);
+      const shouldSeedMetadata = claim.metadata !== undefined && existing === undefined;
+      const shouldSeedTenant = existing?.tenantId === undefined;
+      if (!shouldSeedMessages && !shouldSeedMetadata && !shouldSeedTenant) return false;
+
+      const metadata = await encodeMetadata(this.codec, shouldSeedMetadata ? claim.metadata : existing?.metadata);
+      const record: JsonlSaveRecord = {
+        version: SESSION_STORE_SCHEMA_VERSION,
+        op: "save",
+        id: claim.id,
+        at: new Date().toISOString(),
+        messages: await encodeMessages(
+          this.codec,
+          shouldSeedMessages ? claim.messages ?? [] : existing?.messages ?? [],
+        ),
+        ...(metadata !== undefined ? { metadata } : {}),
+        stateVersion: existing?.version ?? 0,
+        tenantId: claim.tenantId,
+      };
+      await this.appendRecord(claim.id, record);
+      return true;
     });
   }
 

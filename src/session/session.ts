@@ -58,19 +58,24 @@ export function createSession(opts: CreateSessionOptions = {}): Session {
   const ensureSeeded = (): Promise<void> => {
     if (seedPromise !== undefined) return seedPromise;
     seedPromise = (async () => {
-      const existing = await store.load(id);
-      if (tenantId !== undefined && existing?.tenantId !== undefined && existing.tenantId !== tenantId) {
-        throw new Error(`session "${id}" is owned by a different tenant`);
+      if (tenantId !== undefined) {
+        await store.claimTenant({
+          id,
+          tenantId,
+          ...(seed !== undefined && seed.length > 0 ? { messages: seed } : {}),
+          ...(metadata !== undefined ? { metadata } : {}),
+        });
+        return;
       }
+
+      const existing = await store.load(id);
       const shouldSeedMessages = seed !== undefined && seed.length > 0 && (existing === undefined || existing.messages.length === 0);
       const shouldSeedMetadata = metadata !== undefined && existing === undefined;
-      const shouldSeedTenant = tenantId !== undefined && existing?.tenantId === undefined;
-      if (shouldSeedMessages || shouldSeedMetadata || shouldSeedTenant) {
+      if (shouldSeedMessages || shouldSeedMetadata) {
         await store.save({
           id,
           messages: shouldSeedMessages ? seed ?? [] : existing?.messages ?? [],
           ...(shouldSeedMetadata ? { metadata } : existing?.metadata !== undefined ? { metadata: existing.metadata } : {}),
-          ...(tenantId !== undefined ? { tenantId } : existing?.tenantId !== undefined ? { tenantId: existing.tenantId } : {}),
           ...(existing?.version !== undefined ? { version: existing.version } : {}),
         });
       }

@@ -16,6 +16,7 @@ import type {
   AppendResult,
   SessionListOptions,
   SessionListPage,
+  SessionTenantClaim,
   SessionState,
   SessionStore,
 } from "./types";
@@ -131,6 +132,45 @@ export class InMemorySessionStore implements SessionStore {
       ...(existing?.expiresAt !== undefined ? { expiresAt: existing.expiresAt } : {}),
     });
     return Promise.resolve();
+  }
+
+  claimTenant(claim: SessionTenantClaim): Promise<boolean> {
+    const now = new Date().toISOString();
+    let existing = this.entries.get(claim.id);
+    if (existing !== undefined && isExpired(existing)) {
+      this.entries.delete(claim.id);
+      existing = undefined;
+    }
+    if (existing?.tenantId !== undefined && existing.tenantId !== claim.tenantId) {
+      return Promise.reject(new Error(`session "${claim.id}" is owned by a different tenant`));
+    }
+
+    const shouldSeedMessages =
+      claim.messages !== undefined &&
+      claim.messages.length > 0 &&
+      (existing === undefined || existing.messages.length === 0);
+    const shouldSeedMetadata = claim.metadata !== undefined && existing === undefined;
+    const shouldSeedTenant = existing?.tenantId === undefined;
+    if (!shouldSeedMessages && !shouldSeedMetadata && !shouldSeedTenant) return Promise.resolve(false);
+
+    const seedMessages = claim.messages ?? [];
+    const seedMetadata = claim.metadata;
+    if (existing === undefined) {
+      this.entries.set(claim.id, {
+        messages: shouldSeedMessages ? [...seedMessages] : [],
+        ...(shouldSeedMetadata && seedMetadata !== undefined ? { metadata: { ...seedMetadata } } : {}),
+        version: 0,
+        tenantId: claim.tenantId,
+        createdAt: now,
+        updatedAt: now,
+      });
+      return Promise.resolve(true);
+    }
+
+    if (shouldSeedMessages) existing.messages = [...seedMessages];
+    if (shouldSeedTenant) existing.tenantId = claim.tenantId;
+    existing.updatedAt = now;
+    return Promise.resolve(true);
   }
 
   delete(id: string): Promise<void> {

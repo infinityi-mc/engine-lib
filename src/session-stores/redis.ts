@@ -5,6 +5,7 @@ import type {
   AppendResult,
   SessionListOptions,
   SessionListPage,
+  SessionTenantClaim,
   SessionState,
   SessionStore,
 } from "../session/types";
@@ -120,6 +121,7 @@ export class RedisSessionStore implements SessionStore {
   private readonly client: RedisSessionStoreClient;
   private readonly keyPrefix: string;
   private readonly codec: SessionStoreCodec;
+  private readonly queues = new Map<string, Promise<void>>();
 
   constructor(options: RedisSessionStoreOptions) {
     this.client = options.client;
@@ -145,27 +147,31 @@ export class RedisSessionStore implements SessionStore {
   async append(id: string, messages: readonly Message[]): Promise<AppendResult> {
     if (messages.length === 0) return {};
     const encoded = await encodeMessages(this.codec, messages);
-    const exists = await this.nextExistsInfo(id);
-    const tx = this.client.multi?.();
-    if (tx !== undefined) {
-      tx.set(this.existsKey(id), encodeExistsInfo(exists));
-      rpushTransaction(tx, this.messagesKey(id), encoded);
-      await tx.exec();
-    } else {
-      await this.rPush(this.messagesKey(id), encoded);
-      await this.client.set(this.existsKey(id), encodeExistsInfo(exists));
-    }
+    await this.enqueue(id, async () => {
+      const exists = await this.nextExistsInfo(id);
+      const tx = this.client.multi?.();
+      if (tx !== undefined) {
+        tx.set(this.existsKey(id), encodeExistsInfo(exists));
+        rpushTransaction(tx, this.messagesKey(id), encoded);
+        await tx.exec();
+      } else {
+        await this.rPush(this.messagesKey(id), encoded);
+        await this.client.set(this.existsKey(id), encodeExistsInfo(exists));
+      }
+    });
     return {};
   }
 
   async setMetadata(id: string, metadata: Record<string, unknown>): Promise<void> {
     const encoded = await encodeMetadata(this.codec, metadata);
-    const exists = await this.nextExistsInfo(id);
-    const tx = this.transaction();
-    tx.del(this.metadataKey(id));
-    tx.set(this.existsKey(id), encodeExistsInfo(exists));
-    if (encoded !== undefined) tx.set(this.metadataKey(id), encoded);
-    await tx.exec();
+    await this.enqueue(id, async () => {
+      const exists = await this.nextExistsInfo(id);
+      const tx = this.transaction();
+      tx.del(this.metadataKey(id));
+      tx.set(this.existsKey(id), encodeExistsInfo(exists));
+      if (encoded !== undefined) tx.set(this.metadataKey(id), encoded);
+      await tx.exec();
+    });
   }
 
   async list(options?: SessionListOptions): Promise<SessionListPage> {
@@ -254,25 +260,41 @@ export class RedisSessionStore implements SessionStore {
   }
 
   async save(state: SessionState): Promise<void> {
-    const tx = this.transaction();
-    const messagesKey = this.messagesKey(state.id);
-    const metadataKey = this.metadataKey(state.id);
-    const existsKey = this.existsKey(state.id);
-    const encoded = await encodeMessages(this.codec, state.messages);
-    const metadata = await encodeMetadata(this.codec, state.metadata);
-    const exists = await this.existsInfoForState(state);
+    await this.enqueue(state.id, () => this.writeState(state));
+  }
 
-    tx.del(messagesKey, metadataKey, existsKey);
-    tx.set(existsKey, encodeExistsInfo(exists));
-    if (metadata !== undefined) tx.set(metadataKey, metadata);
-    rpushTransaction(tx, messagesKey, encoded);
-    await tx.exec();
+  async claimTenant(claim: SessionTenantClaim): Promise<boolean> {
+    return this.enqueue(claim.id, async () => {
+      const existing = await this.load(claim.id);
+      if (existing?.tenantId !== undefined && existing.tenantId !== claim.tenantId) {
+        throw new Error(`session "${claim.id}" is owned by a different tenant`);
+      }
+
+      const shouldSeedMessages =
+        claim.messages !== undefined &&
+        claim.messages.length > 0 &&
+        (existing === undefined || existing.messages.length === 0);
+      const shouldSeedMetadata = claim.metadata !== undefined && existing === undefined;
+      const shouldSeedTenant = existing?.tenantId === undefined;
+      if (!shouldSeedMessages && !shouldSeedMetadata && !shouldSeedTenant) return false;
+
+      await this.writeState({
+        id: claim.id,
+        messages: shouldSeedMessages ? claim.messages ?? [] : existing?.messages ?? [],
+        ...(shouldSeedMetadata ? { metadata: claim.metadata } : existing?.metadata !== undefined ? { metadata: existing.metadata } : {}),
+        version: existing?.version ?? 0,
+        tenantId: claim.tenantId,
+      });
+      return true;
+    });
   }
 
   async delete(id: string): Promise<void> {
-    const tx = this.transaction();
-    tx.del(this.messagesKey(id), this.metadataKey(id), this.existsKey(id));
-    await tx.exec();
+    await this.enqueue(id, async () => {
+      const tx = this.transaction();
+      tx.del(this.messagesKey(id), this.metadataKey(id), this.existsKey(id));
+      await tx.exec();
+    });
   }
 
   async setExpiry(id: string, ttlMs: number): Promise<void> {
@@ -294,6 +316,34 @@ export class RedisSessionStore implements SessionStore {
     const tx = this.client.multi?.();
     if (tx === undefined) throw new Error("Redis session store save/delete require a transaction-capable client");
     return tx;
+  }
+
+  private async enqueue<T>(id: string, task: () => Promise<T>): Promise<T> {
+    const previous = this.queues.get(id) ?? Promise.resolve();
+    const run = previous.catch(() => {}).then(task);
+    const next = run.then(() => undefined, () => undefined);
+    this.queues.set(id, next);
+    try {
+      return await run;
+    } finally {
+      if (this.queues.get(id) === next) this.queues.delete(id);
+    }
+  }
+
+  private async writeState(state: SessionState): Promise<void> {
+    const tx = this.transaction();
+    const messagesKey = this.messagesKey(state.id);
+    const metadataKey = this.metadataKey(state.id);
+    const existsKey = this.existsKey(state.id);
+    const encoded = await encodeMessages(this.codec, state.messages);
+    const metadata = await encodeMetadata(this.codec, state.metadata);
+    const exists = await this.existsInfoForState(state);
+
+    tx.del(messagesKey, metadataKey, existsKey);
+    tx.set(existsKey, encodeExistsInfo(exists));
+    if (metadata !== undefined) tx.set(metadataKey, metadata);
+    rpushTransaction(tx, messagesKey, encoded);
+    await tx.exec();
   }
 
   private async lRange(key: string, start: number, stop: number): Promise<string[]> {

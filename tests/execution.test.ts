@@ -380,6 +380,31 @@ describe("runAgent — streaming", () => {
     await expect(handle.completed).rejects.toBeInstanceOf(MaxStepsExceededError);
   });
 
+  it("closes the provider stream when iteration stops early", async () => {
+    let providerClosed = false;
+    const provider = {
+      ...mockProvider({ result: textResult("unused") }),
+      async *stream() {
+        try {
+          yield { type: "message_start", model: "mock-model" } as const;
+          yield { type: "text_delta", text: "partial" } as const;
+          await new Promise<never>(() => {});
+        } finally {
+          providerClosed = true;
+        }
+      },
+    };
+    const agent = defineAgent({ name: "a", provider });
+    const handle = runAgent(agent, { input: "go", stream: true });
+
+    for await (const event of handle) {
+      if (event.type === "token") break;
+    }
+
+    await expect(handle.completed).rejects.toBeInstanceOf(CancelledError);
+    expect(providerClosed).toBe(true);
+  });
+
   it("does not crash when a failing stream is iterated without awaiting completed", async () => {
     const agent = defineAgent({
       name: "a",

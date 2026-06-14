@@ -36,6 +36,14 @@ export interface SessionState {
   readonly tenantId?: string;
 }
 
+/** First-use ownership claim for a tenant-bound session. */
+export interface SessionTenantClaim {
+  readonly id: string;
+  readonly tenantId: string;
+  readonly messages?: readonly Message[];
+  readonly metadata?: Record<string, unknown>;
+}
+
 /** Ordering supported by {@link SessionStore.list}. */
 export type SessionListOrder = "recent" | "id";
 
@@ -93,6 +101,12 @@ export interface SessionStore {
   list(options?: SessionListOptions): Promise<SessionListPage>;
   /** Replace the full state for `state.id`. */
   save(state: SessionState): Promise<void>;
+  /**
+   * Atomically bind a session id to `tenantId`, optionally applying first-use
+   * seed messages and metadata. Returns true when persisted state changed and
+   * rejects when an existing tenant owner differs.
+   */
+  claimTenant(claim: SessionTenantClaim): Promise<boolean>;
   /** Remove all history for `id` (no-op if absent). */
   delete(id: string): Promise<void>;
 }

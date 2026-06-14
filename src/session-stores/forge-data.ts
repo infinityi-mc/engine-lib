@@ -12,6 +12,7 @@ import type {
   AppendResult,
   SessionListOptions,
   SessionListPage,
+  SessionTenantClaim,
   SessionState,
   SessionStore,
 } from "../session/types";
@@ -366,6 +367,69 @@ export class ForgeDataSessionStore implements SessionStore {
           values (${state.id}, ${index}, ${encoded[index]!}, ${now})
         `).execute();
       }
+    }));
+  }
+
+  async claimTenant(claim: SessionTenantClaim): Promise<boolean> {
+    return this.enqueueWrite(async () => this.db.uow(async (tx) => {
+      let session = await tx.raw<SessionRow>(sql`
+        select id, metadata, version, tenant_id, expires_at from ${this.tables.sessions} where id = ${claim.id}
+      `).executeTakeFirst();
+      if (session?.expires_at !== null && session?.expires_at !== undefined && Date.parse(session.expires_at) <= Date.now()) {
+        await tx.raw(sql`delete from ${this.tables.messages} where session_id = ${claim.id}`).execute();
+        await tx.raw(sql`delete from ${this.tables.sessions} where id = ${claim.id}`).execute();
+        session = undefined;
+      }
+      if (session?.tenant_id !== null && session?.tenant_id !== undefined && session.tenant_id !== claim.tenantId) {
+        throw new Error(`session "${claim.id}" is owned by a different tenant`);
+      }
+
+      const existingRows = session === undefined
+        ? []
+        : (await tx.raw<MessageRow>(sql`
+            select payload from ${this.tables.messages}
+            where session_id = ${claim.id}
+            order by seq asc
+          `).execute()).rows;
+      const existingMessages = await decodeMessages(this.codec, existingRows.map((row) => row.payload));
+      const existingMetadata = session === undefined ? undefined : await decodeMetadata(this.codec, session.metadata);
+      const shouldSeedMessages =
+        claim.messages !== undefined &&
+        claim.messages.length > 0 &&
+        (session === undefined || existingMessages.length === 0);
+      const shouldSeedMetadata = claim.metadata !== undefined && session === undefined;
+      const shouldSeedTenant = session?.tenant_id == null;
+      if (!shouldSeedMessages && !shouldSeedMetadata && !shouldSeedTenant) return false;
+
+      const messages = shouldSeedMessages ? claim.messages ?? [] : existingMessages;
+      const metadata = shouldSeedMetadata ? claim.metadata : existingMetadata;
+      const encoded = await encodeMessages(this.codec, messages);
+      const encodedMetadata = await encodeMetadata(this.codec, metadata);
+      const version = session?.version == null ? 0 : toNumber(session.version);
+      const now = new Date().toISOString();
+
+      await tx.raw(sql`
+        insert into ${this.tables.sessions} (id, metadata, next_seq, version, tenant_id, created_at, updated_at)
+        values (${claim.id}, ${encodedMetadata ?? null}, ${encoded.length}, ${version}, ${claim.tenantId}, ${now}, ${now})
+        on conflict (id) do update set
+          metadata = excluded.metadata,
+          next_seq = excluded.next_seq,
+          version = excluded.version,
+          tenant_id = excluded.tenant_id,
+          updated_at = excluded.updated_at
+      `).execute();
+
+      await tx.raw(sql`
+        delete from ${this.tables.messages} where session_id = ${claim.id}
+      `).execute();
+
+      for (let index = 0; index < encoded.length; index += 1) {
+        await tx.raw(sql`
+          insert into ${this.tables.messages} (session_id, seq, payload, created_at)
+          values (${claim.id}, ${index}, ${encoded[index]!}, ${now})
+        `).execute();
+      }
+      return true;
     }));
   }
 
