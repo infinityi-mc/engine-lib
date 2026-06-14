@@ -46,7 +46,7 @@ export type RunInput = string | Message | Message[];
  * - `agent.child` wraps events forwarded from sub-agent tools, and
  *   `agent.handoff` marks a control transfer between agents.
  */
-export type RunEvent =
+export type RunEventDraft =
   | { readonly type: "run.start"; readonly agent: string }
   | { readonly type: "message"; readonly message: Message }
   | { readonly type: "token"; readonly delta: string }
@@ -97,6 +97,14 @@ export type RunEvent =
    */
   | { readonly type: "custom"; readonly name: string; readonly data: Record<string, unknown> };
 
+type WithRunId<T> = T extends { readonly type: string } ? T & { readonly runId: string } : never;
+
+/** A public run event as delivered to subscribers, stamped with this invocation's run id. */
+export type RunEvent = WithRunId<RunEventDraft>;
+
+/** Event shape accepted from run bridges before the parent run stamps its id. */
+export type RunBridgeEvent = RunEventDraft | RunEvent;
+
 /**
  * A handle the run loop hands to a tool so it can participate in its parent run:
  * forward nested {@link RunEvent}s onto the parent's event stream and fold
@@ -106,7 +114,7 @@ export type RunEvent =
  */
 export interface RunBridge {
   /** Forward a nested event onto the parent run's event stream. */
-  emit(event: RunEvent): void;
+  emit(event: RunBridgeEvent): void;
   /** Add token usage from nested work into the parent run's running total. */
   reportUsage(usage: Usage): void;
 }
@@ -119,6 +127,8 @@ export interface CheckpointPolicy {
 
 /** Snapshot reported after a completed provider step. */
 export interface RunCheckpoint {
+  /** Correlates the checkpoint with the run that produced it. */
+  readonly runId: string;
   readonly sessionId?: string;
   readonly agent: string;
   readonly step: number;
@@ -134,6 +144,8 @@ export interface ResumeOptions {
 
 /** Options for a single {@link runAgent} call. */
 export interface RunOptions {
+  /** Per-invocation correlation id. Generated when omitted; host-supplied values are used verbatim. */
+  readonly runId?: string;
   /** New input for this run. */
   readonly input?: RunInput;
   /** Prior conversation prepended before `input`. Ignored when `session` is set (history comes from the session). */
@@ -205,6 +217,8 @@ export type AnyRunOptions = Omit<RunOptions, "stream"> & {
 
 /** The buffered result of a completed run. */
 export interface RunResult {
+  /** Per-invocation correlation id shared by events and checkpoints for this run. */
+  readonly runId: string;
   /** Concatenated text of the final assistant message. */
   readonly output: string;
   /** The final assistant message. */

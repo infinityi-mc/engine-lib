@@ -1,0 +1,46 @@
+# Normalize line endings to LF for all text files
+* text=auto eol=lf
+
+# Source code
+*.ts        text eol=lf
+*.js        text eol=lf
+*.mjs       text eol=lf
+*.cjs       text eol=lf
+
+# Config & data
+*.json      text eol=lf
+*.jsonc     text eol=lf
+*.yaml      text eol=lf
+*.yml       text eol=lf
+*.toml      text eol=lf
+
+# Documentation
+*.md        text eol=lf
+*.txt       text eol=lf
+
+# Lock files (treat as text but avoid unnecessary diffs)
+bun.lock    text eol=lf
+package-lock.json text eol=lf
+yarn.lock   text eol=lf
+
+# Shell scripts
+*.sh        text eol=lf
+*.bash      text eol=lf
+
+# Binary files — never modify
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.webp      binary
+*.svg       binary
+*.woff      binary
+*.woff2     binary
+*.ttf       binary
+*.otf       binary
+*.eot       binary
+*.zip       binary
+*.tar       binary
+*.gz        binary
+*.tgz       binary

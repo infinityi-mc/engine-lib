@@ -55,6 +55,8 @@ const echo = defineTool({
   execute: ({ value }) => ({ ok: true, content: value }),
 });
 
+const RUN_ID = "run_test";
+
 /** An agent that calls `echo` once, then answers. */
 function toolThenAnswer(usage?: Usage) {
   return defineAgent({
@@ -78,8 +80,8 @@ describe("createEventHub", () => {
         (e) => void log.push(`s2:${e.type}`),
       ],
     });
-    await hub.emit({ type: "run.start", agent: "a" });
-    await hub.emit({ type: "token", delta: "x" });
+    await hub.emit({ type: "run.start", runId: RUN_ID, agent: "a" });
+    await hub.emit({ type: "token", runId: RUN_ID, delta: "x" });
     expect(log).toEqual(["s1:run.start", "s2:run.start", "s1:token", "s2:token"]);
   });
 
@@ -98,7 +100,7 @@ describe("createEventHub", () => {
       ],
       onSubscriberError: (_err, event, index) => errors.push({ index, type: event.type }),
     });
-    await hub.emit({ type: "token", delta: "x" });
+    await hub.emit({ type: "token", runId: RUN_ID, delta: "x" });
     // The healthy third subscriber still ran despite the first two failing.
     expect(seen).toEqual(["token"]);
     expect(errors).toEqual([
@@ -110,7 +112,7 @@ describe("createEventHub", () => {
   it("ignores undefined subscriber slots", async () => {
     const seen: string[] = [];
     const hub = createEventHub({ subscribers: [undefined, (e) => void seen.push(e.type)] });
-    await hub.emit({ type: "run.start", agent: "a" });
+    await hub.emit({ type: "run.start", runId: RUN_ID, agent: "a" });
     expect(seen).toEqual(["run.start"]);
   });
 
@@ -128,7 +130,7 @@ describe("createEventHub", () => {
       },
     });
     // emit must neither reject nor skip the healthy subscriber.
-    await hub.emit({ type: "token", delta: "x" });
+    await hub.emit({ type: "token", runId: RUN_ID, delta: "x" });
     expect(seen).toEqual(["token"]);
   });
 });
@@ -221,8 +223,8 @@ describe("loggingSubscriber", () => {
     } as unknown as Parameters<typeof loggingSubscriber>[0];
 
     const sub: RunSubscriber = loggingSubscriber(logger);
-    await sub({ type: "run.start", agent: "a" });
-    await sub({ type: "tool.call", id: "c1", name: "echo", arguments: {} });
+    await sub({ type: "run.start", runId: RUN_ID, agent: "a" });
+    await sub({ type: "tool.call", runId: RUN_ID, id: "c1", name: "echo", arguments: {} });
     expect(lines).toEqual([
       { level: "debug", message: "agent.run run.start" },
       { level: "debug", message: "agent.run tool.call" },
@@ -256,7 +258,8 @@ describe("messageBusSubscriber", () => {
 
   it("eventPayload projects an error event to name + message", () => {
     const err = Object.assign(new Error("nope"), { name: "ProviderError" });
-    expect(eventPayload({ type: "error", error: err as never })).toEqual({
+    expect(eventPayload({ type: "error", runId: RUN_ID, error: err as never })).toEqual({
+      runId: RUN_ID,
       name: "ProviderError",
       message: "nope",
     });
@@ -385,6 +388,7 @@ describe("runAgent — telemetry bridge", () => {
     expect(run?.ended).toBe(true);
     expect(run?.status?.code).toBe("ok");
     expect(run?.attributes["agent.name"]).toBe("a");
+    expect(run?.attributes["run.id"]).toMatch(/^run_/);
     expect(run?.attributes["agent.finish_reason"]).toBe("stop");
 
     // Two provider turns (tool-call turn + final answer), one tool execution.
@@ -393,6 +397,7 @@ describe("runAgent — telemetry bridge", () => {
     // Children nest under the run span and are all ended.
     for (const sp of [...providerSpans, ...toolSpans]) {
       expect(sp.parent).toBe("agent.run");
+      expect(sp.attributes["run.id"]).toBe(run?.attributes["run.id"]);
       expect(sp.ended).toBe(true);
     }
     expect(toolSpans[0]?.attributes["tool.name"]).toBe("echo");

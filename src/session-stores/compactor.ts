@@ -118,6 +118,8 @@ export function summarizingCompactor(opts: SummarizingCompactorOptions): Session
           id: state.id,
           messages: [...systemMessages, makeSummaryMessage(summary), ...recent],
           ...(state.metadata !== undefined ? { metadata: state.metadata } : {}),
+          ...(state.version !== undefined ? { version: state.version } : {}),
+          ...(state.tenantId !== undefined ? { tenantId: state.tenantId } : {}),
         },
         archive: {
           messages: [...existingSummaries, ...older],

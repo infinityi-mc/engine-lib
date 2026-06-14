@@ -25,7 +25,7 @@ import type { Logger, TelemetryHandle } from "../src/runtime/index";
 import type { MessageBus } from "@infinityi/forge/messaging";
 
 function assertEventTelemetryTypes(): void {
-  const event: RunEvent = { type: "run.start", agent: "typed" };
+  const event: RunEvent = { type: "run.start", runId: "run_test", agent: "typed" };
 
   const syncSubscriber: RunSubscriber = (e) => {
     const type: RunEvent["type"] = e.type;

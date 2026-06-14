@@ -29,5 +29,6 @@ export type {
   SessionRunStatus,
   SessionState,
   SessionStore,
+  SessionTenantClaim,
   SessionUsage,
 } from "./types";

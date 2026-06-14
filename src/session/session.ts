@@ -26,6 +26,8 @@ export interface CreateSessionOptions {
   readonly messages?: readonly Message[];
   /** Free-form metadata attached to the session handle. */
   readonly metadata?: Record<string, unknown>;
+  /** Optional tenant owner persisted with newly-created sessions. */
+  readonly tenantId?: string;
   /** Expected model used as the compatibility baseline when this session is resumed. */
   readonly expectedModel?: string;
   /** Expected provider used as the compatibility baseline when this session is resumed. */
@@ -45,6 +47,7 @@ export function createSession(opts: CreateSessionOptions = {}): Session {
   const store = opts.store ?? new InMemorySessionStore();
   const seed = opts.messages;
   const metadata = opts.metadata;
+  const tenantId = opts.tenantId;
 
   let seedPromise: Promise<void> | undefined;
   /**
@@ -55,6 +58,16 @@ export function createSession(opts: CreateSessionOptions = {}): Session {
   const ensureSeeded = (): Promise<void> => {
     if (seedPromise !== undefined) return seedPromise;
     seedPromise = (async () => {
+      if (tenantId !== undefined) {
+        await store.claimTenant({
+          id,
+          tenantId,
+          ...(seed !== undefined && seed.length > 0 ? { messages: seed } : {}),
+          ...(metadata !== undefined ? { metadata } : {}),
+        });
+        return;
+      }
+
       const existing = await store.load(id);
       const shouldSeedMessages = seed !== undefined && seed.length > 0 && (existing === undefined || existing.messages.length === 0);
       const shouldSeedMetadata = metadata !== undefined && existing === undefined;
@@ -63,6 +76,7 @@ export function createSession(opts: CreateSessionOptions = {}): Session {
           id,
           messages: shouldSeedMessages ? seed ?? [] : existing?.messages ?? [],
           ...(shouldSeedMetadata ? { metadata } : existing?.metadata !== undefined ? { metadata: existing.metadata } : {}),
+          ...(existing?.version !== undefined ? { version: existing.version } : {}),
         });
       }
     })();
@@ -72,6 +86,7 @@ export function createSession(opts: CreateSessionOptions = {}): Session {
   return {
     id,
     ...(metadata !== undefined ? { metadata } : {}),
+    ...(tenantId !== undefined ? { tenantId } : {}),
     ...(opts.expectedModel !== undefined ? { expectedModel: opts.expectedModel } : {}),
     ...(opts.expectedProvider !== undefined ? { expectedProvider: opts.expectedProvider } : {}),
     async messages(): Promise<Message[]> {

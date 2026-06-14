@@ -32,8 +32,17 @@ import {
 } from "../errors";
 import { system, user } from "../messages/factory";
 import type { Message, TextPart, ToolCallPart } from "../messages/types";
-import type { CompletionRequest, CompletionResult, FinishReason, Usage } from "../providers/types";
-import { RESUME_SCHEMA_VERSION, readResumeInfo, withResumeInfo } from "../session/resume";
+import type {
+  CompletionRequest,
+  CompletionResult,
+  FinishReason,
+  Usage,
+} from "../providers/types";
+import {
+  RESUME_SCHEMA_VERSION,
+  readResumeInfo,
+  withResumeInfo,
+} from "../session/resume";
 import type { AppendResult, SessionModelIdentity } from "../session/types";
 import { StreamAccumulator } from "../providers/stream";
 import type { EngineContext } from "../runtime/types";
@@ -43,13 +52,20 @@ import { toToolResultMessage } from "../tools/result";
 import type { ToolContext, ToolDefinition, ToolResult } from "../tools/types";
 import { createEventHub } from "../events/hub";
 import type { EventHub } from "../events/types";
-import { createRunTelemetry, SPAN_PROVIDER, SPAN_RUN, SPAN_TOOL } from "../events/telemetry";
+import {
+  createRunTelemetry,
+  SPAN_PROVIDER,
+  SPAN_RUN,
+  SPAN_TOOL,
+} from "../events/telemetry";
 import type { RunTelemetry } from "../events/telemetry";
 import type {
   AnyRunOptions,
   BufferedRunOptions,
   RunBridge,
+  RunBridgeEvent,
   RunEvent,
+  RunEventDraft,
   RunHandle,
   RunInput,
   RunOptions,
@@ -58,6 +74,7 @@ import type {
   StreamingRunOptions,
 } from "./types";
 import { addUsage, emptyUsage } from "./usage";
+import { generateRunId } from "./run-id";
 
 /** Default cap on provider turns when {@link RunOptions.maxSteps} is omitted. */
 export const DEFAULT_MAX_STEPS = 16;
@@ -82,7 +99,9 @@ function extractText(message: Message): string {
 }
 
 function toolCallParts(message: Message): ToolCallPart[] {
-  return message.content.filter((part): part is ToolCallPart => part.type === "tool_call");
+  return message.content.filter(
+    (part): part is ToolCallPart => part.type === "tool_call",
+  );
 }
 
 function toolResultIds(messages: readonly Message[]): Set<string> {
@@ -95,10 +114,12 @@ function toolResultIds(messages: readonly Message[]): Set<string> {
   return ids;
 }
 
-function trailingDanglingToolCalls(messages: readonly Message[]): {
-  readonly assistantIndex: number;
-  readonly calls: readonly ToolCallPart[];
-} | undefined {
+function trailingDanglingToolCalls(messages: readonly Message[]):
+  | {
+      readonly assistantIndex: number;
+      readonly calls: readonly ToolCallPart[];
+    }
+  | undefined {
   let index = messages.length - 1;
   while (index >= 0 && messages[index]!.role === "tool") index -= 1;
   if (index < 0) return undefined;
@@ -108,10 +129,15 @@ function trailingDanglingToolCalls(messages: readonly Message[]): {
   if (calls.length === 0) return undefined;
   const results = toolResultIds(messages.slice(index + 1));
   const dangling = calls.filter((call) => !results.has(call.id));
-  return dangling.length === 0 ? undefined : { assistantIndex: index, calls: dangling };
+  return dangling.length === 0
+    ? undefined
+    : { assistantIndex: index, calls: dangling };
 }
 
-function checkpointEvent(result: AppendResult, sessionId: string): RunEvent | undefined {
+function checkpointEvent(
+  result: AppendResult,
+  sessionId: string,
+): RunEventDraft | undefined {
   return result.compacted === true
     ? {
         type: "session.compacted",
@@ -122,10 +148,63 @@ function checkpointEvent(result: AppendResult, sessionId: string): RunEvent | un
     : undefined;
 }
 
-function resolvedIdentity(agent: AgentDefinition, opts: RunOptions): SessionModelIdentity {
+function stampRunEvent(runId: string, event: RunBridgeEvent): RunEvent {
+  if (event.type === "agent.child") {
+    const child = event.event as RunBridgeEvent;
+    return {
+      ...event,
+      runId,
+      // Preserve a pre-stamped child's own runId so nested sub-agent events
+      // remain correlatable to their inner run; the wrapper itself still
+      // carries the parent's runId for the "this came from parent X" link.
+      event: hasRunId(child) ? child : stampRunEvent(runId, child),
+    } as RunEvent;
+  }
+  return { ...event, runId } as RunEvent;
+}
+
+function hasRunId(event: RunBridgeEvent): event is RunEvent {
+  return typeof (event as { readonly runId?: unknown }).runId === "string";
+}
+
+function resolveRunId(opts: RunOptions): string {
+  if (opts.runId === undefined) return generateRunId();
+  if (typeof opts.runId !== "string" || opts.runId.trim() === "") {
+    throw new ExecutionError("runId must be a non-empty string");
+  }
+  return opts.runId;
+}
+
+async function* stampRunEvents(
+  gen: AsyncGenerator<RunBridgeEvent, RunResult>,
+  runId: string,
+): AsyncGenerator<RunEvent, RunResult> {
+  let completed = false;
+  try {
+    let next = await gen.next();
+    while (!next.done) {
+      yield stampRunEvent(runId, next.value);
+      next = await gen.next();
+    }
+    completed = true;
+    return next.value;
+  } finally {
+    if (!completed) {
+      await gen.return(undefined as never).catch(() => {});
+    }
+  }
+}
+
+function resolvedIdentity(
+  agent: AgentDefinition,
+  opts: RunOptions,
+): SessionModelIdentity {
   const provider = agent.provider;
   return {
-    model: (opts.generation?.model ?? agent.generation?.model) ?? provider.defaultModel,
+    model:
+      opts.generation?.model ??
+      agent.generation?.model ??
+      provider.defaultModel,
     provider: provider.name,
   };
 }
@@ -135,21 +214,31 @@ function identitiesMismatch(
   actual: SessionModelIdentity,
 ): boolean {
   return (
-    (expected.model !== undefined && actual.model !== undefined && expected.model !== actual.model) ||
-    (expected.provider !== undefined && actual.provider !== undefined && expected.provider !== actual.provider)
+    (expected.model !== undefined &&
+      actual.model !== undefined &&
+      expected.model !== actual.model) ||
+    (expected.provider !== undefined &&
+      actual.provider !== undefined &&
+      expected.provider !== actual.provider)
   );
 }
 
 function checkpointFailure(error: unknown): ExecutionError {
   const message = error instanceof Error ? error.message : String(error);
-  return new ExecutionError(`checkpoint callback failed: ${message}`, error instanceof Error ? { cause: error } : undefined);
+  return new ExecutionError(
+    `checkpoint callback failed: ${message}`,
+    error instanceof Error ? { cause: error } : undefined,
+  );
 }
 
 /** Wrap an unknown throw as an {@link AgentError} (passing AgentErrors through). */
 function toAgentError(err: unknown): AgentError {
   if (err instanceof AgentError) return err;
   const message = err instanceof Error ? err.message : String(err);
-  return new ExecutionError(message, err instanceof Error ? { cause: err } : undefined);
+  return new ExecutionError(
+    message,
+    err instanceof Error ? { cause: err } : undefined,
+  );
 }
 
 /** Build the per-run {@link EngineContext} from options. */
@@ -176,8 +265,12 @@ function buildRequest(
     ...(gen.toolChoice !== undefined ? { toolChoice: gen.toolChoice } : {}),
     ...(gen.temperature !== undefined ? { temperature: gen.temperature } : {}),
     ...(gen.topP !== undefined ? { topP: gen.topP } : {}),
-    ...(gen.maxOutputTokens !== undefined ? { maxOutputTokens: gen.maxOutputTokens } : {}),
-    ...(gen.stopSequences !== undefined ? { stopSequences: gen.stopSequences } : {}),
+    ...(gen.maxOutputTokens !== undefined
+      ? { maxOutputTokens: gen.maxOutputTokens }
+      : {}),
+    ...(gen.stopSequences !== undefined
+      ? { stopSequences: gen.stopSequences }
+      : {}),
   };
 }
 
@@ -206,7 +299,8 @@ async function* executeAgent(
   agent: AgentDefinition,
   opts: RunOptions,
   tel: RunTelemetry,
-): AsyncGenerator<RunEvent, RunResult> {
+  runId: string,
+): AsyncGenerator<RunBridgeEvent, RunResult> {
   const maxSteps = opts.maxSteps ?? DEFAULT_MAX_STEPS;
   const maxHandoffs = opts.maxHandoffs ?? DEFAULT_MAX_HANDOFFS;
   const stream = opts.stream === true;
@@ -235,7 +329,10 @@ async function* executeAgent(
         );
       }
     }
-    const advertised = [...registry.toProviderTools(), ...handoffProviderTools(handoffs)];
+    const advertised = [
+      ...registry.toProviderTools(),
+      ...handoffProviderTools(handoffs),
+    ];
     return {
       agent: agentDef,
       registry,
@@ -248,20 +345,28 @@ async function* executeAgent(
   // while the conversation continues. Starts as the agent passed to runAgent.
   let active = activate(agent);
 
+  const activeToolNames = (): readonly string[] =>
+    active.registry
+      .list()
+      .map((tool) => tool.name)
+      .toSorted();
+
   /** The outcome of one tool call: its result plus anything it bridged to the parent run. */
   interface ToolOutcome {
     readonly result: ToolResult;
     /** Nested events the tool forwarded (e.g. a sub-agent's run events). */
-    readonly events: RunEvent[];
+    readonly events: RunBridgeEvent[];
     /** Token usage the tool reported (e.g. a sub-agent's run usage). */
     readonly usage: Usage;
   }
 
   /** Run a single tool call with full error isolation (never throws). */
-  const runOneTool = async (
-    call: { id: string; name: string; arguments: unknown },
-  ): Promise<ToolOutcome> => {
-    const events: RunEvent[] = [];
+  const runOneTool = async (call: {
+    id: string;
+    name: string;
+    arguments: unknown;
+  }): Promise<ToolOutcome> => {
+    const events: RunBridgeEvent[] = [];
     let usage = emptyUsage();
     const bridge: RunBridge = {
       emit: (event) => events.push(event),
@@ -272,7 +377,11 @@ async function* executeAgent(
 
     const tool: ToolDefinition | undefined = active.registry.get(call.name);
     if (tool === undefined) {
-      return { result: { ok: false, error: `unknown tool: "${call.name}"` }, events, usage };
+      return {
+        result: { ok: false, error: `unknown tool: "${call.name}"` },
+        events,
+        usage,
+      };
     }
     const parsed = tool.parameters.safeParse(call.arguments);
     if (!parsed.success) {
@@ -280,7 +389,10 @@ async function* executeAgent(
         .map((issue) => `${issue.path.join(".") || "<root>"}: ${issue.message}`)
         .join("; ");
       return {
-        result: { ok: false, error: `invalid arguments for "${call.name}": ${detail}` },
+        result: {
+          ok: false,
+          error: `invalid arguments for "${call.name}": ${detail}`,
+        },
         events,
         usage,
       };
@@ -291,7 +403,11 @@ async function* executeAgent(
       agentName: active.agent.name,
       run: bridge,
     };
-    const span = tel.startSpan(SPAN_TOOL, { "tool.name": call.name, "tool.call_id": call.id });
+    const span = tel.startSpan(SPAN_TOOL, {
+      "run.id": runId,
+      "tool.name": call.name,
+      "tool.call_id": call.id,
+    });
     const startedAt = Date.now();
     try {
       const result = await tool.execute(parsed.data, toolCtx);
@@ -325,17 +441,25 @@ async function* executeAgent(
   ): Promise<void> => {
     const session = opts.session;
     if (session === undefined) return;
-    const currentMetadata = await session.getMetadata() ?? {};
+    const currentMetadata = (await session.getMetadata()) ?? {};
     const identity = resolvedIdentity(active.agent, opts);
-    await session.setMetadata(withResumeInfo(currentMetadata, {
-      schemaVersion: RESUME_SCHEMA_VERSION,
-      agentName: active.agent.name,
-      ...(identity.model !== undefined ? { model: identity.model } : {}),
-      ...(identity.provider !== undefined ? { provider: identity.provider } : {}),
-      lastActiveAt: new Date().toISOString(),
-      lastRunStatus: status,
-      totalUsage: addUsage(startingTotalUsage, usageSnapshot),
-    }));
+    await session.setMetadata(
+      withResumeInfo(currentMetadata, {
+        schemaVersion: RESUME_SCHEMA_VERSION,
+        agentName: active.agent.name,
+        ...(identity.model !== undefined ? { model: identity.model } : {}),
+        ...(identity.provider !== undefined
+          ? { provider: identity.provider }
+          : {}),
+        ...(active.agent.version !== undefined
+          ? { agentVersion: active.agent.version }
+          : {}),
+        toolNames: activeToolNames(),
+        lastActiveAt: new Date().toISOString(),
+        lastRunStatus: status,
+        totalUsage: addUsage(startingTotalUsage, usageSnapshot),
+      }),
+    );
   };
 
   const runCheckpointCallback = async (
@@ -346,6 +470,7 @@ async function* executeAgent(
     const callback = opts.checkpoint?.onCheckpoint;
     if (callback === undefined) return;
     const checkpoint: RunCheckpoint = {
+      runId,
       ...(opts.session !== undefined ? { sessionId: opts.session.id } : {}),
       agent: active.agent.name,
       step,
@@ -371,26 +496,34 @@ async function* executeAgent(
     // surfaced as an `error` event, and routed through the onError hook.
     const instructions = await resolveInstructions(agent, engineCtx);
     const session = opts.session;
-    let prior = session !== undefined ? await session.messages() : (opts.messages ?? []);
-    const sessionMetadata = session !== undefined ? await session.getMetadata() : undefined;
+    let prior =
+      session !== undefined ? await session.messages() : (opts.messages ?? []);
+    const sessionMetadata =
+      session !== undefined ? await session.getMetadata() : undefined;
     loadedResume = readResumeInfo(sessionMetadata);
     startingTotalUsage = loadedResume?.totalUsage ?? emptyUsage();
 
     if (session !== undefined) {
       const expectedModel = session.expectedModel ?? loadedResume?.model;
-      const expectedProvider = session.expectedProvider ?? loadedResume?.provider;
+      const expectedProvider =
+        session.expectedProvider ?? loadedResume?.provider;
       const expected: SessionModelIdentity = {
         ...(expectedModel !== undefined ? { model: expectedModel } : {}),
-        ...(expectedProvider !== undefined ? { provider: expectedProvider } : {}),
+        ...(expectedProvider !== undefined
+          ? { provider: expectedProvider }
+          : {}),
       };
       const actual = resolvedIdentity(active.agent, opts);
       if (identitiesMismatch(expected, actual)) {
         const policy = opts.modelCompatibility ?? "warn";
         if (policy === "error") {
-          throw new SessionModelMismatchError("session model/provider mismatch", {
-            expected,
-            actual,
-          });
+          throw new SessionModelMismatchError(
+            "session model/provider mismatch",
+            {
+              expected,
+              actual,
+            },
+          );
         }
         if (policy === "warn") {
           engineCtx.logger?.warn("session model/provider mismatch", {
@@ -410,7 +543,8 @@ async function* executeAgent(
     if (session !== undefined && opts.resume !== false) {
       const dangling = trailingDanglingToolCalls(prior);
       if (dangling !== undefined) {
-        const resumeOptions = typeof opts.resume === "object" ? opts.resume : undefined;
+        const resumeOptions =
+          typeof opts.resume === "object" ? opts.resume : undefined;
         const strategy = resumeOptions?.danglingToolCalls ?? "synthesize-error";
         let reconciled = 0;
 
@@ -418,10 +552,12 @@ async function* executeAgent(
           reconciled = dangling.calls.length;
           prior = prior.slice(0, dangling.assistantIndex);
         } else if (strategy === "synthesize-error") {
-          const synthesized = dangling.calls.map((call) => toToolResultMessage(call.id, {
-            ok: false,
-            error: `Prior run was interrupted before tool "${call.name}" (${call.id}) completed.`,
-          }));
+          const synthesized = dangling.calls.map((call) =>
+            toToolResultMessage(call.id, {
+              ok: false,
+              error: `Prior run was interrupted before tool "${call.name}" (${call.id}) completed.`,
+            }),
+          );
           if (synthesized.length > 0) {
             const appendResult = await session.append(synthesized);
             const event = checkpointEvent(appendResult, session.id);
@@ -432,14 +568,28 @@ async function* executeAgent(
         } else {
           const toolMessages: Message[] = [];
           for (const call of dangling.calls) {
-            yield { type: "tool.call", id: call.id, name: call.name, arguments: call.arguments };
+            yield {
+              type: "tool.call",
+              id: call.id,
+              name: call.name,
+              arguments: call.arguments,
+            };
             const tool = active.registry.get(call.name);
-            if (tool !== undefined) await active.agent.hooks?.onToolCall?.({ call, tool }, engineCtx);
+            if (tool !== undefined)
+              await active.agent.hooks?.onToolCall?.({ call, tool }, engineCtx);
             const outcome = await runOneTool(call);
             usage = addUsage(usage, outcome.usage);
             for (const childEvent of outcome.events) yield childEvent;
-            yield { type: "tool.result", id: call.id, name: call.name, result: outcome.result };
-            await active.agent.hooks?.onToolResult?.({ call, result: outcome.result }, engineCtx);
+            yield {
+              type: "tool.result",
+              id: call.id,
+              name: call.name,
+              result: outcome.result,
+            };
+            await active.agent.hooks?.onToolResult?.(
+              { call, result: outcome.result },
+              engineCtx,
+            );
             const message = toToolResultMessage(call.id, outcome.result);
             toolMessages.push(message);
             yield { type: "message", message };
@@ -475,11 +625,14 @@ async function* executeAgent(
       input: inputMessages,
       prior,
       messages: [...prior, ...inputMessages],
-      ...(opts.contextWindow !== undefined ? { contextWindow: opts.contextWindow } : {}),
+      ...(opts.contextWindow !== undefined
+        ? { contextWindow: opts.contextWindow }
+        : {}),
     });
 
     const messages: Message[] = [];
-    if (instructions !== undefined && instructions !== "") messages.push(system(instructions));
+    if (instructions !== undefined && instructions !== "")
+      messages.push(system(instructions));
     messages.push(...contextMessages);
     messages.push(...prior);
     messages.push(...inputMessages);
@@ -488,7 +641,10 @@ async function* executeAgent(
     // ones appended back to the session. System/context/prior are excluded.
     const newMessages: Message[] = [...inputMessages];
 
-    await active.agent.hooks?.onStart?.({ agent: active.agent, messages: [...messages] }, engineCtx);
+    await active.agent.hooks?.onStart?.(
+      { agent: active.agent, messages: [...messages] },
+      engineCtx,
+    );
 
     let finishReason: FinishReason = "stop";
     let finalMessage: Message = { role: "assistant", content: [] };
@@ -502,18 +658,30 @@ async function* executeAgent(
 
       const provider = active.agent.provider;
       const model =
-        (opts.generation?.model ?? active.agent.generation?.model) ?? provider.defaultModel;
+        opts.generation?.model ??
+        active.agent.generation?.model ??
+        provider.defaultModel;
       // Trim a *view* of the history to fit the context window; the canonical
       // `messages` (persisted + returned) is never mutated.
-      const requestMessages = await applyContextWindow(messages, opts.contextWindow, {
-        provider,
-        model,
-        engine: engineCtx,
-      });
-      const req = buildRequest(active.agent, opts, active.providerTools, requestMessages);
+      const requestMessages = await applyContextWindow(
+        messages,
+        opts.contextWindow,
+        {
+          provider,
+          model,
+          engine: engineCtx,
+        },
+      );
+      const req = buildRequest(
+        active.agent,
+        opts,
+        active.providerTools,
+        requestMessages,
+      );
 
       const useStreaming = stream && provider.capabilities.streaming;
       const providerSpan = tel.startSpan(SPAN_PROVIDER, {
+        "run.id": runId,
         "provider.name": provider.name,
         "provider.model": model,
         "provider.mode": useStreaming ? "stream" : "complete",
@@ -541,7 +709,9 @@ async function* executeAgent(
             if (buffered !== "") yield { type: "token", delta: buffered };
           }
         }
-        providerSpan.setAttributes({ "provider.finish_reason": result.finishReason });
+        providerSpan.setAttributes({
+          "provider.finish_reason": result.finishReason,
+        });
         providerSpan.ok();
       } catch (err) {
         providerSpan.fail(err instanceof Error ? err.message : String(err));
@@ -573,6 +743,7 @@ async function* executeAgent(
         await runCheckpointCallback(steps, newMessages);
         const output = extractText(finalMessage);
         const runResult: RunResult = {
+          runId,
           output,
           finalMessage,
           messages: [...messages],
@@ -597,17 +768,30 @@ async function* executeAgent(
       // targets: synthetic `transfer_to_<name>` calls switch the active agent;
       // everything else dispatches as a normal tool.
       const handoffTargets = active.handoffs;
-      const regularCalls = calls.filter((call) => !handoffTargets.has(call.name));
-      const handoffCalls = calls.filter((call) => handoffTargets.has(call.name));
+      const regularCalls = calls.filter(
+        (call) => !handoffTargets.has(call.name),
+      );
+      const handoffCalls = calls.filter((call) =>
+        handoffTargets.has(call.name),
+      );
 
       for (const call of calls) {
-        yield { type: "tool.call", id: call.id, name: call.name, arguments: call.arguments };
+        yield {
+          type: "tool.call",
+          id: call.id,
+          name: call.name,
+          arguments: call.arguments,
+        };
         const tool = active.registry.get(call.name);
-        if (tool !== undefined) await active.agent.hooks?.onToolCall?.({ call, tool }, engineCtx);
+        if (tool !== undefined)
+          await active.agent.hooks?.onToolCall?.({ call, tool }, engineCtx);
       }
 
       const settled = await Promise.all(
-        regularCalls.map(async (call) => ({ call, outcome: await runOneTool(call) })),
+        regularCalls.map(async (call) => ({
+          call,
+          outcome: await runOneTool(call),
+        })),
       );
 
       // Fold each tool's bridged usage (e.g. a sub-agent's tokens) before the
@@ -621,8 +805,16 @@ async function* executeAgent(
         // (e.g. a sub-agent's run events) before the tool's own result.
         for (const childEvent of outcome.events) yield childEvent;
         const toolResult = outcome.result;
-        yield { type: "tool.result", id: call.id, name: call.name, result: toolResult };
-        await active.agent.hooks?.onToolResult?.({ call, result: toolResult }, engineCtx);
+        yield {
+          type: "tool.result",
+          id: call.id,
+          name: call.name,
+          result: toolResult,
+        };
+        await active.agent.hooks?.onToolResult?.(
+          { call, result: toolResult },
+          engineCtx,
+        );
       }
       const stepToolMessages: Message[] = [];
       for (const { call, outcome } of settled) {
@@ -640,19 +832,30 @@ async function* executeAgent(
         if (target === undefined) continue; // unreachable: filtered from handoffTargets
 
         if (handoffTrail.length >= maxHandoffs) {
-          throw new MaxHandoffsExceededError(`exceeded max handoffs (${maxHandoffs})`, {
-            handoffs: maxHandoffs,
-          });
+          throw new MaxHandoffsExceededError(
+            `exceeded max handoffs (${maxHandoffs})`,
+            {
+              handoffs: maxHandoffs,
+            },
+          );
         }
 
         // Acknowledge the synthetic tool call so the assistant turn's tool_call
         // is satisfied for the provider, then announce and perform the switch.
-        const ack: ToolResult = { ok: true, content: `Transferred to "${target.name}".` };
+        const ack: ToolResult = {
+          ok: true,
+          content: `Transferred to "${target.name}".`,
+        };
         const ackMessage = toToolResultMessage(call.id, ack);
         messages.push(ackMessage);
         newMessages.push(ackMessage);
         stepToolMessages.push(ackMessage);
-        yield { type: "tool.result", id: call.id, name: call.name, result: ack };
+        yield {
+          type: "tool.result",
+          id: call.id,
+          name: call.name,
+          result: ack,
+        };
         yield { type: "message", message: ackMessage };
 
         const from = active.agent;
@@ -666,13 +869,20 @@ async function* executeAgent(
         // it steers subsequent turns without rewriting the original system turn
         // (history-preserving). Like the initial instructions, this is derived
         // from agent config and not persisted to the session.
-        const nextInstructions = await resolveInstructions(active.agent, engineCtx);
+        const nextInstructions = await resolveInstructions(
+          active.agent,
+          engineCtx,
+        );
         if (nextInstructions !== undefined && nextInstructions !== "") {
           messages.push(system(nextInstructions));
         }
       }
 
-      if (checkpointMode && opts.session !== undefined && stepToolMessages.length > 0) {
+      if (
+        checkpointMode &&
+        opts.session !== undefined &&
+        stepToolMessages.length > 0
+      ) {
         const appendResult = await opts.session.append(stepToolMessages);
         const event = checkpointEvent(appendResult, opts.session.id);
         if (event !== undefined) yield event;
@@ -680,7 +890,9 @@ async function* executeAgent(
       await runCheckpointCallback(steps, newMessages);
     }
 
-    throw new MaxStepsExceededError(`exceeded max steps (${maxSteps})`, { steps: maxSteps });
+    throw new MaxStepsExceededError(`exceeded max steps (${maxSteps})`, {
+      steps: maxSteps,
+    });
   } catch (err) {
     const agentError = toAgentError(err);
     // Surface the tokens consumed before the failure so callers (and a parent
@@ -700,12 +912,15 @@ async function* executeAgent(
 
 /** Token usage stamped on a failed run's error, or zero when unknown. */
 function usageOfError(err: unknown): Usage {
-  return err instanceof AgentError && err.usage !== undefined ? err.usage : emptyUsage();
+  return err instanceof AgentError && err.usage !== undefined
+    ? err.usage
+    : emptyUsage();
 }
 
 /** Set the run span's outcome attributes from the final result. */
 function runResultAttrs(result: RunResult): Record<string, string | number> {
   return {
+    "run.id": result.runId,
     "agent.steps": result.steps,
     "agent.finish_reason": result.finishReason,
     "agent.usage.total_tokens": result.usage.totalTokens,
@@ -722,24 +937,33 @@ async function driveToCompletion(
   hub: EventHub,
   tel: RunTelemetry,
   agentName: string,
+  runId: string,
 ): Promise<RunResult> {
   const startedAt = Date.now();
   try {
-    const result = await tel.withSpan(SPAN_RUN, { "agent.name": agentName }, async (span) => {
-      let next = await gen.next();
-      while (!next.done) {
-        await hub.emit(next.value);
-        next = await gen.next();
-      }
-      span.setAttributes(runResultAttrs(next.value));
-      span.ok();
-      return next.value;
-    });
-    tel.recordRun({ "agent.name": agentName, "agent.outcome": "ok" }, Date.now() - startedAt, result.usage);
+    const result = await tel.withSpan(
+      SPAN_RUN,
+      { "run.id": runId, "agent.name": agentName },
+      async (span) => {
+        let next = await gen.next();
+        while (!next.done) {
+          await hub.emit(next.value);
+          next = await gen.next();
+        }
+        span.setAttributes(runResultAttrs(next.value));
+        span.ok();
+        return next.value;
+      },
+    );
+    tel.recordRun(
+      { "run.id": runId, "agent.name": agentName, "agent.outcome": "ok" },
+      Date.now() - startedAt,
+      result.usage,
+    );
     return result;
   } catch (err) {
     tel.recordRun(
-      { "agent.name": agentName, "agent.outcome": "error" },
+      { "run.id": runId, "agent.name": agentName, "agent.outcome": "error" },
       Date.now() - startedAt,
       usageOfError(err),
     );
@@ -753,6 +977,7 @@ function makeHandle(
   hub: EventHub,
   tel: RunTelemetry,
   agentName: string,
+  runId: string,
 ): RunHandle {
   let resolveCompleted!: (result: RunResult) => void;
   let rejectCompleted!: (reason: unknown) => void;
@@ -765,7 +990,10 @@ function makeHandle(
   // awaits `completed` — doesn't trip an unhandled-rejection warning/crash.
   completed.catch(() => {});
 
-  const span = tel.startSpan(SPAN_RUN, { "agent.name": agentName });
+  const span = tel.startSpan(SPAN_RUN, {
+    "run.id": runId,
+    "agent.name": agentName,
+  });
   const startedAt = Date.now();
 
   async function* iterate(): AsyncGenerator<RunEvent> {
@@ -784,7 +1012,7 @@ function makeHandle(
       span.ok();
       settled = true;
       tel.recordRun(
-        { "agent.name": agentName, "agent.outcome": "ok" },
+        { "run.id": runId, "agent.name": agentName, "agent.outcome": "ok" },
         Date.now() - startedAt,
         next.value.usage,
       );
@@ -793,7 +1021,7 @@ function makeHandle(
       span.fail(err instanceof Error ? err.message : String(err));
       settled = true;
       tel.recordRun(
-        { "agent.name": agentName, "agent.outcome": "error" },
+        { "run.id": runId, "agent.name": agentName, "agent.outcome": "error" },
         Date.now() - startedAt,
         usageOfError(err),
       );
@@ -804,11 +1032,17 @@ function makeHandle(
         // Consumer broke out of the iteration early. Propagate the cancellation
         // into the underlying generator, mark the run span cancelled, and settle
         // `completed` so neither the span nor the promise is left dangling.
-        const cancelled = new CancelledError("run stream abandoned before completion");
+        const cancelled = new CancelledError(
+          "run stream abandoned before completion",
+        );
         await gen.return(undefined as never).catch(() => {});
         span.fail(cancelled.message);
         tel.recordRun(
-          { "agent.name": agentName, "agent.outcome": "incomplete" },
+          {
+            "run.id": runId,
+            "agent.name": agentName,
+            "agent.outcome": "incomplete",
+          },
           Date.now() - startedAt,
           emptyUsage(),
         );
@@ -869,9 +1103,10 @@ export function runAgent(
   agent: AgentDefinition,
   opts: RunOptions = {},
 ): Promise<RunResult> | RunHandle {
+  const runId = resolveRunId(opts);
   const tel = createRunTelemetry(opts.telemetry);
   const hub = buildEventHub(opts);
-  const gen = executeAgent(agent, opts, tel);
-  if (opts.stream === true) return makeHandle(gen, hub, tel, agent.name);
-  return driveToCompletion(gen, hub, tel, agent.name);
+  const gen = stampRunEvents(executeAgent(agent, opts, tel, runId), runId);
+  if (opts.stream === true) return makeHandle(gen, hub, tel, agent.name, runId);
+  return driveToCompletion(gen, hub, tel, agent.name, runId);
 }

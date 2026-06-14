@@ -30,6 +30,18 @@ export interface SessionState {
   readonly id: string;
   readonly messages: readonly Message[];
   readonly metadata?: Readonly<Record<string, unknown>>;
+  /** Optimistic concurrency stamp reserved for CAS-capable stores. Absent rows read as 0. */
+  readonly version?: number;
+  /** Optional tenant owner. Absent means a global/unscoped session. */
+  readonly tenantId?: string;
+}
+
+/** First-use ownership claim for a tenant-bound session. */
+export interface SessionTenantClaim {
+  readonly id: string;
+  readonly tenantId: string;
+  readonly messages?: readonly Message[];
+  readonly metadata?: Record<string, unknown>;
 }
 
 /** Ordering supported by {@link SessionStore.list}. */
@@ -45,6 +57,8 @@ export interface SessionListOptions {
   readonly cursor?: string;
   /** Sort order. Defaults to "recent" when the store tracks timestamps, else "id". */
   readonly order?: SessionListOrder;
+  /** Return only sessions owned by this tenant. Omitted lists global and tenant-bound sessions. */
+  readonly tenantId?: string;
 }
 
 /** A lightweight listing entry for a stored session. */
@@ -54,6 +68,8 @@ export interface SessionListItem {
   readonly updatedAt?: string;
   readonly messageCount?: number;
   readonly resume?: SessionResumeInfo;
+  readonly version?: number;
+  readonly tenantId?: string;
 }
 
 /** One page of session listings. */
@@ -83,8 +99,18 @@ export interface SessionStore {
   setMetadata(id: string, metadata: Record<string, unknown>): Promise<void>;
   /** Enumerate stored sessions. */
   list(options?: SessionListOptions): Promise<SessionListPage>;
-  /** Replace the full state for `state.id`. */
+  /** Replace the full state for `state.id`. Last-writer-wins: concurrent `save` calls
+   *  for the same id may silently overwrite each other. Use `claimTenant` for
+   *  atomic first-use ownership of a new tenant, and reach for an
+   *  `expectedVersion` CAS path (not yet part of this contract) when you need
+   *  optimistic concurrency for general updates. */
   save(state: SessionState): Promise<void>;
+  /**
+   * Atomically bind a session id to `tenantId`, optionally applying first-use
+   * seed messages and metadata. Returns true when persisted state changed and
+   * rejects when an existing tenant owner differs.
+   */
+  claimTenant(claim: SessionTenantClaim): Promise<boolean>;
   /** Remove all history for `id` (no-op if absent). */
   delete(id: string): Promise<void>;
 }
@@ -99,6 +125,8 @@ export interface SessionStore {
 export interface Session {
   readonly id: string;
   readonly metadata?: Readonly<Record<string, unknown>>;
+  /** Optional tenant owner. Absent means global/unscoped. */
+  readonly tenantId?: string;
   /** Expected model used as the model-compatibility baseline for resumes. */
   readonly expectedModel?: string;
   /** Expected provider used as the provider-compatibility baseline for resumes. */

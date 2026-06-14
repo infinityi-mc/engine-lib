@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { join } from "node:path";
 
-import type { RunEvent } from "../src/execution/types";
+import type { RunBridgeEvent } from "../src/execution/types";
 import { ShellPolicyError } from "../src/errors";
 import type { ToolContext, ToolDefinition, ToolResult } from "../src/tools/types";
 import { classifyCommand, filterEnv, resolveCwd } from "../src/tools-shell/policy";
@@ -11,8 +11,8 @@ import type { CommandResult } from "../src/tools-shell/types";
 // --- helpers ---------------------------------------------------------------
 
 /** A ToolContext whose run bridge captures every emitted event. */
-function captureCtx(): { ctx: ToolContext; events: RunEvent[] } {
-  const events: RunEvent[] = [];
+function captureCtx(): { ctx: ToolContext; events: RunBridgeEvent[] } {
+  const events: RunBridgeEvent[] = [];
   const ctx: ToolContext = {
     toolCallId: "call-1",
     agentName: "test",
@@ -25,9 +25,9 @@ function captureCtx(): { ctx: ToolContext; events: RunEvent[] } {
 }
 
 /** Names of `custom` events emitted, in order. */
-function customNames(events: RunEvent[]): string[] {
+function customNames(events: RunBridgeEvent[]): string[] {
   return events
-    .filter((e): e is Extract<RunEvent, { type: "custom" }> => e.type === "custom")
+    .filter((e): e is Extract<RunBridgeEvent, { type: "custom" }> => e.type === "custom")
     .map((e) => e.name);
 }
 
@@ -129,7 +129,7 @@ describe("run_command", () => {
     const res = await run(runCommand, { command: "echo", args: ["x"], cwd: "/etc" }, ctx);
     expect(res.ok).toBe(false);
     expect(customNames(events)).toEqual(["shell.policy"]);
-    const policy = events.find((e) => e.type === "custom") as Extract<RunEvent, { type: "custom" }>;
+    const policy = events.find((e) => e.type === "custom") as Extract<RunBridgeEvent, { type: "custom" }>;
     expect(policy.data.decision).toBe("deny");
   });
 
@@ -171,7 +171,7 @@ describe("run_command", () => {
     // The exec lifecycle stays paired even on a spawn failure.
     expect(customNames(events)).toEqual(["shell.policy", "shell.exec.start", "shell.exec.end"]);
     const end = events
-      .filter((e): e is Extract<RunEvent, { type: "custom" }> => e.type === "custom")
+      .filter((e): e is Extract<RunBridgeEvent, { type: "custom" }> => e.type === "custom")
       .find((e) => e.name === "shell.exec.end");
     expect(end?.data.error).toBeDefined();
     expect(end?.data.exitCode).toBeNull();
@@ -235,7 +235,7 @@ describe("spawn_command", () => {
     const res = await run(spawnCommand, { command: JS, args: ["-e", "console.log('streamed ✓ café')"] }, ctx);
     expect(res.ok).toBe(true);
     const chunks = events
-      .filter((e): e is Extract<RunEvent, { type: "custom" }> => e.type === "custom")
+      .filter((e): e is Extract<RunBridgeEvent, { type: "custom" }> => e.type === "custom")
       .filter((e) => e.name === "shell.exec.chunk");
     expect(chunks.length).toBeGreaterThan(0);
     const joined = chunks.map((c) => c.data.text as string).join("");

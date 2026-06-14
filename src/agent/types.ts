@@ -85,6 +85,8 @@ export interface AgentHooks {
 /** A declarative agent definition — data describing behavior, executed by the runtime. */
 export interface AgentDefinition {
   readonly name: string;
+  /** Host-managed version used for session resume compatibility checks. */
+  readonly version?: string;
   readonly provider: Provider;
   readonly instructions?: Instructions;
   readonly tools?: readonly ToolDefinition[];

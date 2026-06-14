@@ -125,6 +125,19 @@ function runSessionStoreContract(name: string, createFixture: () => Promise<Stor
       });
     });
 
+    it("claims tenant ownership once", async () => {
+      await withStore(async (store) => {
+        await expect(store.claimTenant({ id: "claim", tenantId: "t1", messages: [user("seed")] })).resolves.toBe(true);
+        await expect(store.claimTenant({ id: "claim", tenantId: "t1", messages: [user("ignored")] })).resolves.toBe(false);
+        await expect(store.claimTenant({ id: "claim", tenantId: "t2" }))
+          .rejects.toThrow('session "claim" is owned by a different tenant');
+
+        const state = await store.load("claim");
+        expect(state?.tenantId).toBe("t1");
+        expect(messageTexts(state)).toEqual(["seed"]);
+      });
+    });
+
     it("works through createSession", async () => {
       await withStore(async (store) => {
         const session = createSession({ id: "session", store, messages: [user("seed")] });

@@ -1,7 +1,7 @@
 import type { SessionStore } from "../session/types";
 import type { CloseableSessionStore, ExpiringSessionStore, VersionedSessionStore } from "./types";
 
-export const SESSION_STORE_SCHEMA_VERSION = 2;
+export const SESSION_STORE_SCHEMA_VERSION = 3;
 
 export function isVersionedSessionStore(store: SessionStore): store is VersionedSessionStore {
   return typeof (store as { migrate?: unknown }).migrate === "function";
