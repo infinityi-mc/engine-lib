@@ -44,15 +44,24 @@ function scriptedProvider(results: readonly ReturnType<typeof textResult>[]) {
   });
 }
 
-function abortAfterListenerRegistration(): AbortSignal {
-  const signal = {
-    aborted: false,
-    addEventListener() {
-      signal.aborted = true;
+function abortDuringListenerRegistration(): AbortSignal {
+  const controller = new AbortController();
+  const signal = controller.signal;
+  const addEventListener: EventTarget["addEventListener"] =
+    signal.addEventListener.bind(signal);
+  Object.defineProperty(signal, "addEventListener", {
+    value(
+      type: string,
+      listener: Parameters<EventTarget["addEventListener"]>[1],
+      options?: Parameters<EventTarget["addEventListener"]>[2],
+    ) {
+      if (type === "abort" && !signal.aborted) {
+        controller.abort();
+      }
+      addEventListener(type, listener, options);
     },
-    removeEventListener() {},
-  };
-  return signal as unknown as AbortSignal;
+  });
+  return signal;
 }
 
 function deferred<T>() {
@@ -201,7 +210,7 @@ describe("production readiness Phase 1", () => {
           { question: "Continue?" },
           {
             toolCallId: "h1",
-            signal: abortAfterListenerRegistration(),
+            signal: abortDuringListenerRegistration(),
             humanInput: {
               request: () => new Promise<string>(() => {}),
             },
@@ -225,7 +234,7 @@ describe("production readiness Phase 1", () => {
             agentName: "phase1",
             toolCallId: "h2",
           },
-          { signal: abortAfterListenerRegistration() },
+          { signal: abortDuringListenerRegistration() },
         )
         .then(
           () => "resolved",

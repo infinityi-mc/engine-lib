@@ -131,6 +131,7 @@ export function circuitBreaker(
 
   let failures = 0;
   let openedAt = 0;
+  let openGeneration = 0;
   let halfOpenInFlight = 0;
   const halfOpenMax = opts.halfOpenMax ?? 1;
 
@@ -143,7 +144,7 @@ export function circuitBreaker(
 
   type Admission =
     | { readonly state: "closed" }
-    | { readonly state: "half-open"; readonly openedAt: number };
+    | { readonly state: "half-open"; readonly openGeneration: number };
 
   const before = (): Admission => {
     const current = state();
@@ -161,7 +162,7 @@ export function circuitBreaker(
         });
       }
       halfOpenInFlight += 1;
-      return { state: "half-open", openedAt };
+      return { state: "half-open", openGeneration };
     }
     return { state: "closed" };
   };
@@ -173,7 +174,10 @@ export function circuitBreaker(
   };
   const success = (admission: Admission) => {
     releaseProbe(admission);
-    if (admission.state === "half-open" && openedAt !== admission.openedAt) {
+    if (
+      admission.state === "half-open" &&
+      openGeneration !== admission.openGeneration
+    ) {
       return;
     }
     failures = 0;
@@ -182,7 +186,10 @@ export function circuitBreaker(
   const failure = (admission: Admission) => {
     releaseProbe(admission);
     failures += 1;
-    if (failures >= opts.failureThreshold) openedAt = Date.now();
+    if (failures >= opts.failureThreshold) {
+      openedAt = Date.now();
+      openGeneration += 1;
+    }
   };
 
   return {
