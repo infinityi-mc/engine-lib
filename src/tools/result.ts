@@ -37,7 +37,10 @@ export function renderToolContent(result: ToolResult): TextPart[] {
  * A failure is marked `isError: true` so the model sees a recoverable tool
  * error rather than a crashed run.
  */
-export function toToolResultMessage(toolCallId: string, result: ToolResult): Message {
+export function toToolResultMessage(
+  toolCallId: string,
+  result: ToolResult,
+): Message {
   const content = renderToolContent(result);
   return result.ok
     ? toolResult(toolCallId, content)
@@ -51,7 +54,9 @@ export function toToolResultMessage(toolCallId: string, result: ToolResult): Mes
 export function toProviderTool(tool: ToolDefinition): ProviderTool {
   return {
     name: tool.name,
-    ...(tool.description !== undefined ? { description: tool.description } : {}),
+    ...(tool.description !== undefined
+      ? { description: tool.description }
+      : {}),
     parameters: tool.parameters.jsonSchema,
   };
 }

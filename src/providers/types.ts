@@ -28,7 +28,11 @@ export interface ProviderTool {
 }
 
 /** How the model is allowed to use tools this turn. */
-export type ToolChoice = "auto" | "none" | "required" | { readonly name: string };
+export type ToolChoice =
+  | "auto"
+  | "none"
+  | "required"
+  | { readonly name: string };
 
 /** Request a structured (JSON-Schema-constrained) response. */
 export interface ResponseSchema {
@@ -146,7 +150,13 @@ export interface Provider {
   readonly defaultModel: string;
   readonly capabilities: ProviderCapabilities;
   /** Run one turn and return the buffered, normalized result. */
-  complete(req: CompletionRequest, ctx?: EngineContext): Promise<CompletionResult>;
+  complete(
+    req: CompletionRequest,
+    ctx?: EngineContext,
+  ): Promise<CompletionResult>;
   /** Run one turn, yielding a unified stream of {@link StreamEvent}s. */
-  stream(req: CompletionRequest, ctx?: EngineContext): AsyncIterable<StreamEvent>;
+  stream(
+    req: CompletionRequest,
+    ctx?: EngineContext,
+  ): AsyncIterable<StreamEvent>;
 }

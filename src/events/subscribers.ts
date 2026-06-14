@@ -60,7 +60,10 @@ export function messageBusSubscriber(
 ): RunSubscriber {
   const prefix = opts.typePrefix ?? "agent.";
   return async (event) => {
-    await bus.publish({ type: `${prefix}${event.type}`, payload: eventPayload(event) });
+    await bus.publish({
+      type: `${prefix}${event.type}`,
+      payload: eventPayload(event),
+    });
   };
 }
 
@@ -70,18 +73,29 @@ export function messageBusSubscriber(
  * This is a stable projection helper for custom subscribers; it is not the full
  * event object.
  */
-export function eventFields(event: RunEvent): Record<string, string | number | boolean> {
+export function eventFields(
+  event: RunEvent,
+): Record<string, string | number | boolean> {
   switch (event.type) {
     case "run.start":
       return { runId: event.runId, agent: event.agent };
     case "message":
-      return { runId: event.runId, role: event.message.role, parts: event.message.content.length };
+      return {
+        runId: event.runId,
+        role: event.message.role,
+        parts: event.message.content.length,
+      };
     case "token":
       return { runId: event.runId, length: event.delta.length };
     case "tool.call":
       return { runId: event.runId, id: event.id, name: event.name };
     case "tool.result":
-      return { runId: event.runId, id: event.id, name: event.name, ok: event.result.ok };
+      return {
+        runId: event.runId,
+        id: event.id,
+        name: event.name,
+        ok: event.result.ok,
+      };
     case "run.finish":
       return {
         runId: event.runId,
@@ -90,9 +104,18 @@ export function eventFields(event: RunEvent): Record<string, string | number | b
         totalTokens: event.result.usage.totalTokens,
       };
     case "error":
-      return { runId: event.runId, name: event.error.name, message: event.error.message };
+      return {
+        runId: event.runId,
+        name: event.error.name,
+        message: event.error.message,
+      };
     case "agent.child":
-      return { runId: event.runId, agent: event.agent, depth: event.depth, child: event.event.type };
+      return {
+        runId: event.runId,
+        agent: event.agent,
+        depth: event.depth,
+        child: event.event.type,
+      };
     case "agent.handoff":
       return { runId: event.runId, from: event.from, to: event.to };
     case "session.resumed":
@@ -110,7 +133,11 @@ export function eventFields(event: RunEvent): Record<string, string | number | b
         summaryAdded: event.summaryAdded,
       };
     case "session.expired":
-      return { runId: event.runId, sessionId: event.sessionId, reason: event.reason };
+      return {
+        runId: event.runId,
+        sessionId: event.sessionId,
+        reason: event.reason,
+      };
     case "custom":
       return { runId: event.runId, name: event.name };
   }
@@ -132,9 +159,19 @@ export function eventPayload(event: RunEvent): Record<string, unknown> {
     case "token":
       return { runId: event.runId, delta: event.delta };
     case "tool.call":
-      return { runId: event.runId, id: event.id, name: event.name, arguments: event.arguments };
+      return {
+        runId: event.runId,
+        id: event.id,
+        name: event.name,
+        arguments: event.arguments,
+      };
     case "tool.result":
-      return { runId: event.runId, id: event.id, name: event.name, result: event.result };
+      return {
+        runId: event.runId,
+        id: event.id,
+        name: event.name,
+        result: event.result,
+      };
     case "run.finish":
       return {
         runId: event.runId,
@@ -145,9 +182,18 @@ export function eventPayload(event: RunEvent): Record<string, unknown> {
         messages: event.result.messages,
       };
     case "error":
-      return { runId: event.runId, name: event.error.name, message: event.error.message };
+      return {
+        runId: event.runId,
+        name: event.error.name,
+        message: event.error.message,
+      };
     case "agent.child":
-      return { runId: event.runId, agent: event.agent, depth: event.depth, event: eventPayload(event.event) };
+      return {
+        runId: event.runId,
+        agent: event.agent,
+        depth: event.depth,
+        event: eventPayload(event.event),
+      };
     case "agent.handoff":
       return { runId: event.runId, from: event.from, to: event.to };
     case "session.resumed":
@@ -166,7 +212,11 @@ export function eventPayload(event: RunEvent): Record<string, unknown> {
         summaryAdded: event.summaryAdded,
       };
     case "session.expired":
-      return { runId: event.runId, sessionId: event.sessionId, reason: event.reason };
+      return {
+        runId: event.runId,
+        sessionId: event.sessionId,
+        reason: event.reason,
+      };
     case "custom":
       return { runId: event.runId, name: event.name, data: event.data };
   }

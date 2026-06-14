@@ -18,7 +18,14 @@ import type { SchemaIssue, SchemaValidationError } from "../errors";
  * outside the stable validation contract.
  */
 export interface JsonSchema {
-  type?: "object" | "array" | "string" | "number" | "integer" | "boolean" | "null";
+  type?:
+    | "object"
+    | "array"
+    | "string"
+    | "number"
+    | "integer"
+    | "boolean"
+    | "null";
   description?: string;
   /** Object: property schemas. */
   properties?: Record<string, JsonSchema>;

@@ -5,7 +5,10 @@ import { join } from "node:path";
 
 import { createDb, raw, sql } from "@infinityi/forge/data";
 import type { DatabaseSchema } from "@infinityi/forge/data";
-import { createSqliteDialect, createSqliteDriver } from "@infinityi/forge/data/dialects/sqlite";
+import {
+  createSqliteDialect,
+  createSqliteDriver,
+} from "@infinityi/forge/data/dialects/sqlite";
 
 import { assistant, user } from "../src/messages/index";
 import { createSession, InMemorySessionStore } from "../src/session/index";
@@ -22,7 +25,12 @@ import {
   summarizingCompactor,
   withSessionStoreHooks,
 } from "../src/session-stores/index";
-import type { RedisSessionStoreClient, RedisSessionStoreTransaction, SessionArchiveRecord, SessionStoreCodec } from "../src/session-stores/index";
+import type {
+  RedisSessionStoreClient,
+  RedisSessionStoreTransaction,
+  SessionArchiveRecord,
+  SessionStoreCodec,
+} from "../src/session-stores/index";
 import { mockProvider, runSessionStoreConformance } from "../src/testing/index";
 
 interface StoreFixture {
@@ -57,8 +65,13 @@ async function closeStore(store: SessionStore): Promise<void> {
   if (close !== undefined) await close.call(store);
 }
 
-function runSessionStoreContract(name: string, createFixture: () => Promise<StoreFixture>): void {
-  async function withStore<T>(run: (store: SessionStore) => Promise<T>): Promise<T> {
+function runSessionStoreContract(
+  name: string,
+  createFixture: () => Promise<StoreFixture>,
+): void {
+  async function withStore<T>(
+    run: (store: SessionStore) => Promise<T>,
+  ): Promise<T> {
     const fixture = await createFixture();
     try {
       return await run(fixture.store);
@@ -93,12 +106,20 @@ function runSessionStoreContract(name: string, createFixture: () => Promise<Stor
     it("save replaces full state and delete removes it", async () => {
       await withStore(async (store) => {
         await store.append("s1", [user("a")]);
-        await store.save({ id: "s1", messages: [user("z")], metadata: { owner: "test" } });
+        await store.save({
+          id: "s1",
+          messages: [user("z")],
+          metadata: { owner: "test" },
+        });
         const state = await store.load("s1");
         expect(messageTexts(state)).toEqual(["z"]);
         expect(state?.metadata).toEqual({ owner: "test" });
 
-        await store.save({ id: "empty", messages: [], metadata: { saved: true } });
+        await store.save({
+          id: "empty",
+          messages: [],
+          metadata: { saved: true },
+        });
         expect(messageTexts(await store.load("empty"))).toEqual([]);
         expect((await store.load("empty"))?.metadata).toEqual({ saved: true });
 
@@ -120,17 +141,45 @@ function runSessionStoreContract(name: string, createFixture: () => Promise<Stor
 
     it("preserves all messages under concurrent append", async () => {
       await withStore(async (store) => {
-        await Promise.all(Array.from({ length: 10 }, (_, index) => store.append("race", [user(String(index))])));
-        expect(messageTexts(await store.load("race"))?.toSorted()).toEqual(["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]);
+        await Promise.all(
+          Array.from({ length: 10 }, (_, index) =>
+            store.append("race", [user(String(index))]),
+          ),
+        );
+        expect(messageTexts(await store.load("race"))?.toSorted()).toEqual([
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+        ]);
       });
     });
 
     it("claims tenant ownership once", async () => {
       await withStore(async (store) => {
-        await expect(store.claimTenant({ id: "claim", tenantId: "t1", messages: [user("seed")] })).resolves.toBe(true);
-        await expect(store.claimTenant({ id: "claim", tenantId: "t1", messages: [user("ignored")] })).resolves.toBe(false);
-        await expect(store.claimTenant({ id: "claim", tenantId: "t2" }))
-          .rejects.toThrow('session "claim" is owned by a different tenant');
+        await expect(
+          store.claimTenant({
+            id: "claim",
+            tenantId: "t1",
+            messages: [user("seed")],
+          }),
+        ).resolves.toBe(true);
+        await expect(
+          store.claimTenant({
+            id: "claim",
+            tenantId: "t1",
+            messages: [user("ignored")],
+          }),
+        ).resolves.toBe(false);
+        await expect(
+          store.claimTenant({ id: "claim", tenantId: "t2" }),
+        ).rejects.toThrow('session "claim" is owned by a different tenant');
 
         const state = await store.load("claim");
         expect(state?.tenantId).toBe("t1");
@@ -140,9 +189,16 @@ function runSessionStoreContract(name: string, createFixture: () => Promise<Stor
 
     it("works through createSession", async () => {
       await withStore(async (store) => {
-        const session = createSession({ id: "session", store, messages: [user("seed")] });
+        const session = createSession({
+          id: "session",
+          store,
+          messages: [user("seed")],
+        });
         await session.append([user("tail")]);
-        expect(messageTexts(await store.load("session"))).toEqual(["seed", "tail"]);
+        expect(messageTexts(await store.load("session"))).toEqual([
+          "seed",
+          "tail",
+        ]);
       });
     });
   });
@@ -204,11 +260,19 @@ class FakeRedisClient implements RedisSessionStoreClient {
     this.expiries.push({ key, ttlMs });
   }
 
-  scan(_cursor: string, options?: { readonly MATCH?: string; readonly COUNT?: number }): { cursor: string; keys: string[] } {
-    const pattern = options?.MATCH === undefined
-      ? undefined
-      : new RegExp(`^${options.MATCH.split("*").map(escapeRegExp).join(".*")}$`);
-    const keys = [...this.strings.keys(), ...this.lists.keys()].filter((key) => pattern === undefined || pattern.test(key));
+  scan(
+    _cursor: string,
+    options?: { readonly MATCH?: string; readonly COUNT?: number },
+  ): { cursor: string; keys: string[] } {
+    const pattern =
+      options?.MATCH === undefined
+        ? undefined
+        : new RegExp(
+            `^${options.MATCH.split("*").map(escapeRegExp).join(".*")}$`,
+          );
+    const keys = [...this.strings.keys(), ...this.lists.keys()].filter(
+      (key) => pattern === undefined || pattern.test(key),
+    );
     return { cursor: "0", keys };
   }
 
@@ -259,13 +323,16 @@ runSessionStoreConformance("ForgeDataSessionStore over injected SQLite", {
 
 runSessionStoreConformance("createSqliteSessionStore", {
   testApi: { describe, expect, it },
-  makeStore: async () => createSqliteSessionStore({ filename: ":memory:", migrate: true }),
+  makeStore: async () =>
+    createSqliteSessionStore({ filename: ":memory:", migrate: true }),
 });
 
 runSessionStoreConformance("FilesystemJsonlSessionStore", {
   testApi: { describe, expect, it },
   makeStore: async () => {
-    const store = new FilesystemJsonlSessionStore({ directory: await tempDirectory() });
+    const store = new FilesystemJsonlSessionStore({
+      directory: await tempDirectory(),
+    });
     await store.migrate();
     return store;
   },
@@ -281,11 +348,16 @@ runSessionStoreConformance("RedisSessionStore", {
 });
 
 runSessionStoreContract("SQLite session store", async () => ({
-  store: await createSqliteSessionStore({ filename: ":memory:", migrate: true }),
+  store: await createSqliteSessionStore({
+    filename: ":memory:",
+    migrate: true,
+  }),
 }));
 
 runSessionStoreContract("filesystem JSONL session store", async () => {
-  const store = new FilesystemJsonlSessionStore({ directory: await tempDirectory() });
+  const store = new FilesystemJsonlSessionStore({
+    directory: await tempDirectory(),
+  });
   await store.migrate();
   return { store };
 });
@@ -313,7 +385,10 @@ describe("ForgeDataSessionStore", () => {
   });
 
   it("runs idempotent migrations and records schema version", async () => {
-    const store = await createSqliteSessionStore({ filename: ":memory:", migrate: true });
+    const store = await createSqliteSessionStore({
+      filename: ":memory:",
+      migrate: true,
+    });
     try {
       await store.migrate();
       expect(await store.schemaVersion()).toBe(SESSION_STORE_SCHEMA_VERSION);
@@ -330,7 +405,10 @@ describe("ForgeDataSessionStore", () => {
         ended = true;
       },
     };
-    const store = await createPostgresSessionStore({ client, closeOnShutdown: false });
+    const store = await createPostgresSessionStore({
+      client,
+      closeOnShutdown: false,
+    });
     expect(store).toBeInstanceOf(ForgeDataSessionStore);
     await store.close();
     expect(ended).toBe(false);
@@ -346,11 +424,15 @@ describe("ForgeDataSessionStore", () => {
       await store.migrate();
       await store.append("stale", [user("old")]);
       await store.append("fresh", [user("new")]);
-      await db.raw(sql`
+      await db
+        .raw(
+          sql`
         update ${raw('"engine_session_sessions"')}
         set updated_at = ${new Date(Date.now() - 10 * 86_400_000).toISOString()}
         where id = ${"stale"}
-      `).execute();
+      `,
+        )
+        .execute();
 
       const purged = await store.purgeExpired({ maxIdleMs: 86_400_000 });
       expect(purged).toEqual(["stale"]);
@@ -367,7 +449,9 @@ describe("RedisSessionStore v2 capabilities", () => {
     const client = new FakeRedisClient();
     const store = new RedisSessionStore({ client });
     await store.setExpiry("ttl", 1000);
-    expect(client.expiries.map((entry) => entry.ttlMs)).toEqual([1000, 1000, 1000]);
+    expect(client.expiries.map((entry) => entry.ttlMs)).toEqual([
+      1000, 1000, 1000,
+    ]);
     expect(client.expiries.map((entry) => entry.key).toSorted()).toEqual([
       "engine:sessions:dHRs:exists",
       "engine:sessions:dHRs:messages",
@@ -388,7 +472,9 @@ describe("FilesystemJsonlSessionStore", () => {
     expect(messageTexts(await second.load("s1"))).toEqual(["a", "b"]);
     await second.compact("s1");
 
-    const files = (await readdir(directory)).filter((entry) => entry.endsWith(".jsonl"));
+    const files = (await readdir(directory)).filter((entry) =>
+      entry.endsWith(".jsonl"),
+    );
     expect(files).toHaveLength(1);
     const compacted = await readFile(join(directory, files[0]!), "utf8");
     expect(compacted.trim().split(/\r?\n/)).toHaveLength(1);
@@ -396,17 +482,35 @@ describe("FilesystemJsonlSessionStore", () => {
 
   it("round-trips through a custom codec without plaintext at rest", async () => {
     const codec: SessionStoreCodec = {
-      encodeMessage: (message) => Buffer.from(JSON.stringify(message), "utf8").toString("base64url"),
-      decodeMessage: (payload) => JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as ReturnType<typeof user>,
-      encodeMetadata: (metadata) => metadata === undefined ? undefined : Buffer.from(JSON.stringify(metadata), "utf8").toString("base64url"),
-      decodeMetadata: (payload) => payload === undefined ? undefined : JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Record<string, unknown>,
+      encodeMessage: (message) =>
+        Buffer.from(JSON.stringify(message), "utf8").toString("base64url"),
+      decodeMessage: (payload) =>
+        JSON.parse(
+          Buffer.from(payload, "base64url").toString("utf8"),
+        ) as ReturnType<typeof user>,
+      encodeMetadata: (metadata) =>
+        metadata === undefined
+          ? undefined
+          : Buffer.from(JSON.stringify(metadata), "utf8").toString("base64url"),
+      decodeMetadata: (payload) =>
+        payload === undefined
+          ? undefined
+          : (JSON.parse(
+              Buffer.from(payload, "base64url").toString("utf8"),
+            ) as Record<string, unknown>),
     };
     const directory = await tempDirectory();
     const store = new FilesystemJsonlSessionStore({ directory, codec });
     await store.migrate();
-    await store.save({ id: "s1", messages: [user("secret")], metadata: { owner: "private" } });
+    await store.save({
+      id: "s1",
+      messages: [user("secret")],
+      metadata: { owner: "private" },
+    });
 
-    const files = (await readdir(directory)).filter((entry) => entry.endsWith(".jsonl"));
+    const files = (await readdir(directory)).filter((entry) =>
+      entry.endsWith(".jsonl"),
+    );
     const raw = await readFile(join(directory, files[0]!), "utf8");
     expect(raw).not.toContain("secret");
     expect(raw).not.toContain("private");
@@ -422,8 +526,15 @@ describe("withSessionStoreHooks", () => {
       compactor: {
         shouldCompact: (state) => state.messages.length > 1,
         compact: (state) => ({
-          state: { id: state.id, messages: state.messages.slice(-1), metadata: state.metadata },
-          archive: { messages: state.messages.slice(0, -1), reason: "keep-last" },
+          state: {
+            id: state.id,
+            messages: state.messages.slice(-1),
+            metadata: state.metadata,
+          },
+          archive: {
+            messages: state.messages.slice(0, -1),
+            reason: "keep-last",
+          },
         }),
       },
       archiver: {
@@ -438,7 +549,9 @@ describe("withSessionStoreHooks", () => {
 
     expect(messageTexts(await store.load("s1"))).toEqual(["new"]);
     expect(archived).toHaveLength(1);
-    expect(messageTexts({ id: "archive", messages: archived[0]!.messages ?? [] })).toEqual(["old"]);
+    expect(
+      messageTexts({ id: "archive", messages: archived[0]!.messages ?? [] }),
+    ).toEqual(["old"]);
   });
 
   it("summarizingCompactor persists one pinned summary and reports AppendResult", async () => {
@@ -448,7 +561,10 @@ describe("withSessionStoreHooks", () => {
       result: () => {
         providerCalls += 1;
         return {
-          message: { role: "assistant", content: [{ type: "text", text: "SUMMARY" }] },
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "SUMMARY" }],
+          },
           toolCalls: [],
           finishReason: "stop",
           model: "m",
@@ -483,12 +599,22 @@ describe("withSessionStoreHooks", () => {
     const state = await store.load("s1");
     expect(state?.messages).toHaveLength(2);
     expect(state?.messages[0]?.role).toBe("system");
-    expect(state?.messages[0]?.metadata).toMatchObject({ pinned: true, [SUMMARY_METADATA_KEY]: true });
-    expect(messageTexts(state)).toEqual(["Summary of earlier conversation:\nSUMMARY", "recent"]);
+    expect(state?.messages[0]?.metadata).toMatchObject({
+      pinned: true,
+      [SUMMARY_METADATA_KEY]: true,
+    });
+    expect(messageTexts(state)).toEqual([
+      "Summary of earlier conversation:\nSUMMARY",
+      "recent",
+    ]);
     expect(archived[0]?.messages).toHaveLength(4);
 
     await store.append("s1", [assistant("final")]);
     expect(providerCalls).toBe(1);
-    expect((await store.load("s1"))?.messages.filter((message) => message.metadata?.[SUMMARY_METADATA_KEY] === true)).toHaveLength(1);
+    expect(
+      (await store.load("s1"))?.messages.filter(
+        (message) => message.metadata?.[SUMMARY_METADATA_KEY] === true,
+      ),
+    ).toHaveLength(1);
   });
 });

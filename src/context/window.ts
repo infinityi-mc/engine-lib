@@ -57,7 +57,11 @@ function messagePinned(
   index: number,
   pin?: (message: Message, index: number) => boolean,
 ): boolean {
-  return message.role === "system" || message.metadata?.pinned === true || pin?.(message, index) === true;
+  return (
+    message.role === "system" ||
+    message.metadata?.pinned === true ||
+    pin?.(message, index) === true
+  );
 }
 
 function hasToolCall(message: Message): boolean {
@@ -65,7 +69,10 @@ function hasToolCall(message: Message): boolean {
 }
 
 function isToolResultMessage(message: Message): boolean {
-  return message.role === "tool" && message.content.some((part) => part.type === "tool_result");
+  return (
+    message.role === "tool" &&
+    message.content.some((part) => part.type === "tool_result")
+  );
 }
 
 /** Split messages into request-valid groups, keeping tool-call/result turns intact. */
@@ -100,7 +107,8 @@ function flattenGroups(groups: readonly MessageGroup[]): Message[] {
 
 function latestNonSystemGroupIndex(groups: readonly MessageGroup[]): number {
   for (let index = groups.length - 1; index >= 0; index -= 1) {
-    if (groups[index]!.messages.some((message) => message.role !== "system")) return index;
+    if (groups[index]!.messages.some((message) => message.role !== "system"))
+      return index;
   }
   return -1;
 }
@@ -112,8 +120,10 @@ function transcript(messages: readonly Message[]): string {
       const body = m.content
         .map((p) => {
           if (p.type === "text") return p.text;
-          if (p.type === "tool_result") return p.content.map((t) => t.text).join(" ");
-          if (p.type === "tool_call") return `[tool_call ${p.name} ${JSON.stringify(p.arguments)}]`;
+          if (p.type === "tool_result")
+            return p.content.map((t) => t.text).join(" ");
+          if (p.type === "tool_call")
+            return `[tool_call ${p.name} ${JSON.stringify(p.arguments)}]`;
           return "";
         })
         .filter((s) => s !== "")
@@ -137,7 +147,10 @@ export function truncateOldest(): ContextStrategy {
       const rest = messages.filter((m) => m.role !== "system");
 
       const kept = [...rest];
-      while (kept.length > 0 && ctx.countTokens([...systemMsgs, ...kept]) > ctx.maxTokens) {
+      while (
+        kept.length > 0 &&
+        ctx.countTokens([...systemMsgs, ...kept]) > ctx.maxTokens
+      ) {
         kept.shift();
       }
       const result = [...systemMsgs, ...kept];
@@ -157,9 +170,11 @@ export function truncateOldest(): ContextStrategy {
  * Drop oldest whole turns while preserving system messages, pinned messages,
  * and assistant tool-call/result pairing.
  */
-export function truncateToolAware(opts: {
-  pin?: (message: Message, index: number) => boolean;
-} = {}): ContextStrategy {
+export function truncateToolAware(
+  opts: {
+    pin?: (message: Message, index: number) => boolean;
+  } = {},
+): ContextStrategy {
   return {
     name: "truncate-tool-aware",
     reduce(messages, ctx) {
@@ -172,13 +187,17 @@ export function truncateToolAware(opts: {
 
       for (let index = groups.length - 1; index >= 0; index -= 1) {
         if (keep.has(index)) continue;
-        const candidate = flattenGroups(groups.filter((_, i) => keep.has(i) || i === index));
+        const candidate = flattenGroups(
+          groups.filter((_, i) => keep.has(i) || i === index),
+        );
         if (ctx.countTokens(candidate) <= ctx.maxTokens) {
           keep.add(index);
         }
       }
 
-      const result = flattenGroups(groups.filter((_, index) => keep.has(index)));
+      const result = flattenGroups(
+        groups.filter((_, index) => keep.has(index)),
+      );
       const tokens = ctx.countTokens(result);
       if (tokens > ctx.maxTokens) {
         throw new ContextWindowError(
@@ -196,7 +215,9 @@ export function truncateToolAware(opts: {
  * call, keeping the most recent `keepRecent` (default 4) non-system messages
  * verbatim. Throws {@link ContextWindowError} if the result still overflows.
  */
-export function summarizeOldest(opts: { keepRecent?: number } = {}): ContextStrategy {
+export function summarizeOldest(
+  opts: { keepRecent?: number } = {},
+): ContextStrategy {
   const keepRecent = opts.keepRecent ?? 4;
   return {
     name: "summarize-oldest",
@@ -219,7 +240,10 @@ export function summarizeOldest(opts: { keepRecent?: number } = {}): ContextStra
               "Summarize the following conversation transcript concisely, preserving " +
                 "facts, decisions, open questions, and any in-flight tool intent. Output only the summary.",
             ),
-            { role: "user" as const, content: [{ type: "text" as const, text: transcript(older) }] },
+            {
+              role: "user" as const,
+              content: [{ type: "text" as const, text: transcript(older) }],
+            },
           ],
         };
         const completion = await ctx.provider.complete(req, ctx.engine);
@@ -227,7 +251,9 @@ export function summarizeOldest(opts: { keepRecent?: number } = {}): ContextStra
           .filter((p): p is { type: "text"; text: string } => p.type === "text")
           .map((p) => p.text)
           .join("");
-        const summary = system(`Summary of earlier conversation:\n${summaryText}`);
+        const summary = system(
+          `Summary of earlier conversation:\n${summaryText}`,
+        );
         result = [...systemMsgs, summary, ...recent];
       }
 

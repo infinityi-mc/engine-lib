@@ -17,7 +17,11 @@ interface ChatChunk {
     finish_reason?: string | null;
     delta?: {
       content?: string | null;
-      tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }>;
+      tool_calls?: Array<{
+        index?: number;
+        id?: string;
+        function?: { name?: string; arguments?: string };
+      }>;
     };
   }>;
   usage?: {
@@ -63,10 +67,22 @@ export async function* translateChatStream(
       if (!openTools.has(index)) {
         openTools.add(index);
         hadToolCalls = true;
-        yield { type: "tool_call_start", index, id: call.id ?? "", name: call.function?.name ?? "" };
+        yield {
+          type: "tool_call_start",
+          index,
+          id: call.id ?? "",
+          name: call.function?.name ?? "",
+        };
       }
-      if (call.function?.arguments !== undefined && call.function.arguments !== "") {
-        yield { type: "tool_call_delta", index, argumentsTextDelta: call.function.arguments };
+      if (
+        call.function?.arguments !== undefined &&
+        call.function.arguments !== ""
+      ) {
+        yield {
+          type: "tool_call_delta",
+          index,
+          argumentsTextDelta: call.function.arguments,
+        };
       }
     }
     if (choice?.finish_reason !== undefined && choice.finish_reason !== null) {
@@ -77,13 +93,22 @@ export async function* translateChatStream(
       usage = {
         inputTokens: chunk.usage.prompt_tokens ?? 0,
         outputTokens: chunk.usage.completion_tokens ?? 0,
-        totalTokens: chunk.usage.total_tokens
-          ?? (chunk.usage.prompt_tokens ?? 0) + (chunk.usage.completion_tokens ?? 0),
-        ...(chunk.usage.completion_tokens_details?.reasoning_tokens !== undefined
-          ? { reasoningTokens: chunk.usage.completion_tokens_details.reasoning_tokens }
+        totalTokens:
+          chunk.usage.total_tokens ??
+          (chunk.usage.prompt_tokens ?? 0) +
+            (chunk.usage.completion_tokens ?? 0),
+        ...(chunk.usage.completion_tokens_details?.reasoning_tokens !==
+        undefined
+          ? {
+              reasoningTokens:
+                chunk.usage.completion_tokens_details.reasoning_tokens,
+            }
           : {}),
         ...(chunk.usage.prompt_tokens_details?.cached_tokens !== undefined
-          ? { cachedInputTokens: chunk.usage.prompt_tokens_details.cached_tokens }
+          ? {
+              cachedInputTokens:
+                chunk.usage.prompt_tokens_details.cached_tokens,
+            }
           : {}),
       };
     }

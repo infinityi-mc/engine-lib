@@ -16,7 +16,11 @@ import {
 } from "@infinityi/forge/resilience";
 
 import type { ToolContext } from "../tools/types";
-import { emitHttpPolicy, emitHttpRequestEnd, emitHttpRequestStart } from "./events";
+import {
+  emitHttpPolicy,
+  emitHttpRequestEnd,
+  emitHttpRequestStart,
+} from "./events";
 import {
   HttpPolicyError,
   allowedResponseHeaders,
@@ -26,7 +30,13 @@ import {
   normalizeHttpConfig,
   type NormalizedHttpConfig,
 } from "./policy";
-import type { HeaderEntry, HttpClientRequest, HttpRequestResult, HttpToolClient, HttpToolsConfig } from "./types";
+import type {
+  HeaderEntry,
+  HttpClientRequest,
+  HttpRequestResult,
+  HttpToolClient,
+  HttpToolsConfig,
+} from "./types";
 
 class RetryableHttpStatusError extends Error {
   readonly status: number;
@@ -59,29 +69,45 @@ function retryableStatus(status: number): boolean {
   return status === 429 || status >= 500;
 }
 
-function combineSignals(...signals: Array<AbortSignal | undefined>): AbortSignal | undefined {
-  const present = signals.filter((signal): signal is AbortSignal => signal !== undefined);
+function combineSignals(
+  ...signals: Array<AbortSignal | undefined>
+): AbortSignal | undefined {
+  const present = signals.filter(
+    (signal): signal is AbortSignal => signal !== undefined,
+  );
   if (present.length === 0) return undefined;
   if (present.length === 1) return present[0];
   return AbortSignal.any(present);
 }
 
-function timeoutFor(config: NormalizedHttpConfig, requested: number | undefined): number {
+function timeoutFor(
+  config: NormalizedHttpConfig,
+  requested: number | undefined,
+): number {
   if (requested === undefined || requested <= 0) return config.defaultTimeoutMs;
   return clamp(requested, config.minTimeoutMs, config.maxTimeoutMs);
 }
 
-function bytesFor(config: NormalizedHttpConfig, requested: number | undefined): number {
+function bytesFor(
+  config: NormalizedHttpConfig,
+  requested: number | undefined,
+): number {
   if (requested === undefined || requested <= 0) return config.maxResponseBytes;
   return clamp(requested, 1, config.maxResponseBytes);
 }
 
-function charsFor(config: NormalizedHttpConfig, requested: number | undefined): number {
+function charsFor(
+  config: NormalizedHttpConfig,
+  requested: number | undefined,
+): number {
   if (requested === undefined || requested <= 0) return config.maxBodyChars;
   return clamp(requested, 1, config.maxBodyChars);
 }
 
-function shouldRetryMethod(config: NormalizedHttpConfig, method: string): boolean {
+function shouldRetryMethod(
+  config: NormalizedHttpConfig,
+  method: string,
+): boolean {
   return method === "GET" || config.retryUnsafeMethods;
 }
 
@@ -92,19 +118,28 @@ function isTransient(error: unknown): boolean {
   return retryableStatus(status);
 }
 
-function redirectedMethod(method: "GET" | "POST", status: number): "GET" | "POST" {
+function redirectedMethod(
+  method: "GET" | "POST",
+  status: number,
+): "GET" | "POST" {
   if (status === 303) return "GET";
   if ((status === 301 || status === 302) && method === "POST") return "GET";
   return method;
 }
 
-function bodyFor(req: HttpClientRequest, method: "GET" | "POST"): { body?: string; contentType?: string } {
+function bodyFor(
+  req: HttpClientRequest,
+  method: "GET" | "POST",
+): { body?: string; contentType?: string } {
   if (method === "GET") return {};
   if (req.body !== undefined && req.bodyJson !== undefined) {
     throw new HttpPolicyError("body and bodyJson cannot both be supplied");
   }
   if (req.bodyJson !== undefined) {
-    return { body: JSON.stringify(req.bodyJson), contentType: req.contentType ?? "application/json" };
+    return {
+      body: JSON.stringify(req.bodyJson),
+      contentType: req.contentType ?? "application/json",
+    };
   }
   if (req.body !== undefined) {
     return { body: req.body, contentType: req.contentType };
@@ -112,24 +147,38 @@ function bodyFor(req: HttpClientRequest, method: "GET" | "POST"): { body?: strin
   return {};
 }
 
-function contentKind(contentType: string | undefined): "json" | "text" | "binary" {
+function contentKind(
+  contentType: string | undefined,
+): "json" | "text" | "binary" {
   const type = (contentType ?? "").toLowerCase().split(";")[0]?.trim() ?? "";
   if (type === "application/json" || type.endsWith("+json")) return "json";
   if (type.startsWith("text/")) return "text";
-  if (type === "application/xhtml+xml" || type === "application/xml" || type.endsWith("+xml")) return "text";
+  if (
+    type === "application/xhtml+xml" ||
+    type === "application/xml" ||
+    type.endsWith("+xml")
+  )
+    return "text";
   return "binary";
 }
 
-function truncateChars(text: string, maxChars: number): { text: string; truncated: boolean } {
+function truncateChars(
+  text: string,
+  maxChars: number,
+): { text: string; truncated: boolean } {
   if (text.length <= maxChars) return { text, truncated: false };
   return { text: text.slice(0, maxChars), truncated: true };
 }
 
-async function readBytes(response: Response, maxBytes: number): Promise<{
+async function readBytes(
+  response: Response,
+  maxBytes: number,
+): Promise<{
   bytes: Uint8Array;
   truncated: boolean;
 }> {
-  if (response.body === null) return { bytes: new Uint8Array(), truncated: false };
+  if (response.body === null)
+    return { bytes: new Uint8Array(), truncated: false };
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let received = 0;
@@ -167,7 +216,10 @@ function parseBody(
   responseBytesTruncated: boolean,
   contentType: string | undefined,
   maxBodyChars: number,
-): Pick<HttpRequestResult, "body" | "bodyJson" | "bodyOmitted" | "bodyTruncated"> {
+): Pick<
+  HttpRequestResult,
+  "body" | "bodyJson" | "bodyOmitted" | "bodyTruncated"
+> {
   const kind = contentKind(contentType);
   if (kind === "binary") {
     return { bodyOmitted: true, bodyTruncated: responseBytesTruncated };
@@ -201,7 +253,11 @@ function validateUrl(raw: string): URL {
   }
 }
 
-function checkUrl(url: URL, config: NormalizedHttpConfig, ctx: ToolContext | undefined): void {
+function checkUrl(
+  url: URL,
+  config: NormalizedHttpConfig,
+  ctx: ToolContext | undefined,
+): void {
   try {
     assertUrlAllowed(url, config);
     emitHttpPolicy(ctx, "allow", url.href);
@@ -224,7 +280,10 @@ async function cancelBody(response: Response): Promise<void> {
 export function createHttpToolClient(config: HttpToolsConfig): HttpToolClient {
   const normalized = normalizeHttpConfig(config);
 
-  async function perform(req: HttpClientRequest, ctx?: ToolContext): Promise<HttpRequestResult> {
+  async function perform(
+    req: HttpClientRequest,
+    ctx?: ToolContext,
+  ): Promise<HttpRequestResult> {
     let method = req.method;
     let url = validateUrl(req.url);
     checkUrl(url, normalized, ctx);
@@ -239,13 +298,22 @@ export function createHttpToolClient(config: HttpToolsConfig): HttpToolClient {
     emitHttpRequestStart(ctx, method, url.href, timeoutMs);
 
     try {
-      for (let redirectCount = 0; redirectCount <= normalized.maxRedirects; redirectCount += 1) {
+      for (
+        let redirectCount = 0;
+        redirectCount <= normalized.maxRedirects;
+        redirectCount += 1
+      ) {
         const currentMethod = method;
         const currentUrl = url;
         const { body, contentType } = bodyFor(req, currentMethod);
-        const requestHeaders = buildRequestHeaders(normalized, req.headers, contentType, {
-          includeConfiguredHeaders: currentUrl.origin === initialOrigin,
-        });
+        const requestHeaders = buildRequestHeaders(
+          normalized,
+          req.headers,
+          contentType,
+          {
+            includeConfiguredHeaders: currentUrl.origin === initialOrigin,
+          },
+        );
         const retryEnabled = shouldRetryMethod(normalized, currentMethod);
         const maxAttempts = retryEnabled ? normalized.retryMaxAttempts : 1;
         const pipeline = combine(
@@ -283,10 +351,16 @@ export function createHttpToolClient(config: HttpToolsConfig): HttpToolClient {
         });
 
         const location = response.headers.get("location");
-        if (response.status >= 300 && response.status < 400 && location !== null) {
+        if (
+          response.status >= 300 &&
+          response.status < 400 &&
+          location !== null
+        ) {
           if (redirectCount >= normalized.maxRedirects) {
             await cancelBody(response);
-            throw new HttpPolicyError(`too many redirects (max ${normalized.maxRedirects})`);
+            throw new HttpPolicyError(
+              `too many redirects (max ${normalized.maxRedirects})`,
+            );
           }
           const next = new URL(location, currentUrl);
           await cancelBody(response);
@@ -297,9 +371,15 @@ export function createHttpToolClient(config: HttpToolsConfig): HttpToolClient {
           continue;
         }
 
-        const contentTypeHeader = response.headers.get("content-type") ?? undefined;
+        const contentTypeHeader =
+          response.headers.get("content-type") ?? undefined;
         const { bytes, truncated } = await readBytes(response, maxBytes);
-        const parsed = parseBody(bytes, truncated, contentTypeHeader, maxBodyChars);
+        const parsed = parseBody(
+          bytes,
+          truncated,
+          contentTypeHeader,
+          maxBodyChars,
+        );
         const result: HttpRequestResult = {
           url: req.url,
           finalUrl: currentUrl.href,
@@ -307,8 +387,13 @@ export function createHttpToolClient(config: HttpToolsConfig): HttpToolClient {
           redirects,
           status: response.status,
           statusText: response.statusText,
-          ...(contentTypeHeader !== undefined ? { contentType: contentTypeHeader } : {}),
-          headers: allowedResponseHeaders(response.headers, normalized.responseHeaderAllowlist),
+          ...(contentTypeHeader !== undefined
+            ? { contentType: contentTypeHeader }
+            : {}),
+          headers: allowedResponseHeaders(
+            response.headers,
+            normalized.responseHeaderAllowlist,
+          ),
           ...parsed,
           responseBytes: bytes.byteLength,
           responseBytesTruncated: truncated,
@@ -317,7 +402,9 @@ export function createHttpToolClient(config: HttpToolsConfig): HttpToolClient {
         emitHttpRequestEnd(ctx, req.method, req.url, result);
         return result;
       }
-      throw new HttpPolicyError(`too many redirects (max ${normalized.maxRedirects})`);
+      throw new HttpPolicyError(
+        `too many redirects (max ${normalized.maxRedirects})`,
+      );
     } catch (error) {
       const message = messageOf(error);
       emitHttpRequestEnd(ctx, req.method, req.url, undefined, message);
@@ -327,10 +414,21 @@ export function createHttpToolClient(config: HttpToolsConfig): HttpToolClient {
 
   return {
     request: perform,
-    get(url: string, options?: Omit<HttpClientRequest, "method" | "url" | "body" | "bodyJson" | "contentType">, ctx?: ToolContext) {
+    get(
+      url: string,
+      options?: Omit<
+        HttpClientRequest,
+        "method" | "url" | "body" | "bodyJson" | "contentType"
+      >,
+      ctx?: ToolContext,
+    ) {
       return perform({ method: "GET", url, ...(options ?? {}) }, ctx);
     },
-    post(url: string, options?: Omit<HttpClientRequest, "method" | "url">, ctx?: ToolContext) {
+    post(
+      url: string,
+      options?: Omit<HttpClientRequest, "method" | "url">,
+      ctx?: ToolContext,
+    ) {
       return perform({ method: "POST", url, ...(options ?? {}) }, ctx);
     },
   };

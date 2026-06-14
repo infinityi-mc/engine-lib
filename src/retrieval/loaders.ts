@@ -7,15 +7,22 @@ import type {
 } from "./types";
 import { throwIfAborted } from "./utils";
 
-function isAsyncIterable(value: DocumentLoaderOutput): value is AsyncIterable<LoadedDocument> {
+function isAsyncIterable(
+  value: DocumentLoaderOutput,
+): value is AsyncIterable<LoadedDocument> {
   return Symbol.asyncIterator in Object(value);
 }
 
-function isIterable(value: DocumentLoaderOutput): value is Iterable<LoadedDocument> {
+function isIterable(
+  value: DocumentLoaderOutput,
+): value is Iterable<LoadedDocument> {
   return Symbol.iterator in Object(value);
 }
 
-async function collect(output: DocumentLoaderOutput, ctx?: EngineContext): Promise<LoadedDocument[]> {
+async function collect(
+  output: DocumentLoaderOutput,
+  ctx?: EngineContext,
+): Promise<LoadedDocument[]> {
   const documents: LoadedDocument[] = [];
   if (isAsyncIterable(output)) {
     for await (const document of output) {
@@ -37,7 +44,9 @@ async function collect(output: DocumentLoaderOutput, ctx?: EngineContext): Promi
 /** Build a document loader from a host-supplied load function. */
 export function createDocumentLoader(
   name: string,
-  load: (ctx?: EngineContext) => DocumentLoaderOutput | Promise<DocumentLoaderOutput>,
+  load: (
+    ctx?: EngineContext,
+  ) => DocumentLoaderOutput | Promise<DocumentLoaderOutput>,
 ): DocumentLoader {
   return { name, load };
 }
@@ -47,7 +56,9 @@ export function staticDocumentLoader(
   documents: readonly LoadedDocument[],
   name = "static-documents",
 ): DocumentLoader {
-  return createDocumentLoader(name, () => documents.map((document) => ({ ...document })));
+  return createDocumentLoader(name, () =>
+    documents.map((document) => ({ ...document })),
+  );
 }
 
 /** Load and normalize documents from all loaders in declaration order. */

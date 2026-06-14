@@ -1,6 +1,11 @@
 import { describe, expect, it } from "bun:test";
 
-import { AgentError, CancelledError, ExecutionError, MaxHandoffsExceededError } from "../src/errors";
+import {
+  AgentError,
+  CancelledError,
+  ExecutionError,
+  MaxHandoffsExceededError,
+} from "../src/errors";
 import {
   asTool,
   createAgentRegistry,
@@ -12,15 +17,32 @@ import {
 } from "../src/agent/index";
 import { runAgent } from "../src/execution/index";
 import type { RunEvent } from "../src/execution/index";
-import type { CompletionRequest, CompletionResult, ToolCall } from "../src/providers/types";
+import type {
+  CompletionRequest,
+  CompletionResult,
+  ToolCall,
+} from "../src/providers/types";
 import { s } from "../src/schema/index";
-import { mockProvider, scriptedProvider, textResult, toolCallResult } from "../src/testing/index";
+import {
+  mockProvider,
+  scriptedProvider,
+  textResult,
+  toolCallResult,
+} from "../src/testing/index";
 
 const provider = mockProvider({ name: "mock", defaultModel: "mock-model" });
 
 const triage = defineAgent({ name: "triage", provider, instructions: "route" });
-const billing = defineAgent({ name: "billing", provider, instructions: "billing" });
-const support = defineAgent({ name: "support", provider, instructions: "support" });
+const billing = defineAgent({
+  name: "billing",
+  provider,
+  instructions: "billing",
+});
+const support = defineAgent({
+  name: "support",
+  provider,
+  instructions: "support",
+});
 
 describe("createAgentRegistry", () => {
   it("seeds, looks up, and lists agents in registration order", () => {
@@ -110,30 +132,49 @@ describe("asTool — sub-agent-as-tool", () => {
     expect(tool.parameters.safeParse({ input: "hi" }).success).toBe(true);
     expect(tool.parameters.safeParse({}).success).toBe(false);
     expect(tool.name).toBe(asTool(child, {}).name);
-    expect(asTool(child, { name: "delegate", description: "d" }).name).toBe("delegate");
+    expect(asTool(child, { name: "delegate", description: "d" }).name).toBe(
+      "delegate",
+    );
   });
 
   it("runs the child, feeds its output back, and propagates usage + agent.child events", async () => {
     const child = defineAgent({
       name: "researcher",
       provider: scriptedProvider([
-        textResult("child answer", { inputTokens: 5, outputTokens: 7, totalTokens: 12 }),
+        textResult("child answer", {
+          inputTokens: 5,
+          outputTokens: 7,
+          totalTokens: 12,
+        }),
       ]),
     });
     const parent = defineAgent({
       name: "lead",
       provider: scriptedProvider([
         toolCallResult(
-          [{ id: "c1", name: "researcher", arguments: { input: "investigate" } }],
+          [
+            {
+              id: "c1",
+              name: "researcher",
+              arguments: { input: "investigate" },
+            },
+          ],
           { inputTokens: 3, outputTokens: 4, totalTokens: 7 },
         ),
-        textResult("final report", { inputTokens: 2, outputTokens: 1, totalTokens: 3 }),
+        textResult("final report", {
+          inputTokens: 2,
+          outputTokens: 1,
+          totalTokens: 3,
+        }),
       ]),
       tools: [asTool(child)],
     });
 
     const events: RunEvent[] = [];
-    const result = await runAgent(parent, { input: "go", onEvent: (e) => events.push(e) });
+    const result = await runAgent(parent, {
+      input: "go",
+      onEvent: (e) => events.push(e),
+    });
 
     expect(result.output).toBe("final report");
 
@@ -151,7 +192,8 @@ describe("asTool — sub-agent-as-tool", () => {
 
     // The child's run surfaced to the parent as agent.child events.
     const childEvents = events.filter(
-      (e): e is Extract<RunEvent, { type: "agent.child" }> => e.type === "agent.child",
+      (e): e is Extract<RunEvent, { type: "agent.child" }> =>
+        e.type === "agent.child",
     );
     expect(childEvents.length).toBeGreaterThan(0);
     expect(childEvents.every((e) => e.agent === "researcher")).toBe(true);
@@ -169,7 +211,9 @@ describe("asTool — sub-agent-as-tool", () => {
     const parent = defineAgent({
       name: "lead",
       provider: scriptedProvider([
-        toolCallResult([{ id: "c1", name: "researcher", arguments: { input: "x" } }]),
+        toolCallResult([
+          { id: "c1", name: "researcher", arguments: { input: "x" } },
+        ]),
         textResult("recovered"),
       ]),
       tools: [asTool(child)],
@@ -186,10 +230,11 @@ describe("asTool — sub-agent-as-tool", () => {
     const child = defineAgent({
       name: "researcher",
       provider: throwingAfter([
-        toolCallResult(
-          [{ id: "n1", name: "noop", arguments: {} }],
-          { inputTokens: 6, outputTokens: 3, totalTokens: 9 },
-        ),
+        toolCallResult([{ id: "n1", name: "noop", arguments: {} }], {
+          inputTokens: 6,
+          outputTokens: 3,
+          totalTokens: 9,
+        }),
       ]),
       tools: [noop],
     });
@@ -200,7 +245,11 @@ describe("asTool — sub-agent-as-tool", () => {
           [{ id: "c1", name: "researcher", arguments: { input: "x" } }],
           { inputTokens: 4, outputTokens: 3, totalTokens: 7 },
         ),
-        textResult("recovered", { inputTokens: 2, outputTokens: 1, totalTokens: 3 }),
+        textResult("recovered", {
+          inputTokens: 2,
+          outputTokens: 1,
+          totalTokens: 3,
+        }),
       ]),
       tools: [asTool(child)],
     });
@@ -215,10 +264,11 @@ describe("asTool — sub-agent-as-tool", () => {
     const agent = defineAgent({
       name: "doomed",
       provider: throwingAfter([
-        toolCallResult(
-          [{ id: "n1", name: "noop", arguments: {} }],
-          { inputTokens: 6, outputTokens: 3, totalTokens: 9 },
-        ),
+        toolCallResult([{ id: "n1", name: "noop", arguments: {} }], {
+          inputTokens: 6,
+          outputTokens: 3,
+          totalTokens: 9,
+        }),
       ]),
       tools: [noop],
     });
@@ -239,7 +289,11 @@ describe("asTool — sub-agent-as-tool", () => {
       name: "greedy",
       parameters: s.object({}),
       execute: (_args, ctx) => {
-        ctx.run?.reportUsage({ inputTokens: 0, outputTokens: 0, totalTokens: 5 });
+        ctx.run?.reportUsage({
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 5,
+        });
         controller.abort();
         return { ok: true, content: "done" };
       },
@@ -247,10 +301,11 @@ describe("asTool — sub-agent-as-tool", () => {
     const agent = defineAgent({
       name: "host",
       provider: scriptedProvider([
-        toolCallResult(
-          [{ id: "g1", name: "greedy", arguments: {} }],
-          { inputTokens: 4, outputTokens: 3, totalTokens: 7 },
-        ),
+        toolCallResult([{ id: "g1", name: "greedy", arguments: {} }], {
+          inputTokens: 4,
+          outputTokens: 3,
+          totalTokens: 7,
+        }),
         textResult("never reached"),
       ]),
       tools: [greedy],
@@ -275,7 +330,9 @@ describe("asTool — sub-agent-as-tool", () => {
     const child = defineAgent({
       name: "child",
       provider: scriptedProvider([
-        toolCallResult([{ id: "g1", name: "grandchild", arguments: { input: "x" } }]),
+        toolCallResult([
+          { id: "g1", name: "grandchild", arguments: { input: "x" } },
+        ]),
         textResult("child done"),
       ]),
       tools: [asTool(grandchild)],
@@ -283,7 +340,9 @@ describe("asTool — sub-agent-as-tool", () => {
     const parent = defineAgent({
       name: "parent",
       provider: scriptedProvider([
-        toolCallResult([{ id: "c1", name: "child", arguments: { input: "x" } }]),
+        toolCallResult([
+          { id: "c1", name: "child", arguments: { input: "x" } },
+        ]),
         textResult("parent done"),
       ]),
       tools: [asTool(child)],
@@ -293,7 +352,10 @@ describe("asTool — sub-agent-as-tool", () => {
     await runAgent(parent, { input: "go", onEvent: (e) => events.push(e) });
 
     const depths = events
-      .filter((e): e is Extract<RunEvent, { type: "agent.child" }> => e.type === "agent.child")
+      .filter(
+        (e): e is Extract<RunEvent, { type: "agent.child" }> =>
+          e.type === "agent.child",
+      )
       .map((e) => e.depth);
     expect(depths).toContain(1);
     expect(Math.max(...depths)).toBe(2);
@@ -337,26 +399,44 @@ describe("handoff helpers", () => {
   it("names the synthetic transfer tool and builds its provider schema", () => {
     expect(handoffToolName("billing")).toBe("transfer_to_billing");
 
-    const router = defineAgent({ name: "router", provider, handoffs: [billing, support] });
+    const router = defineAgent({
+      name: "router",
+      provider,
+      handoffs: [billing, support],
+    });
     const targets = resolveHandoffTargets(router);
-    expect([...targets.keys()]).toEqual(["transfer_to_billing", "transfer_to_support"]);
+    expect([...targets.keys()]).toEqual([
+      "transfer_to_billing",
+      "transfer_to_support",
+    ]);
     expect(targets.get("transfer_to_billing")).toBe(billing);
 
     const tools = handoffProviderTools(targets);
-    expect(tools.map((t) => t.name)).toEqual(["transfer_to_billing", "transfer_to_support"]);
+    expect(tools.map((t) => t.name)).toEqual([
+      "transfer_to_billing",
+      "transfer_to_support",
+    ]);
     expect(tools[0]?.description).toContain("billing");
     expect(tools[0]?.parameters).toBeDefined();
   });
 
   it("resolves string targets via the registry and rejects unknown ones", () => {
     const registry = createAgentRegistry([billing]);
-    const router = defineAgent({ name: "router", provider, handoffs: ["billing"] });
-    expect(resolveHandoffTargets(router, registry).get("transfer_to_billing")).toBe(billing);
+    const router = defineAgent({
+      name: "router",
+      provider,
+      handoffs: ["billing"],
+    });
+    expect(
+      resolveHandoffTargets(router, registry).get("transfer_to_billing"),
+    ).toBe(billing);
 
     const bad = defineAgent({ name: "router", provider, handoffs: ["ghost"] });
     expect(() => resolveHandoffTargets(bad, registry)).toThrow(ExecutionError);
     // A string target with no registry is a clear configuration error.
-    expect(() => resolveHandoffTargets(bad)).toThrow(/no registry was provided/);
+    expect(() => resolveHandoffTargets(bad)).toThrow(
+      /no registry was provided/,
+    );
   });
 });
 
@@ -366,7 +446,11 @@ describe("handoff — delegation in the run loop", () => {
       name: "billing",
       instructions: "you are billing",
       provider: scriptedProvider([
-        textResult("refund issued", { inputTokens: 3, outputTokens: 2, totalTokens: 5 }),
+        textResult("refund issued", {
+          inputTokens: 3,
+          outputTokens: 2,
+          totalTokens: 5,
+        }),
       ]),
     });
     const router = defineAgent({
@@ -374,7 +458,11 @@ describe("handoff — delegation in the run loop", () => {
       instructions: "route the request",
       handoffs: [specialist],
       provider: scriptedProvider([
-        toolCallResult([transfer("h1", "billing")], { inputTokens: 5, outputTokens: 2, totalTokens: 7 }),
+        toolCallResult([transfer("h1", "billing")], {
+          inputTokens: 5,
+          outputTokens: 2,
+          totalTokens: 7,
+        }),
       ]),
     });
 
@@ -392,7 +480,11 @@ describe("handoff — delegation in the run loop", () => {
     expect(result.usage.totalTokens).toBe(12);
 
     const handoff = events.find((e) => e.type === "agent.handoff");
-    expect(handoff).toMatchObject({ type: "agent.handoff", from: "triage", to: "billing" });
+    expect(handoff).toMatchObject({
+      type: "agent.handoff",
+      from: "triage",
+      to: "billing",
+    });
 
     // History is preserved across the switch: the original user input survives.
     const userText = result.messages
@@ -482,7 +574,10 @@ describe("handoff — delegation in the run loop", () => {
     });
 
     const events: RunEvent[] = [];
-    const result = await runAgent(router, { input: "go", onEvent: (e) => events.push(e) });
+    const result = await runAgent(router, {
+      input: "go",
+      onEvent: (e) => events.push(e),
+    });
 
     expect(toolRan).toBe(true);
     expect(result.agent).toBe("billing");

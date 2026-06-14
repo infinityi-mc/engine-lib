@@ -42,13 +42,17 @@ export interface ToolSpec<TArgs> {
  * for unexpected implementation faults. `runAgent` isolates both forms as tool
  * results so one bad tool call does not crash the whole run.
  */
-export function defineTool<TArgs>(spec: ToolSpec<TArgs>): ToolDefinition<TArgs> {
+export function defineTool<TArgs>(
+  spec: ToolSpec<TArgs>,
+): ToolDefinition<TArgs> {
   if (typeof spec.name !== "string" || spec.name.trim() === "") {
     throw new TypeError("defineTool: `name` must be a non-empty string");
   }
   const tool: ToolDefinition<TArgs> = {
     name: spec.name,
-    ...(spec.description !== undefined ? { description: spec.description } : {}),
+    ...(spec.description !== undefined
+      ? { description: spec.description }
+      : {}),
     parameters: spec.parameters,
     execute: spec.execute,
   };

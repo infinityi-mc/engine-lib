@@ -1,5 +1,9 @@
 import { defineAgent, defineTool, runAgent, s } from "@infinityi/engine-lib";
-import { scriptedProvider, textResult, toolCallResult } from "@infinityi/engine-lib/testing";
+import {
+  scriptedProvider,
+  textResult,
+  toolCallResult,
+} from "@infinityi/engine-lib/testing";
 
 const double = defineTool({
   name: "double",
@@ -11,7 +15,9 @@ const agent = defineAgent({
   name: "testable",
   tools: [double],
   provider: scriptedProvider([
-    toolCallResult([{ id: "double-1", name: "double", arguments: { value: 21 } }]),
+    toolCallResult([
+      { id: "double-1", name: "double", arguments: { value: 21 } },
+    ]),
     textResult("The answer is 42."),
   ]),
 });
@@ -28,4 +34,3 @@ if (!usedTool) {
 }
 
 console.log("agent test passed");
-

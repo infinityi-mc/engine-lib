@@ -1,6 +1,13 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { basename, dirname, extname, join, relative } from "node:path";
 
 import { glob } from "glob";
@@ -122,7 +129,10 @@ export function isHiddenRelativePath(path: string): boolean {
     .some((part) => part.startsWith(".") && part !== "." && part !== "..");
 }
 
-async function buildIgnore(root: string, respectGitignore: boolean): Promise<ReturnType<typeof ignore>> {
+async function buildIgnore(
+  root: string,
+  respectGitignore: boolean,
+): Promise<ReturnType<typeof ignore>> {
   const ig = ignore().add(DEFAULT_IGNORE);
   if (!respectGitignore) return ig;
   const gitignorePath = join(root, ".gitignore");
@@ -133,19 +143,28 @@ async function buildIgnore(root: string, respectGitignore: boolean): Promise<Ret
   return ig;
 }
 
-function hasGlobMatch(path: string, globs: readonly string[] | undefined): boolean {
+function hasGlobMatch(
+  path: string,
+  globs: readonly string[] | undefined,
+): boolean {
   if (globs === undefined || globs.length === 0) return true;
   const matcher = ignore().add(globs.map((g) => g.replaceAll("\\", "/")));
   return matcher.ignores(path);
 }
 
-function isExcluded(path: string, globs: readonly string[] | undefined): boolean {
+function isExcluded(
+  path: string,
+  globs: readonly string[] | undefined,
+): boolean {
   if (globs === undefined || globs.length === 0) return false;
   const matcher = ignore().add(globs.map((g) => g.replaceAll("\\", "/")));
   return matcher.ignores(path);
 }
 
-export async function listEntries(root: string, options: ListOptions = {}): Promise<{
+export async function listEntries(
+  root: string,
+  options: ListOptions = {},
+): Promise<{
   readonly entries: ListedEntry[];
   readonly truncated: boolean;
   readonly total: number;
@@ -154,9 +173,10 @@ export async function listEntries(root: string, options: ListOptions = {}): Prom
   const respectGitignore = options.respectGitignore ?? true;
   const maxEntries = options.maxEntries ?? Number.POSITIVE_INFINITY;
   const ig = await buildIgnore(root, respectGitignore);
-  const patterns = options.includeGlobs !== undefined && options.includeGlobs.length > 0
-    ? [...options.includeGlobs]
-    : ["**/*"];
+  const patterns =
+    options.includeGlobs !== undefined && options.includeGlobs.length > 0
+      ? [...options.includeGlobs]
+      : ["**/*"];
   const matches = await glob(patterns, {
     cwd: root,
     dot: includeHidden,
@@ -195,13 +215,17 @@ export async function listEntries(root: string, options: ListOptions = {}): Prom
   return { entries, truncated: total > entries.length, total };
 }
 
-export async function readTextFile(path: string, maxBytes: number): Promise<{
+export async function readTextFile(
+  path: string,
+  maxBytes: number,
+): Promise<{
   readonly text: string;
   readonly version: string;
   readonly truncated: boolean;
 }> {
   const bytes = await readFile(path);
-  const sliced = bytes.byteLength > maxBytes ? bytes.subarray(0, maxBytes) : bytes;
+  const sliced =
+    bytes.byteLength > maxBytes ? bytes.subarray(0, maxBytes) : bytes;
   return {
     text: sliced.toString("utf8"),
     version: fileVersion(bytes),
@@ -209,9 +233,15 @@ export async function readTextFile(path: string, maxBytes: number): Promise<{
   };
 }
 
-export async function atomicWrite(path: string, content: string): Promise<string> {
+export async function atomicWrite(
+  path: string,
+  content: string,
+): Promise<string> {
   await mkdir(dirname(path), { recursive: true });
-  const tmp = join(dirname(path), `.engine-lib-${process.pid}-${Date.now()}.tmp`);
+  const tmp = join(
+    dirname(path),
+    `.engine-lib-${process.pid}-${Date.now()}.tmp`,
+  );
   await writeFile(tmp, content, "utf8");
   await rename(tmp, path);
   return fileVersion(content);
@@ -233,15 +263,24 @@ export function renderLineRange(
 ): string {
   const selected = lines.slice(startLine - 1, endLine);
   if (!includeLineNumbers) return selected.join("\n");
-  return selected.map((line, index) => `${startLine + index}: ${line}`).join("\n");
+  return selected
+    .map((line, index) => `${startLine + index}: ${line}`)
+    .join("\n");
 }
 
-export function clampLineRange(totalLines: number, startLine?: number, endLine?: number): {
+export function clampLineRange(
+  totalLines: number,
+  startLine?: number,
+  endLine?: number,
+): {
   readonly startLine: number;
   readonly endLine: number;
 } {
   const start = Math.max(1, Math.min(startLine ?? 1, Math.max(totalLines, 1)));
-  const end = Math.max(start, Math.min(endLine ?? totalLines, Math.max(totalLines, 1)));
+  const end = Math.max(
+    start,
+    Math.min(endLine ?? totalLines, Math.max(totalLines, 1)),
+  );
   return { startLine: start, endLine: end };
 }
 
@@ -250,9 +289,12 @@ export function detectFrameworks(entries: readonly ListedEntry[]): string[] {
   const frameworks = new Set<string>();
   if (files.has("package.json")) frameworks.add("Node.js");
   if (files.has("bun.lock") || files.has("bun.lockb")) frameworks.add("Bun");
-  if ([...files].some((file) => file.includes("vite.config."))) frameworks.add("Vite");
-  if ([...files].some((file) => file.includes("next.config."))) frameworks.add("Next.js");
-  if ([...files].some((file) => file.includes("tsconfig.json"))) frameworks.add("TypeScript");
+  if ([...files].some((file) => file.includes("vite.config.")))
+    frameworks.add("Vite");
+  if ([...files].some((file) => file.includes("next.config.")))
+    frameworks.add("Next.js");
+  if ([...files].some((file) => file.includes("tsconfig.json")))
+    frameworks.add("TypeScript");
   if (files.has("Cargo.toml")) frameworks.add("Rust/Cargo");
   if (files.has("go.mod")) frameworks.add("Go modules");
   return [...frameworks].sort();
@@ -271,7 +313,10 @@ export function importantFiles(entries: readonly ListedEntry[]): string[] {
     ".gitignore",
   ]);
   return entries
-    .filter((entry) => entry.type === "file" && importantNames.has(entry.relativePath))
+    .filter(
+      (entry) =>
+        entry.type === "file" && importantNames.has(entry.relativePath),
+    )
     .map((entry) => entry.relativePath);
 }
 

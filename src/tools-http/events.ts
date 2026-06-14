@@ -17,7 +17,11 @@ export const HTTP_EVENT = {
   requestEnd: "http.request.end",
 } as const;
 
-function emit(ctx: ToolContext | undefined, name: string, data: Record<string, unknown>): void {
+function emit(
+  ctx: ToolContext | undefined,
+  name: string,
+  data: Record<string, unknown>,
+): void {
   ctx?.run?.emit({ type: "custom", name, data });
 }
 
@@ -58,13 +62,13 @@ export function emitHttpRequestEnd(
     url,
     ...(result !== undefined
       ? {
-        finalUrl: result.finalUrl,
-        status: result.status,
-        elapsedMs: result.elapsedMs,
-        responseBytes: result.responseBytes,
-        responseBytesTruncated: result.responseBytesTruncated,
-        bodyTruncated: result.bodyTruncated,
-      }
+          finalUrl: result.finalUrl,
+          status: result.status,
+          elapsedMs: result.elapsedMs,
+          responseBytes: result.responseBytes,
+          responseBytesTruncated: result.responseBytesTruncated,
+          bodyTruncated: result.bodyTruncated,
+        }
       : {}),
     ...(error !== undefined ? { error } : {}),
   });

@@ -3,7 +3,11 @@ import { describe, expect, it } from "bun:test";
 import { defineAgent } from "../src/agent/index";
 import { runAgent } from "../src/execution/index";
 import type { Message } from "../src/messages/types";
-import type { EmbeddingProvider, RetrievalResult, Retriever } from "../src/retrieval/index";
+import type {
+  EmbeddingProvider,
+  RetrievalResult,
+  Retriever,
+} from "../src/retrieval/index";
 import {
   InMemoryVectorStore,
   createTextChunker,
@@ -19,7 +23,9 @@ import { mockProvider, textResult } from "../src/testing/index";
 
 function textOf(message: Message): string {
   return message.content
-    .filter((part): part is { type: "text"; text: string } => part.type === "text")
+    .filter(
+      (part): part is { type: "text"; text: string } => part.type === "text",
+    )
     .map((part) => part.text)
     .join("");
 }
@@ -33,7 +39,9 @@ function toyVector(text: string): readonly number[] {
   ];
 }
 
-function toyEmbeddings(onInput?: (input: readonly string[]) => void): EmbeddingProvider {
+function toyEmbeddings(
+  onInput?: (input: readonly string[]) => void,
+): EmbeddingProvider {
   return {
     name: "toy",
     defaultModel: "toy-embedding",
@@ -61,7 +69,10 @@ describe("retrieval loaders and chunking", () => {
     const loaded = await loadDocuments([loader]);
     expect(loaded.documents).toHaveLength(1);
 
-    const chunks = await createTextChunker({ maxChars: 12, overlapChars: 2 }).chunk(loaded.documents[0]!, {
+    const chunks = await createTextChunker({
+      maxChars: 12,
+      overlapChars: 2,
+    }).chunk(loaded.documents[0]!, {
       documentIndex: 0,
     });
     expect(chunks.length).toBeGreaterThan(1);
@@ -72,14 +83,24 @@ describe("retrieval loaders and chunking", () => {
   });
 
   it("recursively splits oversized spans by separator priority", async () => {
-    const chunks = await recursiveTextChunker({ maxChars: 18, overlapChars: 0, separators: ["\n\n", " "] }).chunk({
-      content: "alpha beta gamma delta epsilon",
-      source: { title: "Words" },
-    }, { documentIndex: 0 });
+    const chunks = await recursiveTextChunker({
+      maxChars: 18,
+      overlapChars: 0,
+      separators: ["\n\n", " "],
+    }).chunk(
+      {
+        content: "alpha beta gamma delta epsilon",
+        source: { title: "Words" },
+      },
+      { documentIndex: 0 },
+    );
 
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks.every((chunk) => chunk.text.length <= 18)).toBe(true);
-    expect(chunks.map((chunk) => chunk.text)).toEqual(["alpha beta gamma", "delta epsilon"]);
+    expect(chunks.map((chunk) => chunk.text)).toEqual([
+      "alpha beta gamma",
+      "delta epsilon",
+    ]);
   });
 });
 
@@ -93,7 +114,14 @@ describe("InMemoryVectorStore", () => {
 
     expect((await store.query({ vector: [1, 0], topK: 1 }))[0]?.id).toBe("a");
 
-    await store.upsert([{ id: "a", vector: [0, 1], text: "alpha replaced", metadata: { group: "one" } }]);
+    await store.upsert([
+      {
+        id: "a",
+        vector: [0, 1],
+        text: "alpha replaced",
+        metadata: { group: "one" },
+      },
+    ]);
     const filtered = await store.query({
       vector: [0, 1],
       filter: (record) => record.metadata?.group === "one",
@@ -104,9 +132,9 @@ describe("InMemoryVectorStore", () => {
     expect(filtered[0]?.text).toBe("alpha replaced");
     expect(filtered[0]?.vector).toEqual([0, 1]);
 
-    await expect(store.upsert([{ id: "bad", vector: [1, 2, 3], text: "bad" }])).rejects.toThrow(
-      /expected 2/,
-    );
+    await expect(
+      store.upsert([{ id: "bad", vector: [1, 2, 3], text: "bad" }]),
+    ).rejects.toThrow(/expected 2/);
     await store.delete?.(["a"]);
     expect((await store.stats?.())?.records).toBe(1);
     await store.clear?.();
@@ -141,7 +169,13 @@ describe("indexing and vector retrieval", () => {
       batchSize: 1,
     });
 
-    expect(indexed).toMatchObject({ documents: 2, chunks: 2, records: 2, model: "toy-embedding", dimensions: 3 });
+    expect(indexed).toMatchObject({
+      documents: 2,
+      chunks: 2,
+      records: 2,
+      model: "toy-embedding",
+      dimensions: 3,
+    });
     expect(batches).toHaveLength(2);
 
     const retriever = createVectorRetriever({ embeddings, store, topK: 1 });
@@ -194,15 +228,29 @@ describe("retrieverContext", () => {
             rank: 1,
             score: 0.9,
             text: `${"database recovery step ".repeat(20)}final tail`,
-            source: { title: "Database Runbook", location: { startLine: 2, endLine: 4 } },
+            source: {
+              title: "Database Runbook",
+              location: { startLine: 2, endLine: 4 },
+            },
           },
-          { id: "r2", rank: 2, score: 0.1, text: "cache detail", source: { title: "Cache Runbook" } },
+          {
+            id: "r2",
+            rank: 2,
+            score: 0.1,
+            text: "cache detail",
+            source: { title: "Cache Runbook" },
+          },
         ];
       },
     };
     const agent = defineAgent({
       name: "a",
-      provider: mockProvider({ result: textResult("ok"), onRequest: (req) => { requestMessages = req.messages; } }),
+      provider: mockProvider({
+        result: textResult("ok"),
+        onRequest: (req) => {
+          requestMessages = req.messages;
+        },
+      }),
     });
 
     await runAgent(agent, {
@@ -211,14 +259,20 @@ describe("retrieverContext", () => {
         retrieverContext({
           retriever,
           maxContextTokens: 12,
-          countTokens: (messages) => Math.ceil(messages.map(textOf).join("").length / 10),
-          onResults: (results) => { selected = results; },
+          countTokens: (messages) =>
+            Math.ceil(messages.map(textOf).join("").length / 10),
+          onResults: (results) => {
+            selected = results;
+          },
         }),
       ],
     });
 
-    const contextMessage = requestMessages.find((message) => textOf(message).includes("Retrieved Context"));
-    const contextText = contextMessage === undefined ? "" : textOf(contextMessage);
+    const contextMessage = requestMessages.find((message) =>
+      textOf(message).includes("Retrieved Context"),
+    );
+    const contextText =
+      contextMessage === undefined ? "" : textOf(contextMessage);
     expect(seenQuery).toBe("database outage");
     expect(selected.map((result) => result.id)).toEqual(["r1"]);
     expect(contextText).toContain("## Retrieved Context");

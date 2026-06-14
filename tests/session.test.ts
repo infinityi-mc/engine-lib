@@ -1,7 +1,12 @@
 import { describe, expect, it } from "bun:test";
 
 import { user } from "../src/messages/index";
-import { createSession, InMemorySessionStore, readResumeInfo, withResumeInfo } from "../src/session/index";
+import {
+  createSession,
+  InMemorySessionStore,
+  readResumeInfo,
+  withResumeInfo,
+} from "../src/session/index";
 
 describe("InMemorySessionStore", () => {
   it("load returns undefined for an unknown id", async () => {
@@ -52,13 +57,19 @@ describe("createSession", () => {
     await store.append("tab-1", [user("earlier")]);
     const session = createSession({ id: "tab-1", store });
     const history = await session.messages();
-    expect(history.map((m) => m.content[0])).toEqual([{ type: "text", text: "earlier" }]);
+    expect(history.map((m) => m.content[0])).toEqual([
+      { type: "text", text: "earlier" },
+    ]);
   });
 
   it("seeds history only when the store is empty for the id", async () => {
     const store = new InMemorySessionStore();
     await store.append("tab-1", [user("existing")]);
-    const session = createSession({ id: "tab-1", store, messages: [user("seed")] });
+    const session = createSession({
+      id: "tab-1",
+      store,
+      messages: [user("seed")],
+    });
     // store already had history → seed is NOT applied
     expect((await session.messages()).map((m) => m.content[0])).toEqual([
       { type: "text", text: "existing" },
@@ -75,7 +86,10 @@ describe("createSession", () => {
   it("seeds exactly once under concurrent first access", async () => {
     const session = createSession({ id: "race", messages: [user("seed")] });
     // Fire messages() and append() concurrently on a fresh session.
-    const [history] = await Promise.all([session.messages(), session.append([user("new")])]);
+    const [history] = await Promise.all([
+      session.messages(),
+      session.append([user("new")]),
+    ]);
     void history;
     const final = await session.messages();
     // seed must not be lost: both the seed and the appended message are present.
@@ -86,7 +100,10 @@ describe("createSession", () => {
   });
 
   it("clear concurrent with first access leaves no stale seed", async () => {
-    const session = createSession({ id: "race-clear", messages: [user("seed")] });
+    const session = createSession({
+      id: "race-clear",
+      messages: [user("seed")],
+    });
     // messages() kicks off seeding; clear() runs concurrently.
     await Promise.all([session.messages(), session.clear()]);
     // The in-flight seed must not survive the clear.
@@ -103,7 +120,11 @@ describe("createSession", () => {
 
   it("persists a tenant id when creating a new session", async () => {
     const store = new InMemorySessionStore();
-    const session = createSession({ id: "tenant-session", store, tenantId: "t1" });
+    const session = createSession({
+      id: "tenant-session",
+      store,
+      tenantId: "t1",
+    });
 
     await session.append([user("hello")]);
 
@@ -114,7 +135,11 @@ describe("createSession", () => {
   it("attaches a tenant id to an existing global session on first use", async () => {
     const store = new InMemorySessionStore();
     await store.save({ id: "global-session", messages: [user("existing")] });
-    const session = createSession({ id: "global-session", store, tenantId: "t1" });
+    const session = createSession({
+      id: "global-session",
+      store,
+      tenantId: "t1",
+    });
 
     await session.messages();
 
@@ -123,27 +148,50 @@ describe("createSession", () => {
 
   it("rejects an existing session owned by a different tenant", async () => {
     const store = new InMemorySessionStore();
-    await store.save({ id: "owned-session", messages: [user("existing")], tenantId: "t1" });
-    const session = createSession({ id: "owned-session", store, tenantId: "t2" });
+    await store.save({
+      id: "owned-session",
+      messages: [user("existing")],
+      tenantId: "t1",
+    });
+    const session = createSession({
+      id: "owned-session",
+      store,
+      tenantId: "t2",
+    });
 
-    await expect(session.messages()).rejects.toThrow('session "owned-session" is owned by a different tenant');
+    await expect(session.messages()).rejects.toThrow(
+      'session "owned-session" is owned by a different tenant',
+    );
   });
 
   it("rejects concurrent conflicting tenant claims", async () => {
     const store = new InMemorySessionStore();
-    const first = createSession({ id: "tenant-race", store, tenantId: "t1", messages: [user("first")] });
-    const second = createSession({ id: "tenant-race", store, tenantId: "t2", messages: [user("second")] });
+    const first = createSession({
+      id: "tenant-race",
+      store,
+      tenantId: "t1",
+      messages: [user("first")],
+    });
+    const second = createSession({
+      id: "tenant-race",
+      store,
+      tenantId: "t2",
+      messages: [user("second")],
+    });
 
-    const results = await Promise.allSettled([first.messages(), second.messages()]);
+    const results = await Promise.allSettled([
+      first.messages(),
+      second.messages(),
+    ]);
     const fulfilled = results.filter((result) => result.status === "fulfilled");
     const rejected = results.filter((result) => result.status === "rejected");
 
     expect(fulfilled).toHaveLength(1);
     expect(rejected).toHaveLength(1);
     expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(Error);
-    expect(((rejected[0] as PromiseRejectedResult).reason as Error).message).toBe(
-      'session "tenant-race" is owned by a different tenant',
-    );
+    expect(
+      ((rejected[0] as PromiseRejectedResult).reason as Error).message,
+    ).toBe('session "tenant-race" is owned by a different tenant');
     const state = await store.load("tenant-race");
     expect(new Set(["t1", "t2"]).has(state?.tenantId ?? "")).toBe(true);
     expect(state?.messages).toHaveLength(1);

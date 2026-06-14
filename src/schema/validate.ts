@@ -19,11 +19,7 @@ function issue(path: Path, message: string): SchemaIssue {
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value)
-  );
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -39,19 +35,19 @@ export function validateJsonSchema(
 
   if (node.enum !== undefined) {
     if (!node.enum.includes(input as string | number)) {
-      issues.push(
-        issue(path, `expected one of ${JSON.stringify(node.enum)}`),
-      );
+      issues.push(issue(path, `expected one of ${JSON.stringify(node.enum)}`));
     }
     return issues;
   }
 
   switch (node.type) {
     case "string":
-      if (typeof input !== "string") issues.push(issue(path, "expected string"));
+      if (typeof input !== "string")
+        issues.push(issue(path, "expected string"));
       break;
     case "boolean":
-      if (typeof input !== "boolean") issues.push(issue(path, "expected boolean"));
+      if (typeof input !== "boolean")
+        issues.push(issue(path, "expected boolean"));
       break;
     case "null":
       if (input !== null) issues.push(issue(path, "expected null"));
@@ -73,7 +69,12 @@ export function validateJsonSchema(
       }
       if (node.items !== undefined) {
         input.forEach((element, index) => {
-          issues.push(...validateJsonSchema(node.items as JsonSchema, element, [...path, index]));
+          issues.push(
+            ...validateJsonSchema(node.items as JsonSchema, element, [
+              ...path,
+              index,
+            ]),
+          );
         });
       }
       break;

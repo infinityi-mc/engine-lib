@@ -15,14 +15,23 @@ const agent = defineAgent({ name: "typed", provider: mockProvider() });
 
 function assertRunAgentTypes(): void {
   const buffered = runAgent(agent, { input: "hi" });
-  const explicitBufferedOpts: BufferedRunOptions = { input: "hi", stream: false };
+  const explicitBufferedOpts: BufferedRunOptions = {
+    input: "hi",
+    stream: false,
+  };
   const explicitBuffered = runAgent(agent, explicitBufferedOpts);
 
   const streaming = runAgent(agent, { input: "hi", stream: true });
-  const explicitStreamingOpts: StreamingRunOptions = { input: "hi", stream: true };
+  const explicitStreamingOpts: StreamingRunOptions = {
+    input: "hi",
+    stream: true,
+  };
   const explicitStreaming = runAgent(agent, explicitStreamingOpts);
 
-  const dynamicOpts: AnyRunOptions = { input: "hi", stream: Math.random() > 0.5 };
+  const dynamicOpts: AnyRunOptions = {
+    input: "hi",
+    stream: Math.random() > 0.5,
+  };
   const dynamic = runAgent(agent, dynamicOpts);
 
   const bufferedResult: Promise<RunResult> = buffered;

@@ -38,12 +38,19 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function validate(node: RawJsonSchema, input: unknown, path: Path = []): ReturnType<typeof issue>[] {
+function validate(
+  node: RawJsonSchema,
+  input: unknown,
+  path: Path = [],
+): ReturnType<typeof issue>[] {
   const issues: ReturnType<typeof issue>[] = [];
 
   if (node.oneOf !== undefined) {
-    const matches = node.oneOf.filter((schema) => validate(schema, input, path).length === 0);
-    if (matches.length !== 1) issues.push(issue(path, "expected exactly one matching schema"));
+    const matches = node.oneOf.filter(
+      (schema) => validate(schema, input, path).length === 0,
+    );
+    if (matches.length !== 1)
+      issues.push(issue(path, "expected exactly one matching schema"));
     return issues;
   }
 
@@ -56,10 +63,12 @@ function validate(node: RawJsonSchema, input: unknown, path: Path = []): ReturnT
 
   switch (node.type) {
     case "string":
-      if (typeof input !== "string") issues.push(issue(path, "expected string"));
+      if (typeof input !== "string")
+        issues.push(issue(path, "expected string"));
       break;
     case "boolean":
-      if (typeof input !== "boolean") issues.push(issue(path, "expected boolean"));
+      if (typeof input !== "boolean")
+        issues.push(issue(path, "expected boolean"));
       break;
     case "integer":
       if (typeof input !== "number" || !Number.isInteger(input)) {
@@ -67,7 +76,8 @@ function validate(node: RawJsonSchema, input: unknown, path: Path = []): ReturnT
       }
       break;
     case "number":
-      if (typeof input !== "number" || Number.isNaN(input)) issues.push(issue(path, "expected number"));
+      if (typeof input !== "number" || Number.isNaN(input))
+        issues.push(issue(path, "expected number"));
       break;
     case "array":
       if (!Array.isArray(input)) {
@@ -76,7 +86,9 @@ function validate(node: RawJsonSchema, input: unknown, path: Path = []): ReturnT
       }
       if (node.items !== undefined) {
         input.forEach((value, index) => {
-          issues.push(...validate(node.items as RawJsonSchema, value, [...path, index]));
+          issues.push(
+            ...validate(node.items as RawJsonSchema, value, [...path, index]),
+          );
         });
       }
       break;
@@ -87,19 +99,26 @@ function validate(node: RawJsonSchema, input: unknown, path: Path = []): ReturnT
       }
       const properties = node.properties ?? {};
       for (const key of node.required ?? []) {
-        if (input[key] === undefined) issues.push(issue([...path, key], "required"));
+        if (input[key] === undefined)
+          issues.push(issue([...path, key], "required"));
       }
       for (const [key, prop] of Object.entries(properties)) {
-        if (input[key] !== undefined) issues.push(...validate(prop as RawJsonSchema, input[key], [...path, key]));
+        if (input[key] !== undefined)
+          issues.push(
+            ...validate(prop as RawJsonSchema, input[key], [...path, key]),
+          );
       }
       if (node.additionalProperties === false) {
         for (const key of Object.keys(input)) {
-          if (!(key in properties)) issues.push(issue([...path, key], "unexpected property"));
+          if (!(key in properties))
+            issues.push(issue([...path, key], "unexpected property"));
         }
       } else if (typeof node.additionalProperties === "object") {
         for (const [key, value] of Object.entries(input)) {
           if (!(key in properties)) {
-            issues.push(...validate(node.additionalProperties, value, [...path, key]));
+            issues.push(
+              ...validate(node.additionalProperties, value, [...path, key]),
+            );
           }
         }
       }
@@ -109,7 +128,10 @@ function validate(node: RawJsonSchema, input: unknown, path: Path = []): ReturnT
       break;
   }
 
-  if ((node.type === "integer" || node.type === "number") && typeof input === "number") {
+  if (
+    (node.type === "integer" || node.type === "number") &&
+    typeof input === "number"
+  ) {
     if (node.minimum !== undefined && input < node.minimum) {
       issues.push(issue(path, `expected >= ${node.minimum}`));
     }
@@ -129,7 +151,9 @@ export function toolSchema<T>(jsonSchema: RawJsonSchema): Schema<T> {
       if (issues.length === 0) return { success: true, data: input as T };
       return {
         success: false,
-        error: new SchemaValidationError("schema validation failed", { issues }),
+        error: new SchemaValidationError("schema validation failed", {
+          issues,
+        }),
       };
     },
     parse(input: unknown): T {
@@ -142,7 +166,8 @@ export function toolSchema<T>(jsonSchema: RawJsonSchema): Schema<T> {
 
 const stringSchema = { type: "string" } as const;
 const boolSchema = { type: "boolean" } as const;
-const intSchema = (extra: Record<string, unknown> = {}) => ({ type: "integer", ...extra } as const);
+const intSchema = (extra: Record<string, unknown> = {}) =>
+  ({ type: "integer", ...extra }) as const;
 const stringArray = { type: "array", items: stringSchema } as const;
 
 export const SCHEMAS = {
@@ -162,7 +187,11 @@ export const SCHEMAS = {
     type: "object",
     properties: {
       query: stringSchema,
-      mode: { type: "string", enum: ["auto", "exact", "glob", "fuzzy", "extension", "regex"], default: "auto" },
+      mode: {
+        type: "string",
+        enum: ["auto", "exact", "glob", "fuzzy", "extension", "regex"],
+        default: "auto",
+      },
       root: { ...stringSchema, default: "." },
       include_hidden: { ...boolSchema, default: false },
       respect_gitignore: { ...boolSchema, default: true },
@@ -195,7 +224,11 @@ export const SCHEMAS = {
       root: { ...stringSchema, default: "." },
       include_globs: stringArray,
       exclude_globs: stringArray,
-      granularity: { type: "string", enum: ["file", "chunk", "symbol"], default: "chunk" },
+      granularity: {
+        type: "string",
+        enum: ["file", "chunk", "symbol"],
+        default: "chunk",
+      },
       max_results: intSchema({ default: 20 }),
       max_preview_chars: intSchema({ default: 12000 }),
     },
@@ -211,7 +244,16 @@ export const SCHEMAS = {
         type: "array",
         items: {
           type: "string",
-          enum: ["class", "function", "method", "interface", "type", "variable", "import", "export"],
+          enum: [
+            "class",
+            "function",
+            "method",
+            "interface",
+            "type",
+            "variable",
+            "import",
+            "export",
+          ],
         },
       },
       max_results: intSchema({ default: 200 }),
@@ -240,7 +282,11 @@ export const SCHEMAS = {
       path: stringSchema,
       anchor: { oneOf: [intSchema(), stringSchema] },
       window_lines: intSchema({ minimum: 20, maximum: 200, default: 100 }),
-      direction: { type: "string", enum: ["center", "next", "prev"], default: "center" },
+      direction: {
+        type: "string",
+        enum: ["center", "next", "prev"],
+        default: "center",
+      },
     },
     required: ["path"],
     additionalProperties: false,
@@ -268,7 +314,13 @@ export const SCHEMAS = {
       expected_file_version: stringSchema,
       validate: validationSchema(),
     },
-    required: ["path", "start_line", "end_line", "new_text", "expected_file_version"],
+    required: [
+      "path",
+      "start_line",
+      "end_line",
+      "new_text",
+      "expected_file_version",
+    ],
     additionalProperties: false,
   }),
   applyPatch: toolSchema<ApplyPatchArgs>({
@@ -288,7 +340,11 @@ export const SCHEMAS = {
     properties: {
       path: stringSchema,
       content: stringSchema,
-      mode: { type: "string", enum: ["create_only", "overwrite", "append"], default: "create_only" },
+      mode: {
+        type: "string",
+        enum: ["create_only", "overwrite", "append"],
+        default: "create_only",
+      },
       expected_file_version: stringSchema,
       create_dirs: { ...boolSchema, default: true },
     },

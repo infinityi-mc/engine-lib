@@ -6,7 +6,11 @@ import {
   s,
   staticContext,
 } from "@infinityi/engine-lib";
-import { scriptedProvider, textResult, toolCallResult } from "@infinityi/engine-lib/testing";
+import {
+  scriptedProvider,
+  textResult,
+  toolCallResult,
+} from "@infinityi/engine-lib/testing";
 
 const serviceStatus = defineTool({
   name: "service_status",
@@ -19,18 +23,27 @@ const serviceStatus = defineTool({
     content: {
       service,
       status: "degraded",
-      signals: ["p95 latency above SLO", "error rate normal", "recent deploy: 42"],
+      signals: [
+        "p95 latency above SLO",
+        "error rate normal",
+        "recent deploy: 42",
+      ],
     },
   }),
 });
 
 const incidentAgent = defineAgent({
   name: "incident-analyst",
-  instructions: "Analyze incidents with evidence. Keep the final answer actionable.",
+  instructions:
+    "Analyze incidents with evidence. Keep the final answer actionable.",
   tools: [serviceStatus],
   provider: scriptedProvider([
-    toolCallResult([{ id: "status-1", name: "service_status", arguments: { service: "api" } }]),
-    textResult("API latency is degraded. The leading suspect is deploy 42; roll back or inspect its database path."),
+    toolCallResult([
+      { id: "status-1", name: "service_status", arguments: { service: "api" } },
+    ]),
+    textResult(
+      "API latency is degraded. The leading suspect is deploy 42; roll back or inspect its database path.",
+    ),
   ]),
 });
 
@@ -40,7 +53,9 @@ const events: string[] = [];
 const result = await runAgent(incidentAgent, {
   input: "Why is the API slow?",
   session,
-  context: [staticContext({ region: "us-east-1", severity: "sev2" }, "Incident")],
+  context: [
+    staticContext({ region: "us-east-1", severity: "sev2" }, "Incident"),
+  ],
   onEvent: (event) => events.push(event.type),
 });
 
@@ -49,4 +64,3 @@ console.log({
   events,
   persistedMessages: (await session.messages()).map((message) => message.role),
 });
-

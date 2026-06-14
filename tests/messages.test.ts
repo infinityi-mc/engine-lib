@@ -27,14 +27,20 @@ describe("message factories", () => {
       content: [{ type: "text", text: "you are helpful" }],
     });
     expect(user("hello").role).toBe("user");
-    expect(assistant([text("hi")]).content).toEqual([{ type: "text", text: "hi" }]);
+    expect(assistant([text("hi")]).content).toEqual([
+      { type: "text", text: "hi" },
+    ]);
   });
 
   it("toolResult wraps output in a tool_result part", () => {
     const msg = toolResult("call_1", "done");
     expect(msg.role).toBe("tool");
     expect(msg.content).toEqual([
-      { type: "tool_result", toolCallId: "call_1", content: [{ type: "text", text: "done" }] },
+      {
+        type: "tool_result",
+        toolCallId: "call_1",
+        content: [{ type: "text", text: "done" }],
+      },
     ]);
   });
 

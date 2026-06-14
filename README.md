@@ -40,16 +40,16 @@ or evaluation platform.
 
 ## Core Concepts
 
-| Concept | Description |
-| --- | --- |
-| Provider | A normalized adapter over an LLM API. Built-in adapters cover OpenAI, Anthropic, Google, and OpenAI-compatible APIs. |
-| Message and content | A provider-neutral conversation model with typed content parts for text, tool calls, tool results, and images. |
-| Agent | A declarative definition containing provider, instructions, tools, generation defaults, hooks, and optional handoff targets. |
-| Tool | A schema-validated capability the model can invoke. Tools return structured success or failure results. |
-| Execution | The provider-native run loop that dispatches tool calls and repeats until a final answer, cancellation, or budget failure. |
-| Session | Durable conversation state: ordered message history plus metadata behind a pluggable store. |
-| Context | Request-time information injected by host-provided context providers and never persisted as conversation history. |
-| Events | A typed event stream for UI streaming, logs, metrics, auditing, telemetry, and optional tool-pack audit data. |
+| Concept             | Description                                                                                                                  |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Provider            | A normalized adapter over an LLM API. Built-in adapters cover OpenAI, Anthropic, Google, and OpenAI-compatible APIs.         |
+| Message and content | A provider-neutral conversation model with typed content parts for text, tool calls, tool results, and images.               |
+| Agent               | A declarative definition containing provider, instructions, tools, generation defaults, hooks, and optional handoff targets. |
+| Tool                | A schema-validated capability the model can invoke. Tools return structured success or failure results.                      |
+| Execution           | The provider-native run loop that dispatches tool calls and repeats until a final answer, cancellation, or budget failure.   |
+| Session             | Durable conversation state: ordered message history plus metadata behind a pluggable store.                                  |
+| Context             | Request-time information injected by host-provided context providers and never persisted as conversation history.            |
+| Events              | A typed event stream for UI streaming, logs, metrics, auditing, telemetry, and optional tool-pack audit data.                |
 
 ## Design Principles
 

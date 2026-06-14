@@ -1,4 +1,8 @@
-import type { ToolContext, ToolDefinition, ToolResult } from "@infinityi/engine-lib/tools";
+import type {
+  ToolContext,
+  ToolDefinition,
+  ToolResult,
+} from "@infinityi/engine-lib/tools";
 import { httpTools } from "@infinityi/engine-lib/tools-http";
 import { webTools, type SearchProvider } from "@infinityi/engine-lib/tools-web";
 
@@ -7,7 +11,7 @@ const html = [
   "<head><title>Status</title></head>",
   "<body>",
   "<main><h1>Status</h1><p>All public systems are operational.</p></main>",
-  "<a href=\"/docs\">Docs</a>",
+  '<a href="/docs">Docs</a>',
   "</body>",
   "</html>",
 ].join("");
@@ -48,9 +52,16 @@ const web = webTools({
   robots: "enforce",
 });
 
-const httpResult = await runTool(http.httpGet, { url: "https://example.com/api" });
-const searchResult = await runTool(web.webSearch, { query: "status", max_results: 1 });
-const pageResult = await runTool(web.fetchPage, { url: "https://example.com/status" });
+const httpResult = await runTool(http.httpGet, {
+  url: "https://example.com/api",
+});
+const searchResult = await runTool(web.webSearch, {
+  query: "status",
+  max_results: 1,
+});
+const pageResult = await runTool(web.fetchPage, {
+  url: "https://example.com/status",
+});
 
 console.log({
   http: content(httpResult),
@@ -71,4 +82,3 @@ function content(result: ToolResult): unknown {
   }
   return result.content;
 }
-

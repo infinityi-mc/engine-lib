@@ -10,7 +10,11 @@
 import { system } from "../messages/factory";
 import type { Message } from "../messages/types";
 import type { EngineContext } from "../runtime/types";
-import type { ContextItem, ContextProvider, ContextResolveContext } from "./types";
+import type {
+  ContextItem,
+  ContextProvider,
+  ContextResolveContext,
+} from "./types";
 
 /** Render one {@link ContextItem} to text (strings pass through; else JSON). */
 function renderItem(item: ContextItem): string {
@@ -19,15 +23,23 @@ function renderItem(item: ContextItem): string {
     typeof item.content === "string"
       ? item.content
       : (JSON.stringify(item.content, null, 2) ?? "");
-  return item.title !== undefined && item.title !== "" ? `## ${item.title}\n${body}` : body;
+  return item.title !== undefined && item.title !== ""
+    ? `## ${item.title}\n${body}`
+    : body;
 }
 
 /**
  * Inject static facts verbatim. `content` is rendered as-is (strings) or
  * JSON-encoded; an optional `title` becomes a markdown heading.
  */
-export function staticContext(content: unknown, title?: string): ContextProvider {
-  const item: ContextItem = { content, ...(title !== undefined ? { title } : {}) };
+export function staticContext(
+  content: unknown,
+  title?: string,
+): ContextProvider {
+  const item: ContextItem = {
+    content,
+    ...(title !== undefined ? { title } : {}),
+  };
   return {
     name: "static",
     resolve: () => [item],
@@ -37,7 +49,10 @@ export function staticContext(content: unknown, title?: string): ContextProvider
 /** Inject context computed lazily at run time from the {@link EngineContext}. */
 export function dynamicContext(
   name: string,
-  fn: (ctx: EngineContext, run?: ContextResolveContext) => unknown | Promise<unknown>,
+  fn: (
+    ctx: EngineContext,
+    run?: ContextResolveContext,
+  ) => unknown | Promise<unknown>,
   title?: string,
 ): ContextProvider {
   return {
@@ -62,7 +77,10 @@ export async function resolveContext(
 ): Promise<Message[]> {
   if (providers === undefined || providers.length === 0) return [];
   const resolved = await Promise.all(providers.map((p) => p.resolve(ctx, run)));
-  const blocks = resolved.flat().map(renderItem).filter((s) => s !== "");
+  const blocks = resolved
+    .flat()
+    .map(renderItem)
+    .filter((s) => s !== "");
   if (blocks.length === 0) return [];
   return [system(blocks.join("\n\n"))];
 }

@@ -9,7 +9,11 @@
 export { defineTool } from "./define";
 export type { ToolSpec } from "./define";
 
-export { renderToolContent, toProviderTool, toToolResultMessage } from "./result";
+export {
+  renderToolContent,
+  toProviderTool,
+  toToolResultMessage,
+} from "./result";
 
 export type {
   ToolContext,

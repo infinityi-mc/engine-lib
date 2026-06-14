@@ -56,7 +56,11 @@ export interface SpanHandle {
 /** The telemetry surface the run loop drives. All methods are no-op safe. */
 export interface RunTelemetry {
   /** Run `fn` inside `name` as the active context (nests children). */
-  withSpan<T>(name: string, attrs: Attrs, fn: (span: SpanHandle) => Promise<T>): Promise<T>;
+  withSpan<T>(
+    name: string,
+    attrs: Attrs,
+    fn: (span: SpanHandle) => Promise<T>,
+  ): Promise<T>;
   /** Start `name`, parented to the current active span; caller ends it. */
   startSpan(name: string, attrs: Attrs): SpanHandle;
   /** Record run-level duration, outcome, and token usage. */

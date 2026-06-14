@@ -42,7 +42,9 @@ export class InMemorySessionStore implements SessionStore {
     const state: SessionState = {
       id,
       messages: [...entry.messages],
-      ...(entry.metadata !== undefined ? { metadata: { ...entry.metadata } } : {}),
+      ...(entry.metadata !== undefined
+        ? { metadata: { ...entry.metadata } }
+        : {}),
       version: entry.version,
       ...(entry.tenantId !== undefined ? { tenantId: entry.tenantId } : {}),
     };
@@ -54,7 +56,12 @@ export class InMemorySessionStore implements SessionStore {
     const now = new Date().toISOString();
     const entry = this.entries.get(id);
     if (entry === undefined) {
-      this.entries.set(id, { messages: [...messages], version: 0, createdAt: now, updatedAt: now });
+      this.entries.set(id, {
+        messages: [...messages],
+        version: 0,
+        createdAt: now,
+        updatedAt: now,
+      });
     } else {
       entry.messages.push(...messages);
       entry.updatedAt = now;
@@ -83,18 +90,24 @@ export class InMemorySessionStore implements SessionStore {
   list(options?: SessionListOptions): Promise<SessionListPage> {
     const normalized = normalizeSessionListOptions(options, "recent");
     const sessions = [...this.entries.entries()]
-      .filter(([id, entry]) => (
-        !isExpired(entry) &&
-        (normalized.prefix === undefined || id.startsWith(normalized.prefix)) &&
-        (normalized.tenantId === undefined || entry.tenantId === normalized.tenantId)
-      ))
+      .filter(
+        ([id, entry]) =>
+          !isExpired(entry) &&
+          (normalized.prefix === undefined ||
+            id.startsWith(normalized.prefix)) &&
+          (normalized.tenantId === undefined ||
+            entry.tenantId === normalized.tenantId),
+      )
       .sort(([aId, a], [bId, b]) => {
         if (normalized.order === "id") return aId.localeCompare(bId);
         const byRecent = b.updatedAt.localeCompare(a.updatedAt);
         return byRecent === 0 ? aId.localeCompare(bId) : byRecent;
       });
 
-    const page = sessions.slice(normalized.offset, normalized.offset + normalized.limit);
+    const page = sessions.slice(
+      normalized.offset,
+      normalized.offset + normalized.limit,
+    );
     const hasMore = normalized.offset + normalized.limit < sessions.length;
     return Promise.resolve({
       sessions: page.map(([id, entry]) => ({
@@ -104,13 +117,19 @@ export class InMemorySessionStore implements SessionStore {
         messageCount: entry.messages.length,
         version: entry.version,
         ...(entry.tenantId !== undefined ? { tenantId: entry.tenantId } : {}),
-        ...(readResumeInfo(entry.metadata) !== undefined ? { resume: readResumeInfo(entry.metadata) } : {}),
+        ...(readResumeInfo(entry.metadata) !== undefined
+          ? { resume: readResumeInfo(entry.metadata) }
+          : {}),
       })),
       ...(hasMore
         ? {
             cursor: encodeSessionListCursor({
-              ...(normalized.prefix !== undefined ? { prefix: normalized.prefix } : {}),
-              ...(normalized.tenantId !== undefined ? { tenantId: normalized.tenantId } : {}),
+              ...(normalized.prefix !== undefined
+                ? { prefix: normalized.prefix }
+                : {}),
+              ...(normalized.tenantId !== undefined
+                ? { tenantId: normalized.tenantId }
+                : {}),
               order: normalized.order,
               offset: normalized.offset + normalized.limit,
             }),
@@ -124,12 +143,20 @@ export class InMemorySessionStore implements SessionStore {
     const existing = this.entries.get(state.id);
     this.entries.set(state.id, {
       messages: [...state.messages],
-      ...(state.metadata !== undefined ? { metadata: { ...state.metadata } } : {}),
+      ...(state.metadata !== undefined
+        ? { metadata: { ...state.metadata } }
+        : {}),
       version: state.version ?? existing?.version ?? 0,
-      ...(state.tenantId !== undefined ? { tenantId: state.tenantId } : existing?.tenantId !== undefined ? { tenantId: existing.tenantId } : {}),
+      ...(state.tenantId !== undefined
+        ? { tenantId: state.tenantId }
+        : existing?.tenantId !== undefined
+          ? { tenantId: existing.tenantId }
+          : {}),
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
-      ...(existing?.expiresAt !== undefined ? { expiresAt: existing.expiresAt } : {}),
+      ...(existing?.expiresAt !== undefined
+        ? { expiresAt: existing.expiresAt }
+        : {}),
     });
     return Promise.resolve();
   }
@@ -141,24 +168,33 @@ export class InMemorySessionStore implements SessionStore {
       this.entries.delete(claim.id);
       existing = undefined;
     }
-    if (existing?.tenantId !== undefined && existing.tenantId !== claim.tenantId) {
-      return Promise.reject(new Error(`session "${claim.id}" is owned by a different tenant`));
+    if (
+      existing?.tenantId !== undefined &&
+      existing.tenantId !== claim.tenantId
+    ) {
+      return Promise.reject(
+        new Error(`session "${claim.id}" is owned by a different tenant`),
+      );
     }
 
     const shouldSeedMessages =
       claim.messages !== undefined &&
       claim.messages.length > 0 &&
       (existing === undefined || existing.messages.length === 0);
-    const shouldSeedMetadata = claim.metadata !== undefined && existing === undefined;
+    const shouldSeedMetadata =
+      claim.metadata !== undefined && existing === undefined;
     const shouldSeedTenant = existing?.tenantId === undefined;
-    if (!shouldSeedMessages && !shouldSeedMetadata && !shouldSeedTenant) return Promise.resolve(false);
+    if (!shouldSeedMessages && !shouldSeedMetadata && !shouldSeedTenant)
+      return Promise.resolve(false);
 
     const seedMessages = claim.messages ?? [];
     const seedMetadata = claim.metadata;
     if (existing === undefined) {
       this.entries.set(claim.id, {
         messages: shouldSeedMessages ? [...seedMessages] : [],
-        ...(shouldSeedMetadata && seedMetadata !== undefined ? { metadata: { ...seedMetadata } } : {}),
+        ...(shouldSeedMetadata && seedMetadata !== undefined
+          ? { metadata: { ...seedMetadata } }
+          : {}),
         version: 0,
         tenantId: claim.tenantId,
         createdAt: now,
@@ -180,7 +216,9 @@ export class InMemorySessionStore implements SessionStore {
 
   setExpiry(id: string, ttlMs: number): Promise<void> {
     if (!Number.isFinite(ttlMs) || ttlMs < 0) {
-      return Promise.reject(new Error("ttlMs must be a non-negative finite number"));
+      return Promise.reject(
+        new Error("ttlMs must be a non-negative finite number"),
+      );
     }
     const now = new Date();
     const nowIso = now.toISOString();
@@ -200,16 +238,24 @@ export class InMemorySessionStore implements SessionStore {
     return Promise.resolve();
   }
 
-  purgeExpired(options: {
-    readonly maxIdleMs?: number;
-    readonly onEvent?: (event: { readonly type: "session.expired"; readonly sessionId: string; readonly reason: "ttl" | "idle" | "purged" }) => void;
-  } = {}): Promise<string[]> {
+  purgeExpired(
+    options: {
+      readonly maxIdleMs?: number;
+      readonly onEvent?: (event: {
+        readonly type: "session.expired";
+        readonly sessionId: string;
+        readonly reason: "ttl" | "idle" | "purged";
+      }) => void;
+    } = {},
+  ): Promise<string[]> {
     const now = Date.now();
     const purged: string[] = [];
     for (const [id, entry] of this.entries) {
-      const ttlExpired = entry.expiresAt !== undefined && Date.parse(entry.expiresAt) <= now;
+      const ttlExpired =
+        entry.expiresAt !== undefined && Date.parse(entry.expiresAt) <= now;
       const idleExpired =
-        options.maxIdleMs !== undefined && Date.parse(entry.updatedAt) <= now - options.maxIdleMs;
+        options.maxIdleMs !== undefined &&
+        Date.parse(entry.updatedAt) <= now - options.maxIdleMs;
       if (!ttlExpired && !idleExpired) continue;
       this.entries.delete(id);
       purged.push(id);
@@ -224,5 +270,7 @@ export class InMemorySessionStore implements SessionStore {
 }
 
 function isExpired(entry: Entry): boolean {
-  return entry.expiresAt !== undefined && Date.parse(entry.expiresAt) <= Date.now();
+  return (
+    entry.expiresAt !== undefined && Date.parse(entry.expiresAt) <= Date.now()
+  );
 }

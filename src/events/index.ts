@@ -34,5 +34,10 @@ export type {
   MessageBusSubscriberOptions,
 } from "./subscribers";
 
-export { createRunTelemetry, SPAN_PROVIDER, SPAN_RUN, SPAN_TOOL } from "./telemetry";
+export {
+  createRunTelemetry,
+  SPAN_PROVIDER,
+  SPAN_RUN,
+  SPAN_TOOL,
+} from "./telemetry";
 export type { Attrs, RunTelemetry, SpanHandle } from "./telemetry";

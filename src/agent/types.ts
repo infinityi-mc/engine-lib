@@ -67,19 +67,40 @@ export type Instructions =
  */
 export interface AgentHooks {
   /** Before the first provider call. */
-  onStart?(event: { agent: AgentDefinition; messages: Message[] }, ctx: EngineContext): void | Promise<void>;
+  onStart?(
+    event: { agent: AgentDefinition; messages: Message[] },
+    ctx: EngineContext,
+  ): void | Promise<void>;
   /** After each completed provider turn. */
-  onStep?(event: { step: number; result: CompletionResult }, ctx: EngineContext): void | Promise<void>;
+  onStep?(
+    event: { step: number; result: CompletionResult },
+    ctx: EngineContext,
+  ): void | Promise<void>;
   /** Before a validated tool call is dispatched. */
-  onToolCall?(event: { call: ToolCall; tool: ToolDefinition }, ctx: EngineContext): void | Promise<void>;
+  onToolCall?(
+    event: { call: ToolCall; tool: ToolDefinition },
+    ctx: EngineContext,
+  ): void | Promise<void>;
   /** After a tool produces a result. */
-  onToolResult?(event: { call: ToolCall; result: ToolResult }, ctx: EngineContext): void | Promise<void>;
+  onToolResult?(
+    event: { call: ToolCall; result: ToolResult },
+    ctx: EngineContext,
+  ): void | Promise<void>;
   /** When the run produces its final answer. */
-  onFinish?(event: { output: string; usage?: Usage }, ctx: EngineContext): void | Promise<void>;
+  onFinish?(
+    event: { output: string; usage?: Usage },
+    ctx: EngineContext,
+  ): void | Promise<void>;
   /** When the run fails. */
-  onError?(event: { error: AgentError }, ctx: EngineContext): void | Promise<void>;
+  onError?(
+    event: { error: AgentError },
+    ctx: EngineContext,
+  ): void | Promise<void>;
   /** When this agent hands the run off to another agent (Phase 7). */
-  onHandoff?(event: { from: AgentDefinition; to: AgentDefinition }, ctx: EngineContext): void | Promise<void>;
+  onHandoff?(
+    event: { from: AgentDefinition; to: AgentDefinition },
+    ctx: EngineContext,
+  ): void | Promise<void>;
 }
 
 /** A declarative agent definition — data describing behavior, executed by the runtime. */

@@ -32,7 +32,10 @@ export interface SearchResult {
 
 /** Search provider contract. No built-in paid/vendor provider is bundled. */
 export interface SearchProvider {
-  search(request: SearchRequest, ctx?: EngineContext): Promise<readonly SearchResult[]> | readonly SearchResult[];
+  search(
+    request: SearchRequest,
+    ctx?: EngineContext,
+  ): Promise<readonly SearchResult[]> | readonly SearchResult[];
 }
 
 /** Compact source metadata carried by every web result. */

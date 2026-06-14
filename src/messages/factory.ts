@@ -16,7 +16,9 @@ export function text(value: string): TextPart {
 }
 
 /** Coerce `string` → `[text(string)]`; pass part arrays through unchanged. */
-export function normalizeContent(content: string | ContentPart[]): ContentPart[] {
+export function normalizeContent(
+  content: string | ContentPart[],
+): ContentPart[] {
   return typeof content === "string" ? [text(content)] : content;
 }
 
@@ -41,7 +43,8 @@ export function toolResult(
   output: string | TextPart[],
   opts?: { isError?: boolean },
 ): Message {
-  const content: TextPart[] = typeof output === "string" ? [text(output)] : output;
+  const content: TextPart[] =
+    typeof output === "string" ? [text(output)] : output;
   return {
     role: "tool",
     content: [

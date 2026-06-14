@@ -8,6 +8,11 @@
  */
 
 export { resolveSecret } from "./secret";
-export type { EngineContext, Logger, Telemetry, TelemetryHandle } from "./types";
+export type {
+  EngineContext,
+  Logger,
+  Telemetry,
+  TelemetryHandle,
+} from "./types";
 
 export { isSecret, Secret } from "@infinityi/forge/config";

@@ -29,7 +29,9 @@ export interface ToolRegistry {
  *
  * @throws {ExecutionError} if two tools share a name.
  */
-export function createToolRegistry(tools: readonly ToolDefinition[]): ToolRegistry {
+export function createToolRegistry(
+  tools: readonly ToolDefinition[],
+): ToolRegistry {
   const byName = new Map<string, ToolDefinition>();
   const ordered: ToolDefinition[] = [];
 

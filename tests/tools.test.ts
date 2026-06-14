@@ -16,7 +16,10 @@ describe("defineTool", () => {
     const readFile = defineTool({
       name: "read_file",
       description: "Read a file.",
-      parameters: s.object({ path: s.string(), lines: s.optional(s.number({ int: true })) }),
+      parameters: s.object({
+        path: s.string(),
+        lines: s.optional(s.number({ int: true })),
+      }),
       execute: async (args) => {
         // Compile-time inference check: `args` is { path: string; lines?: number }.
         const path: string = args.path;
@@ -33,19 +36,29 @@ describe("defineTool", () => {
 
   it("rejects an empty name", () => {
     expect(() =>
-      defineTool({ name: "", parameters: s.object({}), execute: () => ({ ok: true, content: "" }) }),
+      defineTool({
+        name: "",
+        parameters: s.object({}),
+        execute: () => ({ ok: true, content: "" }),
+      }),
     ).toThrow(TypeError);
   });
 
   it("returns a frozen definition", () => {
-    const tool = defineTool({ name: "noop", parameters: s.object({}), execute: () => ({ ok: true, content: "" }) });
+    const tool = defineTool({
+      name: "noop",
+      parameters: s.object({}),
+      execute: () => ({ ok: true, content: "" }),
+    });
     expect(Object.isFrozen(tool)).toBe(true);
   });
 });
 
 describe("renderToolContent", () => {
   it("passes strings through", () => {
-    expect(renderToolContent({ ok: true, content: "hello" })).toEqual([{ type: "text", text: "hello" }]);
+    expect(renderToolContent({ ok: true, content: "hello" })).toEqual([
+      { type: "text", text: "hello" },
+    ]);
   });
 
   it("JSON-encodes structured content", () => {
@@ -55,12 +68,18 @@ describe("renderToolContent", () => {
   });
 
   it("renders the error message of a failure", () => {
-    expect(renderToolContent({ ok: false, error: "boom" })).toEqual([{ type: "text", text: "boom" }]);
+    expect(renderToolContent({ ok: false, error: "boom" })).toEqual([
+      { type: "text", text: "boom" },
+    ]);
   });
 
   it("renders null/undefined content as empty text", () => {
-    expect(renderToolContent({ ok: true, content: null })).toEqual([{ type: "text", text: "" }]);
-    expect(renderToolContent({ ok: true, content: undefined })).toEqual([{ type: "text", text: "" }]);
+    expect(renderToolContent({ ok: true, content: null })).toEqual([
+      { type: "text", text: "" },
+    ]);
+    expect(renderToolContent({ ok: true, content: undefined })).toEqual([
+      { type: "text", text: "" },
+    ]);
   });
 });
 
@@ -69,13 +88,21 @@ describe("toToolResultMessage", () => {
     const msg = toToolResultMessage("call_1", { ok: true, content: "done" });
     expect(msg.role).toBe("tool");
     expect(msg.content).toEqual([
-      { type: "tool_result", toolCallId: "call_1", content: [{ type: "text", text: "done" }] },
+      {
+        type: "tool_result",
+        toolCallId: "call_1",
+        content: [{ type: "text", text: "done" }],
+      },
     ]);
   });
 
   it("maps a failure to a tool message with isError: true", () => {
     const msg = toToolResultMessage("call_2", { ok: false, error: "nope" });
-    expect(msg.content[0]).toMatchObject({ type: "tool_result", toolCallId: "call_2", isError: true });
+    expect(msg.content[0]).toMatchObject({
+      type: "tool_result",
+      toolCallId: "call_2",
+      isError: true,
+    });
   });
 });
 
@@ -101,7 +128,11 @@ describe("toProviderTool", () => {
   });
 
   it("omits description when absent", () => {
-    const tool = defineTool({ name: "t", parameters: s.object({}), execute: () => ({ ok: true, content: "" }) });
+    const tool = defineTool({
+      name: "t",
+      parameters: s.object({}),
+      execute: () => ({ ok: true, content: "" }),
+    });
     expect(toProviderTool(tool)).not.toHaveProperty("description");
   });
 });

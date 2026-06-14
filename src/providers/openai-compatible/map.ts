@@ -6,8 +6,21 @@
  */
 
 import type { Message } from "../../messages/types";
-import { imageDataUrl, isText, isToolCall, isToolResult, stringifyArguments, toolResultText } from "../shared";
-import type { CompletionRequest, CompletionResult, FinishReason, ToolCall, ToolChoice } from "../types";
+import {
+  imageDataUrl,
+  isText,
+  isToolCall,
+  isToolResult,
+  stringifyArguments,
+  toolResultText,
+} from "../shared";
+import type {
+  CompletionRequest,
+  CompletionResult,
+  FinishReason,
+  ToolCall,
+  ToolChoice,
+} from "../types";
 
 interface ChatUsage {
   prompt_tokens?: number;
@@ -23,7 +36,10 @@ interface ChatResponse {
     finish_reason?: string;
     message?: {
       content?: string | null;
-      tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }>;
+      tool_calls?: Array<{
+        id?: string;
+        function?: { name?: string; arguments?: string };
+      }>;
     };
   }>;
   usage?: ChatUsage;
@@ -34,23 +50,39 @@ function toChatMessages(messages: readonly Message[]): unknown[] {
   const out: unknown[] = [];
   for (const message of messages) {
     if (message.role === "system") {
-      out.push({ role: "system", content: message.content.filter(isText).map((p) => p.text).join("\n") });
+      out.push({
+        role: "system",
+        content: message.content
+          .filter(isText)
+          .map((p) => p.text)
+          .join("\n"),
+      });
       continue;
     }
     if (message.role === "tool") {
       for (const part of message.content) {
         if (isToolResult(part)) {
-          out.push({ role: "tool", tool_call_id: part.toolCallId, content: toolResultText(part) });
+          out.push({
+            role: "tool",
+            tool_call_id: part.toolCallId,
+            content: toolResultText(part),
+          });
         }
       }
       continue;
     }
     if (message.role === "assistant") {
-      const text = message.content.filter(isText).map((p) => p.text).join("");
+      const text = message.content
+        .filter(isText)
+        .map((p) => p.text)
+        .join("");
       const toolCalls = message.content.filter(isToolCall).map((part) => ({
         id: part.id,
         type: "function",
-        function: { name: part.name, arguments: stringifyArguments(part.arguments) },
+        function: {
+          name: part.name,
+          arguments: stringifyArguments(part.arguments),
+        },
       }));
       out.push({
         role: "assistant",
@@ -64,12 +96,23 @@ function toChatMessages(messages: readonly Message[]): unknown[] {
     if (hasImage) {
       const content: Record<string, unknown>[] = [];
       for (const part of message.content) {
-        if (part.type === "text") content.push({ type: "text", text: part.text });
-        else if (part.type === "image") content.push({ type: "image_url", image_url: { url: imageDataUrl(part) } });
+        if (part.type === "text")
+          content.push({ type: "text", text: part.text });
+        else if (part.type === "image")
+          content.push({
+            type: "image_url",
+            image_url: { url: imageDataUrl(part) },
+          });
       }
       out.push({ role: "user", content });
     } else {
-      out.push({ role: "user", content: message.content.filter(isText).map((p) => p.text).join("") });
+      out.push({
+        role: "user",
+        content: message.content
+          .filter(isText)
+          .map((p) => p.text)
+          .join(""),
+      });
     }
   }
   return out;
@@ -81,7 +124,11 @@ function toToolChoice(choice: ToolChoice): unknown {
 }
 
 /** Build a Chat Completions request body. */
-export function buildChatBody(req: CompletionRequest, model: string, stream: boolean): unknown {
+export function buildChatBody(
+  req: CompletionRequest,
+  model: string,
+  stream: boolean,
+): unknown {
   const body: Record<string, unknown> = {
     model,
     messages: toChatMessages(req.messages),
@@ -98,7 +145,8 @@ export function buildChatBody(req: CompletionRequest, model: string, stream: boo
       },
     }));
   }
-  if (req.toolChoice !== undefined) body["tool_choice"] = toToolChoice(req.toolChoice);
+  if (req.toolChoice !== undefined)
+    body["tool_choice"] = toToolChoice(req.toolChoice);
   if (req.responseSchema !== undefined) {
     body["response_format"] = {
       type: "json_schema",
@@ -109,17 +157,22 @@ export function buildChatBody(req: CompletionRequest, model: string, stream: boo
       },
     };
   }
-  if (req.maxOutputTokens !== undefined) body["max_tokens"] = req.maxOutputTokens;
+  if (req.maxOutputTokens !== undefined)
+    body["max_tokens"] = req.maxOutputTokens;
   if (req.temperature !== undefined) body["temperature"] = req.temperature;
   if (req.topP !== undefined) body["top_p"] = req.topP;
   if (req.stopSequences !== undefined) body["stop"] = req.stopSequences;
   if (req.metadata !== undefined) body["metadata"] = req.metadata;
-  if (req.providerOptions !== undefined) Object.assign(body, req.providerOptions);
+  if (req.providerOptions !== undefined)
+    Object.assign(body, req.providerOptions);
   return body;
 }
 
 /** Map a Chat Completions `finish_reason` to a normalized {@link FinishReason}. */
-export function mapChatFinish(reason: string | undefined, hadToolCalls: boolean): FinishReason {
+export function mapChatFinish(
+  reason: string | undefined,
+  hadToolCalls: boolean,
+): FinishReason {
   switch (reason) {
     case "stop":
       return hadToolCalls ? "tool_calls" : "stop";
@@ -136,37 +189,56 @@ export function mapChatFinish(reason: string | undefined, hadToolCalls: boolean)
 }
 
 /** Parse a Chat Completions response into a {@link CompletionResult}. */
-export function parseChatResponse(raw: unknown, model: string): CompletionResult {
+export function parseChatResponse(
+  raw: unknown,
+  model: string,
+): CompletionResult {
   const response = (raw ?? {}) as ChatResponse;
   const choice = response.choices?.[0];
   const text = choice?.message?.content ?? "";
-  const toolCalls: ToolCall[] = (choice?.message?.tool_calls ?? []).map((call) => {
-    const argumentsText = call.function?.arguments ?? "";
-    return {
-      id: call.id ?? "",
-      name: call.function?.name ?? "",
-      arguments: parseArguments(argumentsText),
-      argumentsText,
-    };
-  });
+  const toolCalls: ToolCall[] = (choice?.message?.tool_calls ?? []).map(
+    (call) => {
+      const argumentsText = call.function?.arguments ?? "";
+      return {
+        id: call.id ?? "",
+        name: call.function?.name ?? "",
+        arguments: parseArguments(argumentsText),
+        argumentsText,
+      };
+    },
+  );
 
   const content = [];
   if (text !== "") content.push({ type: "text" as const, text });
   for (const call of toolCalls) {
-    content.push({ type: "tool_call" as const, id: call.id, name: call.name, arguments: call.arguments });
+    content.push({
+      type: "tool_call" as const,
+      id: call.id,
+      name: call.name,
+      arguments: call.arguments,
+    });
   }
 
   const usage = response.usage
     ? {
         inputTokens: response.usage.prompt_tokens ?? 0,
         outputTokens: response.usage.completion_tokens ?? 0,
-        totalTokens: response.usage.total_tokens
-          ?? (response.usage.prompt_tokens ?? 0) + (response.usage.completion_tokens ?? 0),
-        ...(response.usage.completion_tokens_details?.reasoning_tokens !== undefined
-          ? { reasoningTokens: response.usage.completion_tokens_details.reasoning_tokens }
+        totalTokens:
+          response.usage.total_tokens ??
+          (response.usage.prompt_tokens ?? 0) +
+            (response.usage.completion_tokens ?? 0),
+        ...(response.usage.completion_tokens_details?.reasoning_tokens !==
+        undefined
+          ? {
+              reasoningTokens:
+                response.usage.completion_tokens_details.reasoning_tokens,
+            }
           : {}),
         ...(response.usage.prompt_tokens_details?.cached_tokens !== undefined
-          ? { cachedInputTokens: response.usage.prompt_tokens_details.cached_tokens }
+          ? {
+              cachedInputTokens:
+                response.usage.prompt_tokens_details.cached_tokens,
+            }
           : {}),
       }
     : undefined;

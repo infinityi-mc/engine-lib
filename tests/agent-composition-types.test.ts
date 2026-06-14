@@ -98,13 +98,18 @@ function assertAgentAuthoringTypes(): void {
     },
   });
 
-  const handoffs: readonly (AgentDefinition | string)[] | undefined = router.handoffs;
+  const handoffs: readonly (AgentDefinition | string)[] | undefined =
+    router.handoffs;
   void handoffs;
 
   // @ts-expect-error handoff targets must be an AgentDefinition or string.
   defineAgent({ name: "bad-router", provider, handoffs: [123] });
   // @ts-expect-error toolChoice is constrained to the public ToolChoice union.
-  defineAgent({ name: "bad-generation", provider, generation: { toolChoice: "sometimes" } });
+  defineAgent({
+    name: "bad-generation",
+    provider,
+    generation: { toolChoice: "sometimes" },
+  });
 
   const registry = createAgentRegistry([billing]);
   registry.register(support);

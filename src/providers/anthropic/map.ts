@@ -5,8 +5,21 @@
  */
 
 import type { ImagePart, Message } from "../../messages/types";
-import { isText, isToolCall, isToolResult, systemText, toolResultText, withoutSystem } from "../shared";
-import type { CompletionRequest, CompletionResult, FinishReason, ToolCall, ToolChoice } from "../types";
+import {
+  isText,
+  isToolCall,
+  isToolResult,
+  systemText,
+  toolResultText,
+  withoutSystem,
+} from "../shared";
+import type {
+  CompletionRequest,
+  CompletionResult,
+  FinishReason,
+  ToolCall,
+  ToolChoice,
+} from "../types";
 
 const DEFAULT_MAX_TOKENS = 4096;
 
@@ -19,7 +32,13 @@ interface AnthropicUsage {
 interface AnthropicResponse {
   id?: string;
   model?: string;
-  content?: Array<{ type: string; text?: string; id?: string; name?: string; input?: unknown }>;
+  content?: Array<{
+    type: string;
+    text?: string;
+    id?: string;
+    name?: string;
+    input?: unknown;
+  }>;
   stop_reason?: string | null;
   usage?: AnthropicUsage;
 }
@@ -62,7 +81,12 @@ function toAnthropicMessages(messages: readonly Message[]): unknown[] {
       for (const part of message.content) {
         if (isText(part)) blocks.push({ type: "text", text: part.text });
         else if (isToolCall(part)) {
-          blocks.push({ type: "tool_use", id: part.id, name: part.name, input: part.arguments ?? {} });
+          blocks.push({
+            type: "tool_use",
+            id: part.id,
+            name: part.name,
+            input: part.arguments ?? {},
+          });
         }
       }
       out.push({ role: "assistant", content: blocks });
@@ -88,7 +112,11 @@ function toToolChoice(choice: ToolChoice): unknown {
 }
 
 /** Build an Anthropic `POST /messages` request body. */
-export function buildAnthropicBody(req: CompletionRequest, model: string, stream: boolean): unknown {
+export function buildAnthropicBody(
+  req: CompletionRequest,
+  model: string,
+  stream: boolean,
+): unknown {
   const system = systemText(req.messages);
   const body: Record<string, unknown> = {
     model,
@@ -105,7 +133,8 @@ export function buildAnthropicBody(req: CompletionRequest, model: string, stream
       strict: true,
     }));
   }
-  if (req.toolChoice !== undefined) body["tool_choice"] = toToolChoice(req.toolChoice);
+  if (req.toolChoice !== undefined)
+    body["tool_choice"] = toToolChoice(req.toolChoice);
   if (req.responseSchema !== undefined) {
     body["output_config"] = {
       format: { type: "json_schema", schema: req.responseSchema.schema },
@@ -113,14 +142,20 @@ export function buildAnthropicBody(req: CompletionRequest, model: string, stream
   }
   if (req.temperature !== undefined) body["temperature"] = req.temperature;
   if (req.topP !== undefined) body["top_p"] = req.topP;
-  if (req.stopSequences !== undefined) body["stop_sequences"] = req.stopSequences;
-  if (req.metadata?.["userId"] !== undefined) body["metadata"] = { user_id: req.metadata["userId"] };
-  if (req.providerOptions !== undefined) Object.assign(body, req.providerOptions);
+  if (req.stopSequences !== undefined)
+    body["stop_sequences"] = req.stopSequences;
+  if (req.metadata?.["userId"] !== undefined)
+    body["metadata"] = { user_id: req.metadata["userId"] };
+  if (req.providerOptions !== undefined)
+    Object.assign(body, req.providerOptions);
   return body;
 }
 
 /** Map an Anthropic `stop_reason` to a normalized {@link FinishReason}. */
-export function mapStopReason(stopReason: string | null | undefined, hadToolCalls: boolean): FinishReason {
+export function mapStopReason(
+  stopReason: string | null | undefined,
+  hadToolCalls: boolean,
+): FinishReason {
   switch (stopReason) {
     case "end_turn":
     case "stop_sequence":
@@ -137,7 +172,10 @@ export function mapStopReason(stopReason: string | null | undefined, hadToolCall
 }
 
 /** Parse an Anthropic message response into a {@link CompletionResult}. */
-export function parseAnthropicResponse(raw: unknown, model: string): CompletionResult {
+export function parseAnthropicResponse(
+  raw: unknown,
+  model: string,
+): CompletionResult {
   const response = (raw ?? {}) as AnthropicResponse;
   let text = "";
   const toolCalls: ToolCall[] = [];
@@ -157,14 +195,21 @@ export function parseAnthropicResponse(raw: unknown, model: string): CompletionR
   const content = [];
   if (text !== "") content.push({ type: "text" as const, text });
   for (const call of toolCalls) {
-    content.push({ type: "tool_call" as const, id: call.id, name: call.name, arguments: call.arguments });
+    content.push({
+      type: "tool_call" as const,
+      id: call.id,
+      name: call.name,
+      arguments: call.arguments,
+    });
   }
 
   const usage = response.usage
     ? {
         inputTokens: response.usage.input_tokens ?? 0,
         outputTokens: response.usage.output_tokens ?? 0,
-        totalTokens: (response.usage.input_tokens ?? 0) + (response.usage.output_tokens ?? 0),
+        totalTokens:
+          (response.usage.input_tokens ?? 0) +
+          (response.usage.output_tokens ?? 0),
         ...(response.usage.cache_read_input_tokens !== undefined
           ? { cachedInputTokens: response.usage.cache_read_input_tokens }
           : {}),

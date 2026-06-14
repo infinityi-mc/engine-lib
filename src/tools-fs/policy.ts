@@ -55,15 +55,23 @@ function realpathIfPossible(path: string): string {
   return existsSync(path) ? realpathSync.native(path) : resolve(path);
 }
 
-function assertPositiveInt(name: string, value: number | undefined, fallback: number): number {
+function assertPositiveInt(
+  name: string,
+  value: number | undefined,
+  fallback: number,
+): number {
   if (value === undefined) return fallback;
   if (!Number.isInteger(value) || value <= 0) {
-    throw new FilesystemPolicyError(`filesystemTools: \`${name}\` must be a positive integer`);
+    throw new FilesystemPolicyError(
+      `filesystemTools: \`${name}\` must be a positive integer`,
+    );
   }
   return value;
 }
 
-export function normalizeFilesystemPolicy(config: FilesystemToolsConfig): FilesystemPolicy {
+export function normalizeFilesystemPolicy(
+  config: FilesystemToolsConfig,
+): FilesystemPolicy {
   if (!Array.isArray(config.allowedRoots) || config.allowedRoots.length === 0) {
     throw new FilesystemPolicyError(
       "filesystemTools: `allowedRoots` must be a non-empty array of absolute paths",
@@ -80,30 +88,57 @@ export function normalizeFilesystemPolicy(config: FilesystemToolsConfig): Filesy
     return { logical, real: realpathIfPossible(logical) };
   });
 
-  const defaultRoot = config.defaultRoot === undefined
-    ? allowedRoots[0]!.logical
-    : resolve(allowedRoots[0]!.logical, config.defaultRoot);
+  const defaultRoot =
+    config.defaultRoot === undefined
+      ? allowedRoots[0]!.logical
+      : resolve(allowedRoots[0]!.logical, config.defaultRoot);
   const defaultRootReal = realpathIfPossible(defaultRoot);
   const defaultAllowed = allowedRoots.some(
-    (root) => isInside(root.logical, defaultRoot) && isInside(root.real, defaultRootReal),
+    (root) =>
+      isInside(root.logical, defaultRoot) &&
+      isInside(root.real, defaultRootReal),
   );
   if (!defaultAllowed) {
-    throw new FilesystemPolicyError("filesystemTools: `defaultRoot` must resolve inside allowedRoots");
+    throw new FilesystemPolicyError(
+      "filesystemTools: `defaultRoot` must resolve inside allowedRoots",
+    );
   }
 
   return {
     allowedRoots,
     defaultRoot,
     defaultRootReal,
-    maxReadBytes: assertPositiveInt("maxReadBytes", config.maxReadBytes, DEFAULT_MAX_READ_BYTES),
-    maxWriteBytes: assertPositiveInt("maxWriteBytes", config.maxWriteBytes, DEFAULT_MAX_WRITE_BYTES),
-    maxEntries: assertPositiveInt("maxEntries", config.maxEntries, DEFAULT_MAX_ENTRIES),
-    maxResults: assertPositiveInt("maxResults", config.maxResults, DEFAULT_MAX_RESULTS),
+    maxReadBytes: assertPositiveInt(
+      "maxReadBytes",
+      config.maxReadBytes,
+      DEFAULT_MAX_READ_BYTES,
+    ),
+    maxWriteBytes: assertPositiveInt(
+      "maxWriteBytes",
+      config.maxWriteBytes,
+      DEFAULT_MAX_WRITE_BYTES,
+    ),
+    maxEntries: assertPositiveInt(
+      "maxEntries",
+      config.maxEntries,
+      DEFAULT_MAX_ENTRIES,
+    ),
+    maxResults: assertPositiveInt(
+      "maxResults",
+      config.maxResults,
+      DEFAULT_MAX_RESULTS,
+    ),
   };
 }
 
-function allowedRootFor(policy: FilesystemPolicy, logicalPath: string): AllowedRoot | null {
-  return policy.allowedRoots.find((root) => isInside(root.logical, logicalPath)) ?? null;
+function allowedRootFor(
+  policy: FilesystemPolicy,
+  logicalPath: string,
+): AllowedRoot | null {
+  return (
+    policy.allowedRoots.find((root) => isInside(root.logical, logicalPath)) ??
+    null
+  );
 }
 
 function nearestExistingParent(path: string): string {
@@ -120,24 +155,34 @@ function nearestExistingParent(path: string): string {
 export async function resolvePath(
   policy: FilesystemPolicy,
   input: string | undefined,
-  options: { readonly base?: string; readonly mustExist?: boolean; readonly forCreate?: boolean } = {},
+  options: {
+    readonly base?: string;
+    readonly mustExist?: boolean;
+    readonly forCreate?: boolean;
+  } = {},
 ): Promise<ResolvedPath> {
   const raw = input === undefined || input === "" ? "." : input;
   const base = options.base ?? policy.defaultRoot;
   const logicalPath = isAbsolute(raw) ? resolve(raw) : resolve(base, raw);
   const root = allowedRootFor(policy, logicalPath);
   if (root === null) {
-    throw new FilesystemAccessError(`path ${JSON.stringify(raw)} is outside the allowed roots`);
+    throw new FilesystemAccessError(
+      `path ${JSON.stringify(raw)} is outside the allowed roots`,
+    );
   }
 
   if (options.mustExist === true && !existsSync(logicalPath)) {
-    throw new FilesystemAccessError(`path ${JSON.stringify(raw)} does not exist`);
+    throw new FilesystemAccessError(
+      `path ${JSON.stringify(raw)} does not exist`,
+    );
   }
 
   if (existsSync(logicalPath)) {
     const realPath = realpathSync.native(logicalPath);
     if (!isInside(root.real, realPath)) {
-      throw new FilesystemAccessError(`path ${JSON.stringify(raw)} resolves outside the allowed roots`);
+      throw new FilesystemAccessError(
+        `path ${JSON.stringify(raw)} resolves outside the allowed roots`,
+      );
     }
     return { path: logicalPath, root: root.logical, realPath };
   }
@@ -146,7 +191,9 @@ export async function resolvePath(
     const parent = nearestExistingParent(logicalPath);
     const parentReal = realpathSync.native(parent);
     if (!isInside(root.real, parentReal)) {
-      throw new FilesystemAccessError(`path ${JSON.stringify(raw)} parent resolves outside the allowed roots`);
+      throw new FilesystemAccessError(
+        `path ${JSON.stringify(raw)} parent resolves outside the allowed roots`,
+      );
     }
     return { path: logicalPath, root: root.logical };
   }
@@ -160,7 +207,9 @@ export async function resolveRoot(
 ): Promise<ResolvedPath> {
   const resolved = await resolvePath(policy, input, { mustExist: true });
   if (!lstatSync(resolved.path).isDirectory()) {
-    throw new FilesystemAccessError(`root ${JSON.stringify(input ?? ".")} is not a directory`);
+    throw new FilesystemAccessError(
+      `root ${JSON.stringify(input ?? ".")} is not a directory`,
+    );
   }
   return resolved;
 }

@@ -16,4 +16,3 @@ console.log({
   steps: result.steps,
   finishReason: result.finishReason,
 });
-

@@ -12,11 +12,7 @@
 import { isAbsolute, relative, resolve } from "node:path";
 
 import { ShellPolicyError } from "../errors";
-import type {
-  CommandPattern,
-  EnvPolicy,
-  ShellPolicy,
-} from "./types";
+import type { CommandPattern, EnvPolicy, ShellPolicy } from "./types";
 
 /** Validate `allowedCwds` at factory-build time; throws on misconfiguration. */
 export function normalizeAllowedCwds(allowedCwds: readonly string[]): string[] {
@@ -92,12 +88,20 @@ export function classifyCommand(
   const commandLine = [command, ...args].join(" ");
 
   if (policy.deny?.some((p) => matchesPattern(p, command, commandLine))) {
-    return { allowed: false, reason: `command "${command}" is denied by policy` };
+    return {
+      allowed: false,
+      reason: `command "${command}" is denied by policy`,
+    };
   }
   if (policy.allow !== undefined) {
-    const ok = policy.allow.some((p) => matchesPattern(p, command, commandLine));
+    const ok = policy.allow.some((p) =>
+      matchesPattern(p, command, commandLine),
+    );
     if (!ok) {
-      return { allowed: false, reason: `command "${command}" is not in the allow-list` };
+      return {
+        allowed: false,
+        reason: `command "${command}" is not in the allow-list`,
+      };
     }
   }
   return { allowed: true };

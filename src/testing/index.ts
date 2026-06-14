@@ -48,7 +48,9 @@ export interface MockProviderOptions {
   readonly defaultModel?: string;
   readonly capabilities?: Partial<ProviderCapabilities>;
   /** Scripted buffered result (or a function of the request). */
-  readonly result?: CompletionResult | ((req: CompletionRequest) => CompletionResult);
+  readonly result?:
+    | CompletionResult
+    | ((req: CompletionRequest) => CompletionResult);
   /** Scripted stream events (or a function of the request). When omitted, a
    * single text/finish stream is derived from {@link MockProviderOptions.result}. */
   readonly events?: StreamEvent[] | ((req: CompletionRequest) => StreamEvent[]);
@@ -84,13 +86,28 @@ export function mockProvider(opts: MockProviderOptions = {}): Provider {
       .filter((p): p is { type: "text"; text: string } => p.type === "text")
       .map((p) => p.text)
       .join("");
-    const events: StreamEvent[] = [{ type: "message_start", model: result.model }];
+    const events: StreamEvent[] = [
+      { type: "message_start", model: result.model },
+    ];
     if (text !== "") events.push({ type: "text_delta", text });
     result.toolCalls.forEach((call, index) => {
-      const argumentsText = call.argumentsText
-        ?? (call.arguments === undefined ? "" : JSON.stringify(call.arguments) ?? "");
-      events.push({ type: "tool_call_start", index, id: call.id, name: call.name });
-      if (argumentsText !== "") events.push({ type: "tool_call_delta", index, argumentsTextDelta: argumentsText });
+      const argumentsText =
+        call.argumentsText ??
+        (call.arguments === undefined
+          ? ""
+          : (JSON.stringify(call.arguments) ?? ""));
+      events.push({
+        type: "tool_call_start",
+        index,
+        id: call.id,
+        name: call.name,
+      });
+      if (argumentsText !== "")
+        events.push({
+          type: "tool_call_delta",
+          index,
+          argumentsTextDelta: argumentsText,
+        });
       events.push({ type: "tool_call_end", index });
     });
     events.push({
@@ -105,11 +122,17 @@ export function mockProvider(opts: MockProviderOptions = {}): Provider {
     name,
     defaultModel,
     capabilities: { ...MOCK_CAPABILITIES, ...opts.capabilities },
-    async complete(req: CompletionRequest, ctx?: EngineContext): Promise<CompletionResult> {
+    async complete(
+      req: CompletionRequest,
+      ctx?: EngineContext,
+    ): Promise<CompletionResult> {
       opts.onRequest?.(req, ctx);
       return resultFor(req);
     },
-    async *stream(req: CompletionRequest, ctx?: EngineContext): AsyncIterable<StreamEvent> {
+    async *stream(
+      req: CompletionRequest,
+      ctx?: EngineContext,
+    ): AsyncIterable<StreamEvent> {
       opts.onRequest?.(req, ctx);
       for (const event of eventsFor(req)) yield event;
     },
@@ -122,7 +145,10 @@ export async function collectProviderStream(
   req: CompletionRequest,
   ctx?: EngineContext,
 ): Promise<CompletionResult> {
-  return collectStream(provider.stream(req, ctx), req.model ?? provider.defaultModel);
+  return collectStream(
+    provider.stream(req, ctx),
+    req.model ?? provider.defaultModel,
+  );
 }
 
 /**
@@ -167,9 +193,15 @@ export function byteStreamOf(...chunks: string[]): ReadableStream<Uint8Array> {
  * A `fetch` that returns a fixed JSON `body` / `status` and records every call,
  * for driving a {@link Provider} adapter without a network.
  */
-export function jsonFetch(body: unknown, init?: { status?: number }): RecordingFetch {
+export function jsonFetch(
+  body: unknown,
+  init?: { status?: number },
+): RecordingFetch {
   const calls: RecordedCall[] = [];
-  const fetchImpl = (async (input: Parameters<typeof fetch>[0], requestInit?: RequestInit) => {
+  const fetchImpl = (async (
+    input: Parameters<typeof fetch>[0],
+    requestInit?: RequestInit,
+  ) => {
     calls.push({ url: String(input), init: requestInit });
     return new Response(JSON.stringify(body), {
       status: init?.status ?? 200,
@@ -185,7 +217,10 @@ export function jsonFetch(body: unknown, init?: { status?: number }): RecordingF
  */
 export function sseFetch(sse: string): RecordingFetch {
   const calls: RecordedCall[] = [];
-  const fetchImpl = (async (input: Parameters<typeof fetch>[0], requestInit?: RequestInit) => {
+  const fetchImpl = (async (
+    input: Parameters<typeof fetch>[0],
+    requestInit?: RequestInit,
+  ) => {
     calls.push({ url: String(input), init: requestInit });
     return new Response(byteStreamOf(sse), {
       status: 200,
@@ -218,11 +253,19 @@ export function textResult(text: string, usage?: Usage): CompletionResult {
  * Build a tool-call {@link CompletionResult} (`finishReason: "tool_calls"`),
  * mirroring each {@link ToolCall} as a `tool_call` message part.
  */
-export function toolCallResult(calls: ToolCall[], usage?: Usage): CompletionResult {
+export function toolCallResult(
+  calls: ToolCall[],
+  usage?: Usage,
+): CompletionResult {
   return {
     message: {
       role: "assistant",
-      content: calls.map((c) => ({ type: "tool_call", id: c.id, name: c.name, arguments: c.arguments })),
+      content: calls.map((c) => ({
+        type: "tool_call",
+        id: c.id,
+        name: c.name,
+        arguments: c.arguments,
+      })),
     },
     toolCalls: calls,
     finishReason: "tool_calls",
@@ -237,9 +280,15 @@ export function toolCallResult(calls: ToolCall[], usage?: Usage): CompletionResu
  * result repeats once the script is exhausted. Handy for multi-turn run-loop
  * tests (e.g. a tool call followed by a final answer).
  */
-export function scriptedProvider(results: readonly CompletionResult[], opts?: MockProviderOptions): Provider {
+export function scriptedProvider(
+  results: readonly CompletionResult[],
+  opts?: MockProviderOptions,
+): Provider {
   let i = 0;
-  return mockProvider({ ...opts, result: () => results[Math.min(i++, results.length - 1)]! });
+  return mockProvider({
+    ...opts,
+    result: () => results[Math.min(i++, results.length - 1)]!,
+  });
 }
 
 // --- session-store double --------------------------------------------------

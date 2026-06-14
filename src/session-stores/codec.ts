@@ -15,12 +15,18 @@ export const jsonSessionStoreCodec: SessionStoreCodec = {
     return decodeObject<Message>(payload);
   },
 
-  encodeMetadata(metadata: Readonly<Record<string, unknown>> | undefined): string | undefined {
+  encodeMetadata(
+    metadata: Readonly<Record<string, unknown>> | undefined,
+  ): string | undefined {
     return metadata === undefined ? undefined : JSON.stringify(metadata);
   },
 
-  decodeMetadata(payload: string | undefined): Readonly<Record<string, unknown>> | undefined {
-    return payload === undefined ? undefined : decodeObject<Record<string, unknown>>(payload);
+  decodeMetadata(
+    payload: string | undefined,
+  ): Readonly<Record<string, unknown>> | undefined {
+    return payload === undefined
+      ? undefined
+      : decodeObject<Record<string, unknown>>(payload);
   },
 };
 
@@ -46,7 +52,8 @@ export async function encodeMessages(
   messages: readonly Message[],
 ): Promise<string[]> {
   const encoded: string[] = [];
-  for (const message of messages) encoded.push(await codec.encodeMessage(message));
+  for (const message of messages)
+    encoded.push(await codec.encodeMessage(message));
   return encoded;
 }
 
@@ -55,6 +62,7 @@ export async function decodeMessages(
   payloads: readonly string[],
 ): Promise<Message[]> {
   const messages: Message[] = [];
-  for (const payload of payloads) messages.push(await codec.decodeMessage(payload));
+  for (const payload of payloads)
+    messages.push(await codec.decodeMessage(payload));
   return messages;
 }

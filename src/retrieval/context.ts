@@ -1,8 +1,18 @@
 import { estimateTokens } from "../context/window";
-import type { ContextItem, ContextProvider, ContextResolveContext, TokenCounter } from "../context/types";
+import type {
+  ContextItem,
+  ContextProvider,
+  ContextResolveContext,
+  TokenCounter,
+} from "../context/types";
 import type { Message, TextPart } from "../messages/types";
 import type { EngineContext } from "../runtime/types";
-import type { RetrievalResult, RetrieverContextOptions, SourceAttribution, SourceLocation } from "./types";
+import type {
+  RetrievalResult,
+  RetrieverContextOptions,
+  SourceAttribution,
+  SourceLocation,
+} from "./types";
 
 function textOf(message: Message): string {
   return message.content
@@ -11,7 +21,9 @@ function textOf(message: Message): string {
     .join("");
 }
 
-function latestUserText(messages: readonly Message[] | undefined): string | undefined {
+function latestUserText(
+  messages: readonly Message[] | undefined,
+): string | undefined {
   if (messages === undefined) return undefined;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
@@ -27,7 +39,8 @@ async function resolveQuery(
   ctx: EngineContext,
   run?: ContextResolveContext,
 ): Promise<string | undefined> {
-  if (typeof options.query === "string") return options.query.trim() === "" ? undefined : options.query;
+  if (typeof options.query === "string")
+    return options.query.trim() === "" ? undefined : options.query;
   if (typeof options.query === "function") {
     const query = await options.query(ctx, run);
     return query === undefined || query.trim() === "" ? undefined : query;
@@ -43,7 +56,9 @@ function countText(text: string, countTokens: TokenCounter): number {
   return countTokens([messageForCount(text)]);
 }
 
-function locationLabel(location: SourceLocation | undefined): string | undefined {
+function locationLabel(
+  location: SourceLocation | undefined,
+): string | undefined {
   if (location === undefined) return undefined;
   if (location.startLine !== undefined && location.endLine !== undefined) {
     return location.startLine === location.endLine
@@ -62,7 +77,12 @@ function sourceLabel(source: SourceAttribution | undefined): string {
   return location === undefined ? name : `${name}, ${location}`;
 }
 
-function renderResult(result: RetrievalResult, citation: number, includeScores: boolean, text = result.text): string {
+function renderResult(
+  result: RetrievalResult,
+  citation: number,
+  includeScores: boolean,
+  text = result.text,
+): string {
   const score = includeScores ? ` score=${result.score.toFixed(3)}` : "";
   return `[${citation}] ${sourceLabel(result.source)}${score}\n${text}`;
 }
@@ -80,9 +100,12 @@ function availableBudget(
   run: ContextResolveContext | undefined,
   countTokens: TokenCounter,
 ): number | undefined {
-  if (options.maxContextTokens !== undefined) return Math.max(0, options.maxContextTokens);
+  if (options.maxContextTokens !== undefined)
+    return Math.max(0, options.maxContextTokens);
   if (run?.contextWindow === undefined) return undefined;
-  const reserveTokens = options.reserveTokens ?? Math.min(512, Math.floor(run.contextWindow.maxTokens * 0.1));
+  const reserveTokens =
+    options.reserveTokens ??
+    Math.min(512, Math.floor(run.contextWindow.maxTokens * 0.1));
   const used = countTokens(run.messages);
   return Math.max(0, run.contextWindow.maxTokens - used - reserveTokens);
 }
@@ -124,7 +147,11 @@ function selectResults(
 ): { readonly content: string; readonly selected: readonly RetrievalResult[] } {
   if (budget === undefined) {
     return {
-      content: joinBlocks(results.map((result, index) => renderResult(result, index + 1, includeScores))),
+      content: joinBlocks(
+        results.map((result, index) =>
+          renderResult(result, index + 1, includeScores),
+        ),
+      ),
       selected: results,
     };
   }
@@ -144,7 +171,14 @@ function selectResults(
       continue;
     }
 
-    const truncated = truncateToFit(content, result, citation, budget, countTokens, includeScores);
+    const truncated = truncateToFit(
+      content,
+      result,
+      citation,
+      budget,
+      countTokens,
+      includeScores,
+    );
     if (truncated !== undefined) {
       content = appendBlock(content, truncated);
       selected.push(result);
@@ -155,25 +189,45 @@ function selectResults(
 }
 
 /** Convert any retriever into a run-time context provider with citations. */
-export function retrieverContext(options: RetrieverContextOptions): ContextProvider {
+export function retrieverContext(
+  options: RetrieverContextOptions,
+): ContextProvider {
   return {
     name: options.name ?? `retriever:${options.retriever.name}`,
     async resolve(ctx, run): Promise<ContextItem[]> {
       const query = await resolveQuery(options, ctx, run);
       if (query === undefined) return [];
-      const results = await options.retriever.retrieve({
-        query,
-        ...(options.topK !== undefined ? { topK: options.topK } : {}),
-        ...(options.minScore !== undefined ? { minScore: options.minScore } : {}),
-      }, ctx);
+      const results = await options.retriever.retrieve(
+        {
+          query,
+          ...(options.topK !== undefined ? { topK: options.topK } : {}),
+          ...(options.minScore !== undefined
+            ? { minScore: options.minScore }
+            : {}),
+        },
+        ctx,
+      );
       if (results.length === 0) return [];
 
-      const countTokens = options.countTokens ?? run?.contextWindow?.countTokens ?? estimateTokens;
+      const countTokens =
+        options.countTokens ??
+        run?.contextWindow?.countTokens ??
+        estimateTokens;
       const budget = availableBudget(options, run, countTokens);
-      const rendered = selectResults(results, budget, countTokens, options.includeScores ?? false);
+      const rendered = selectResults(
+        results,
+        budget,
+        countTokens,
+        options.includeScores ?? false,
+      );
       if (rendered.content === "") return [];
       await options.onResults?.(rendered.selected, query, ctx, run);
-      return [{ title: options.title ?? "Retrieved Context", content: rendered.content }];
+      return [
+        {
+          title: options.title ?? "Retrieved Context",
+          content: rendered.content,
+        },
+      ];
     },
   };
 }

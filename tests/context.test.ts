@@ -25,7 +25,10 @@ function textOf(message: Message): string {
 
 describe("context providers", () => {
   it("staticContext renders a string verbatim with an optional title", async () => {
-    const msgs = await resolveContext([staticContext("plain facts", "Facts")], {});
+    const msgs = await resolveContext(
+      [staticContext("plain facts", "Facts")],
+      {},
+    );
     expect(msgs).toHaveLength(1);
     expect(msgs[0]?.role).toBe("system");
     expect(textOf(msgs[0]!)).toBe("## Facts\nplain facts");
@@ -51,7 +54,10 @@ describe("context providers", () => {
   });
 
   it("merges multiple providers into one system message, order preserved", async () => {
-    const msgs = await resolveContext([staticContext("first"), staticContext("second")], {});
+    const msgs = await resolveContext(
+      [staticContext("first"), staticContext("second")],
+      {},
+    );
     expect(msgs).toHaveLength(1);
     expect(textOf(msgs[0]!)).toBe("first\n\nsecond");
   });
@@ -69,8 +75,15 @@ describe("context providers", () => {
       seen.push(run?.prior[0] === undefined ? "" : textOf(run.prior[0]));
       return "context";
     });
-    const agent = defineAgent({ name: "metadata-agent", provider: mockProvider() });
-    await runAgent(agent, { input: "new input", messages: [user("prior input")], context: [provider] });
+    const agent = defineAgent({
+      name: "metadata-agent",
+      provider: mockProvider(),
+    });
+    await runAgent(agent, {
+      input: "new input",
+      messages: [user("prior input")],
+      context: [provider],
+    });
 
     expect(seen).toEqual(["metadata-agent", "new input", "prior input"]);
   });
@@ -93,7 +106,10 @@ describe("truncateOldest", () => {
 
   it("drops oldest non-system messages but keeps system messages", async () => {
     const messages = [system("sys"), user("1"), assistant("2"), user("3")];
-    const result = await truncateOldest().reduce([...messages], { ...ctx, maxTokens: 2 });
+    const result = await truncateOldest().reduce([...messages], {
+      ...ctx,
+      maxTokens: 2,
+    });
     // keeps system + the most recent message to fit 2
     expect(result.map((m) => m.role)).toEqual(["system", "user"]);
     expect(textOf(result[1]!)).toBe("3");
@@ -102,9 +118,9 @@ describe("truncateOldest", () => {
   it("throws ContextWindowError when system messages alone exceed the budget", () => {
     const messages = [system("a"), system("b"), user("1")];
     // reduce() throws synchronously here (no async work needed).
-    expect(() => truncateOldest().reduce([...messages], { ...ctx, maxTokens: 1 })).toThrow(
-      ContextWindowError,
-    );
+    expect(() =>
+      truncateOldest().reduce([...messages], { ...ctx, maxTokens: 1 }),
+    ).toThrow(ContextWindowError);
   });
 });
 
@@ -121,17 +137,48 @@ describe("truncateToolAware", () => {
     const messages: Message[] = [
       system("sys"),
       user("old"),
-      assistant([{ type: "tool_call", id: "c1", name: "lookup", arguments: { q: "old" } }]),
-      { role: "tool", content: [{ type: "tool_result", toolCallId: "c1", content: [{ type: "text", text: "old-result" }] }] },
+      assistant([
+        {
+          type: "tool_call",
+          id: "c1",
+          name: "lookup",
+          arguments: { q: "old" },
+        },
+      ]),
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool_result",
+            toolCallId: "c1",
+            content: [{ type: "text", text: "old-result" }],
+          },
+        ],
+      },
       user("new"),
       assistant("answer"),
     ];
 
-    const result = await truncateToolAware().reduce([...messages], { ...ctx, maxTokens: 3 });
-    const hasCall = result.some((message) => message.content.some((part) => part.type === "tool_call" && part.id === "c1"));
-    const hasResult = result.some((message) => message.content.some((part) => part.type === "tool_result" && part.toolCallId === "c1"));
+    const result = await truncateToolAware().reduce([...messages], {
+      ...ctx,
+      maxTokens: 3,
+    });
+    const hasCall = result.some((message) =>
+      message.content.some(
+        (part) => part.type === "tool_call" && part.id === "c1",
+      ),
+    );
+    const hasResult = result.some((message) =>
+      message.content.some(
+        (part) => part.type === "tool_result" && part.toolCallId === "c1",
+      ),
+    );
     expect(hasCall).toBe(hasResult);
-    expect(result.map((message) => message.role)).toEqual(["system", "user", "assistant"]);
+    expect(result.map((message) => message.role)).toEqual([
+      "system",
+      "user",
+      "assistant",
+    ]);
     expect(textOf(result.at(-1)!)).toBe("answer");
   });
 
@@ -142,9 +189,9 @@ describe("truncateToolAware", () => {
       assistant("latest"),
     ];
 
-    expect(() => truncateToolAware().reduce([...messages], { ...ctx, maxTokens: 2 })).toThrow(
-      ContextWindowError,
-    );
+    expect(() =>
+      truncateToolAware().reduce([...messages], { ...ctx, maxTokens: 2 }),
+    ).toThrow(ContextWindowError);
   });
 });
 
@@ -159,7 +206,10 @@ describe("summarizeOldest", () => {
   it("replaces older messages with a single system summary via the provider", async () => {
     const provider = mockProvider({
       result: () => ({
-        message: { role: "assistant", content: [{ type: "text", text: "SUMMARY" }] },
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "SUMMARY" }],
+        },
         toolCalls: [],
         finishReason: "stop",
         model: "m",
@@ -175,12 +225,22 @@ describe("summarizeOldest", () => {
       user("recent-3"),
       assistant("recent-4"),
     ];
-    const result = await summarizeOldest({ keepRecent: 4 }).reduce([...messages], {
-      ...baseCtx,
-      provider,
-    });
+    const result = await summarizeOldest({ keepRecent: 4 }).reduce(
+      [...messages],
+      {
+        ...baseCtx,
+        provider,
+      },
+    );
     // system + summary + 4 recent
-    expect(result.map((m) => m.role)).toEqual(["system", "system", "user", "assistant", "user", "assistant"]);
+    expect(result.map((m) => m.role)).toEqual([
+      "system",
+      "system",
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+    ]);
     expect(textOf(result[1]!)).toContain("SUMMARY");
     expect(textOf(result[4]!)).toBe("recent-3");
     expect(textOf(result[5]!)).toBe("recent-4");
@@ -196,10 +256,21 @@ describe("summarizeOldest", () => {
         raw: {},
       }),
     });
-    const messages = [system("sys"), user("old"), user("r1"), user("r2"), user("r3"), user("r4")];
+    const messages = [
+      system("sys"),
+      user("old"),
+      user("r1"),
+      user("r2"),
+      user("r3"),
+      user("r4"),
+    ];
     // result = system + summary + 4 recent = 6 messages > maxTokens 3
     await expect(
-      summarizeOldest({ keepRecent: 4 }).reduce([...messages], { ...baseCtx, maxTokens: 3, provider }),
+      summarizeOldest({ keepRecent: 4 }).reduce([...messages], {
+        ...baseCtx,
+        maxTokens: 3,
+        provider,
+      }),
     ).rejects.toBeInstanceOf(ContextWindowError);
   });
 });

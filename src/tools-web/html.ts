@@ -56,9 +56,15 @@ function normalizeUrl(raw: string, baseUrl: string): string | null {
 }
 
 /** Parse title, visible-ish text, and absolute links from a static HTML string. */
-export function parseStaticHtml(html: string, baseUrl: string, maxLinks = Number.POSITIVE_INFINITY): ParsedPage {
+export function parseStaticHtml(
+  html: string,
+  baseUrl: string,
+  maxLinks = Number.POSITIVE_INFINITY,
+): ParsedPage {
   const document = documentFromHtml(html);
-  const title = compactWhitespace(document.querySelector("title")?.textContent ?? "");
+  const title = compactWhitespace(
+    document.querySelector("title")?.textContent ?? "",
+  );
   removeNoise(document);
   const root = document.body ?? document.documentElement;
   const text = compactWhitespace(root?.textContent ?? "");

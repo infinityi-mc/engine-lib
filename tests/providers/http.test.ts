@@ -21,12 +21,18 @@ describe("createProviderHttp", () => {
     const res = await http.post<{ ok: boolean }>("things", { a: 1 });
     expect(res.body).toEqual({ ok: true });
     expect(calls[0]?.url).toBe("https://api.example.com/v1/things");
-    expect(new Headers(calls[0]?.init?.headers).get("authorization")).toBe("Bearer secret");
+    expect(new Headers(calls[0]?.init?.headers).get("authorization")).toBe(
+      "Bearer secret",
+    );
   });
 
   it("throws on a non-2xx response", async () => {
     const { fetch } = jsonFetch({ error: "nope" }, { status: 500 });
-    const http = createProviderHttp({ baseUrl: "https://api.example.com", headers: {}, fetch });
+    const http = createProviderHttp({
+      baseUrl: "https://api.example.com",
+      headers: {},
+      fetch,
+    });
     await expect(http.post("things", {})).rejects.toBeDefined();
   });
 });
@@ -82,7 +88,10 @@ describe("openSseStream", () => {
 
   it("records streaming request telemetry", async () => {
     const spanNames: string[] = [];
-    const metricRecords: Array<{ value: number; attributes?: Record<string, unknown> }> = [];
+    const metricRecords: Array<{
+      value: number;
+      attributes?: Record<string, unknown>;
+    }> = [];
     const span = {
       setAttribute: () => span,
       setAttributes: () => span,
@@ -94,7 +103,10 @@ describe("openSseStream", () => {
       telemetry: {
         tracer: {
           startSpan: () => span,
-          withSpan: (name: string, fn: (activeSpan: typeof span) => unknown) => {
+          withSpan: (
+            name: string,
+            fn: (activeSpan: typeof span) => unknown,
+          ) => {
             spanNames.push(name);
             return fn(span);
           },
@@ -137,7 +149,8 @@ describe("defaultProviderResilience", () => {
     let attempts = 0;
     const result = await pipeline.execute(() => {
       attempts += 1;
-      if (attempts < 3) throw Object.assign(new Error("unavailable"), { status: 503 });
+      if (attempts < 3)
+        throw Object.assign(new Error("unavailable"), { status: 503 });
       return "ok";
     });
     expect(result).toBe("ok");

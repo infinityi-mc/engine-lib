@@ -35,12 +35,14 @@ await indexDocuments({
     staticDocumentLoader([
       {
         id: "database-runbook",
-        content: "When the database is unavailable, fail over to the standby and verify replication lag.",
+        content:
+          "When the database is unavailable, fail over to the standby and verify replication lag.",
         source: { uri: "runbooks/database.md", title: "Database Runbook" },
       },
       {
         id: "cache-runbook",
-        content: "When the cache is saturated, scale the cache tier before restarting workers.",
+        content:
+          "When the cache is saturated, scale the cache tier before restarting workers.",
         source: { uri: "runbooks/cache.md", title: "Cache Runbook" },
       },
     ]),
@@ -54,7 +56,9 @@ const retriever = createVectorRetriever({ embeddings, store, topK: 2 });
 const agent = defineAgent({
   name: "retrieval-demo",
   instructions: "Answer from retrieved context and cite sources by marker.",
-  provider: scriptedProvider([textResult("Fail over to standby and verify replication lag. [1]")]),
+  provider: scriptedProvider([
+    textResult("Fail over to standby and verify replication lag. [1]"),
+  ]),
 });
 
 const result = await runAgent(agent, {

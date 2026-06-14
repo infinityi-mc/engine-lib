@@ -19,7 +19,8 @@ export function toJsonSchema<T>(schema: Schema<T>): JsonSchema {
  * required; `safeParse` is derived if absent.
  */
 export function asSchema<T>(
-  impl: Pick<Schema<T>, "jsonSchema" | "parse"> & Partial<Pick<Schema<T>, "safeParse">>,
+  impl: Pick<Schema<T>, "jsonSchema" | "parse"> &
+    Partial<Pick<Schema<T>, "safeParse">>,
 ): Schema<T> {
   return {
     jsonSchema: impl.jsonSchema,
@@ -30,7 +31,8 @@ export function asSchema<T>(
         try {
           return { success: true, data: impl.parse(input) };
         } catch (error) {
-          if (error instanceof SchemaValidationError) return { success: false, error };
+          if (error instanceof SchemaValidationError)
+            return { success: false, error };
           return {
             success: false,
             error: new SchemaValidationError("schema validation failed", {
@@ -55,7 +57,9 @@ export function fromJsonSchema<T = unknown>(jsonSchema: JsonSchema): Schema<T> {
       if (issues.length === 0) return { success: true, data: input as T };
       return {
         success: false,
-        error: new SchemaValidationError("schema validation failed", { issues }),
+        error: new SchemaValidationError("schema validation failed", {
+          issues,
+        }),
       };
     },
     parse(input: unknown): T {

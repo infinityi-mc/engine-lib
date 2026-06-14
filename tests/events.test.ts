@@ -35,7 +35,12 @@ function toolCallResult(calls: ToolCall[]): CompletionResult {
   return {
     message: {
       role: "assistant",
-      content: calls.map((c) => ({ type: "tool_call", id: c.id, name: c.name, arguments: c.arguments })),
+      content: calls.map((c) => ({
+        type: "tool_call",
+        id: c.id,
+        name: c.name,
+        arguments: c.arguments,
+      })),
     },
     toolCalls: calls,
     finishReason: "tool_calls",
@@ -46,7 +51,9 @@ function toolCallResult(calls: ToolCall[]): CompletionResult {
 
 function scriptedProvider(results: CompletionResult[]) {
   let i = 0;
-  return mockProvider({ result: () => results[Math.min(i++, results.length - 1)]! });
+  return mockProvider({
+    result: () => results[Math.min(i++, results.length - 1)]!,
+  });
 }
 
 const echo = defineTool({
@@ -82,7 +89,12 @@ describe("createEventHub", () => {
     });
     await hub.emit({ type: "run.start", runId: RUN_ID, agent: "a" });
     await hub.emit({ type: "token", runId: RUN_ID, delta: "x" });
-    expect(log).toEqual(["s1:run.start", "s2:run.start", "s1:token", "s2:token"]);
+    expect(log).toEqual([
+      "s1:run.start",
+      "s2:run.start",
+      "s1:token",
+      "s2:token",
+    ]);
   });
 
   it("isolates a throwing/rejecting subscriber and reports it", async () => {
@@ -98,7 +110,8 @@ describe("createEventHub", () => {
         },
         (e) => void seen.push(e.type),
       ],
-      onSubscriberError: (_err, event, index) => errors.push({ index, type: event.type }),
+      onSubscriberError: (_err, event, index) =>
+        errors.push({ index, type: event.type }),
     });
     await hub.emit({ type: "token", runId: RUN_ID, delta: "x" });
     // The healthy third subscriber still ran despite the first two failing.
@@ -111,7 +124,9 @@ describe("createEventHub", () => {
 
   it("ignores undefined subscriber slots", async () => {
     const seen: string[] = [];
-    const hub = createEventHub({ subscribers: [undefined, (e) => void seen.push(e.type)] });
+    const hub = createEventHub({
+      subscribers: [undefined, (e) => void seen.push(e.type)],
+    });
     await hub.emit({ type: "run.start", runId: RUN_ID, agent: "a" });
     expect(seen).toEqual(["run.start"]);
   });
@@ -197,14 +212,20 @@ describe("runAgent — event/hook ordering", () => {
     });
 
     // run.start before onStart.
-    expect(timeline.indexOf("event:run.start")).toBeLessThan(timeline.indexOf("hook:onStart"));
+    expect(timeline.indexOf("event:run.start")).toBeLessThan(
+      timeline.indexOf("hook:onStart"),
+    );
     // tool.call before onToolCall; tool.result before onToolResult.
-    expect(timeline.indexOf("event:tool.call")).toBeLessThan(timeline.indexOf("hook:onToolCall"));
+    expect(timeline.indexOf("event:tool.call")).toBeLessThan(
+      timeline.indexOf("hook:onToolCall"),
+    );
     expect(timeline.indexOf("event:tool.result")).toBeLessThan(
       timeline.indexOf("hook:onToolResult"),
     );
     // run.finish before onFinish.
-    expect(timeline.indexOf("event:run.finish")).toBeLessThan(timeline.indexOf("hook:onFinish"));
+    expect(timeline.indexOf("event:run.finish")).toBeLessThan(
+      timeline.indexOf("hook:onFinish"),
+    );
   });
 });
 
@@ -224,7 +245,13 @@ describe("loggingSubscriber", () => {
 
     const sub: RunSubscriber = loggingSubscriber(logger);
     await sub({ type: "run.start", runId: RUN_ID, agent: "a" });
-    await sub({ type: "tool.call", runId: RUN_ID, id: "c1", name: "echo", arguments: {} });
+    await sub({
+      type: "tool.call",
+      runId: RUN_ID,
+      id: "c1",
+      name: "echo",
+      arguments: {},
+    });
     expect(lines).toEqual([
       { level: "debug", message: "agent.run run.start" },
       { level: "debug", message: "agent.run tool.call" },
@@ -236,7 +263,8 @@ describe("messageBusSubscriber", () => {
   it("republishes each event onto the bus with a prefixed type and safe payload", async () => {
     const published: Array<{ type: string; payload: unknown }> = [];
     const bus = {
-      publish: async (m: { type: string; payload: unknown }) => void published.push(m),
+      publish: async (m: { type: string; payload: unknown }) =>
+        void published.push(m),
       publishBatch: async () => {},
       flush: async () => {},
       shutdown: async () => {},
@@ -258,7 +286,9 @@ describe("messageBusSubscriber", () => {
 
   it("eventPayload projects an error event to name + message", () => {
     const err = Object.assign(new Error("nope"), { name: "ProviderError" });
-    expect(eventPayload({ type: "error", runId: RUN_ID, error: err as never })).toEqual({
+    expect(
+      eventPayload({ type: "error", runId: RUN_ID, error: err as never }),
+    ).toEqual({
       runId: RUN_ID,
       name: "ProviderError",
       message: "nope",
@@ -322,9 +352,15 @@ function recordingTelemetry() {
   };
 
   const tracer = {
-    startSpan: (name: string, opts?: { attributes?: Record<string, unknown> }) =>
-      make(name, opts?.attributes).span,
-    withSpan: (name: string, fn: (span: unknown) => unknown, opts?: { attributes?: Record<string, unknown> }) => {
+    startSpan: (
+      name: string,
+      opts?: { attributes?: Record<string, unknown> },
+    ) => make(name, opts?.attributes).span,
+    withSpan: (
+      name: string,
+      fn: (span: unknown) => unknown,
+      opts?: { attributes?: Record<string, unknown> },
+    ) => {
       const { span, rec } = make(name, opts?.attributes);
       stack.push(rec);
       const settle = () => {
@@ -340,7 +376,10 @@ function recordingTelemetry() {
               return v;
             },
             (e) => {
-              rec.status = { code: "error", message: e instanceof Error ? e.message : String(e) };
+              rec.status = {
+                code: "error",
+                message: e instanceof Error ? e.message : String(e),
+              };
               settle();
               throw e;
             },
@@ -349,7 +388,10 @@ function recordingTelemetry() {
         settle();
         return result;
       } catch (e) {
-        rec.status = { code: "error", message: e instanceof Error ? e.message : String(e) };
+        rec.status = {
+          code: "error",
+          message: e instanceof Error ? e.message : String(e),
+        };
         settle();
         throw e;
       }
@@ -368,20 +410,29 @@ function recordingTelemetry() {
     }),
   };
 
-  const telemetry = { tracer, meter, log: undefined } as unknown as TelemetryHandle;
+  const telemetry = {
+    tracer,
+    meter,
+    log: undefined,
+  } as unknown as TelemetryHandle;
   return { telemetry, spans, metrics };
 }
 
 describe("runAgent — telemetry bridge", () => {
   it("emits nested run/provider/tool spans and usage/latency metrics", async () => {
     const { telemetry, spans, metrics } = recordingTelemetry();
-    await runAgent(toolThenAnswer({ inputTokens: 10, outputTokens: 5, totalTokens: 15 }), {
-      input: "go",
-      telemetry,
-    });
+    await runAgent(
+      toolThenAnswer({ inputTokens: 10, outputTokens: 5, totalTokens: 15 }),
+      {
+        input: "go",
+        telemetry,
+      },
+    );
 
     const run = spans.find((sp) => sp.name === "agent.run");
-    const providerSpans = spans.filter((sp) => sp.name === "agent.provider.call");
+    const providerSpans = spans.filter(
+      (sp) => sp.name === "agent.provider.call",
+    );
     const toolSpans = spans.filter((sp) => sp.name === "agent.tool.execute");
 
     expect(run).toBeDefined();
@@ -407,10 +458,14 @@ describe("runAgent — telemetry bridge", () => {
     expect(metrics.find((m) => m.name === "agent.run.duration")).toBeDefined();
     expect(metrics.find((m) => m.name === "agent.tool.duration")).toBeDefined();
     expect(
-      metrics.find((m) => m.name === "agent.runs" && m.attributes?.["agent.outcome"] === "ok"),
+      metrics.find(
+        (m) =>
+          m.name === "agent.runs" && m.attributes?.["agent.outcome"] === "ok",
+      ),
     ).toBeDefined();
     const inputTokens = metrics.find(
-      (m) => m.name === "agent.tokens" && m.attributes?.["token.type"] === "input",
+      (m) =>
+        m.name === "agent.tokens" && m.attributes?.["token.type"] === "input",
     );
     expect(inputTokens?.value).toBe(10);
   });
@@ -433,13 +488,21 @@ describe("runAgent — telemetry bridge", () => {
     expect(run?.status?.code).toBe("error");
     expect(run?.ended).toBe(true);
     expect(
-      metrics.find((m) => m.name === "agent.runs" && m.attributes?.["agent.outcome"] === "error"),
+      metrics.find(
+        (m) =>
+          m.name === "agent.runs" &&
+          m.attributes?.["agent.outcome"] === "error",
+      ),
     ).toBeDefined();
   });
 
   it("ends the run span and rejects `completed` when a stream is abandoned early", async () => {
     const { telemetry, spans, metrics } = recordingTelemetry();
-    const handle = runAgent(toolThenAnswer(), { input: "go", stream: true, telemetry });
+    const handle = runAgent(toolThenAnswer(), {
+      input: "go",
+      stream: true,
+      telemetry,
+    });
 
     // Consume a single event, then break without draining the iterator.
     for await (const _ of handle) {
@@ -453,7 +516,9 @@ describe("runAgent — telemetry bridge", () => {
     await expect(handle.completed).rejects.toBeInstanceOf(CancelledError);
     expect(
       metrics.find(
-        (m) => m.name === "agent.runs" && m.attributes?.["agent.outcome"] === "incomplete",
+        (m) =>
+          m.name === "agent.runs" &&
+          m.attributes?.["agent.outcome"] === "incomplete",
       ),
     ).toBeDefined();
   });

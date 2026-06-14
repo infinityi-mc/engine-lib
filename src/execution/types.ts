@@ -50,8 +50,18 @@ export type RunEventDraft =
   | { readonly type: "run.start"; readonly agent: string }
   | { readonly type: "message"; readonly message: Message }
   | { readonly type: "token"; readonly delta: string }
-  | { readonly type: "tool.call"; readonly id: string; readonly name: string; readonly arguments: unknown }
-  | { readonly type: "tool.result"; readonly id: string; readonly name: string; readonly result: ToolResult }
+  | {
+      readonly type: "tool.call";
+      readonly id: string;
+      readonly name: string;
+      readonly arguments: unknown;
+    }
+  | {
+      readonly type: "tool.result";
+      readonly id: string;
+      readonly name: string;
+      readonly result: ToolResult;
+    }
   | { readonly type: "run.finish"; readonly result: RunResult }
   | { readonly type: "error"; readonly error: AgentError }
   /**
@@ -61,13 +71,22 @@ export type RunEventDraft =
    * don't care about nesting can ignore this variant; those that do can recurse
    * into `event`.
    */
-  | { readonly type: "agent.child"; readonly agent: string; readonly depth: number; readonly event: RunEvent }
+  | {
+      readonly type: "agent.child";
+      readonly agent: string;
+      readonly depth: number;
+      readonly event: RunEvent;
+    }
   /**
    * The active agent handed the run off to another agent (Phase 7). `from` and
    * `to` are agent names. Emitted at the switch point; the message history is
    * preserved across the handoff.
    */
-  | { readonly type: "agent.handoff"; readonly from: string; readonly to: string }
+  | {
+      readonly type: "agent.handoff";
+      readonly from: string;
+      readonly to: string;
+    }
   | {
       readonly type: "session.resumed";
       readonly sessionId: string;
@@ -95,9 +114,15 @@ export type RunEventDraft =
    * stream as built-in events. Subscribers that don't recognize a `name` should
    * ignore it.
    */
-  | { readonly type: "custom"; readonly name: string; readonly data: Record<string, unknown> };
+  | {
+      readonly type: "custom";
+      readonly name: string;
+      readonly data: Record<string, unknown>;
+    };
 
-type WithRunId<T> = T extends { readonly type: string } ? T & { readonly runId: string } : never;
+type WithRunId<T> = T extends { readonly type: string }
+  ? T & { readonly runId: string }
+  : never;
 
 /** A public run event as delivered to subscribers, stamped with this invocation's run id. */
 export type RunEvent = WithRunId<RunEventDraft>;

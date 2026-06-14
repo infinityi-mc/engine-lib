@@ -1,8 +1,19 @@
-import { appendFile, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 
 import type { Message } from "../messages/types";
-import { encodeSessionListCursor, normalizeSessionListOptions } from "../session/list";
+import {
+  encodeSessionListCursor,
+  normalizeSessionListOptions,
+} from "../session/list";
 import { readResumeInfo } from "../session/resume";
 import type {
   AppendResult,
@@ -12,7 +23,13 @@ import type {
   SessionState,
   SessionStore,
 } from "../session/types";
-import { decodeMessages, decodeMetadata, encodeMessages, encodeMetadata, jsonSessionStoreCodec } from "./codec";
+import {
+  decodeMessages,
+  decodeMetadata,
+  encodeMessages,
+  encodeMetadata,
+  jsonSessionStoreCodec,
+} from "./codec";
 import { sessionFileName } from "./ids";
 import type { PurgeExpiredOptions, SessionStoreCodec } from "./types";
 import { SESSION_STORE_SCHEMA_VERSION } from "./versioning";
@@ -72,7 +89,11 @@ interface ReplayedState {
 }
 
 function isMissingFile(error: unknown): boolean {
-  return typeof error === "object" && error !== null && (error as { code?: unknown }).code === "ENOENT";
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === "ENOENT"
+  );
 }
 
 function buildState(
@@ -104,7 +125,11 @@ export class FilesystemJsonlSessionStore implements SessionStore {
 
   async migrate(): Promise<void> {
     await this.ensureDirectory();
-    await writeFile(join(this.directory, ".engine-session-store-version"), `${SESSION_STORE_SCHEMA_VERSION}\n`, "utf8");
+    await writeFile(
+      join(this.directory, ".engine-session-store-version"),
+      `${SESSION_STORE_SCHEMA_VERSION}\n`,
+      "utf8",
+    );
   }
 
   async load(id: string): Promise<SessionState | undefined> {
@@ -112,7 +137,10 @@ export class FilesystemJsonlSessionStore implements SessionStore {
     return (await this.replayFile(this.pathFor(id), id)).state;
   }
 
-  async append(id: string, messages: readonly Message[]): Promise<AppendResult> {
+  async append(
+    id: string,
+    messages: readonly Message[],
+  ): Promise<AppendResult> {
     if (messages.length === 0) return {};
     await this.enqueue(id, async () => {
       const record: JsonlAppendRecord = {
@@ -127,7 +155,10 @@ export class FilesystemJsonlSessionStore implements SessionStore {
     return {};
   }
 
-  async setMetadata(id: string, metadata: Record<string, unknown>): Promise<void> {
+  async setMetadata(
+    id: string,
+    metadata: Record<string, unknown>,
+  ): Promise<void> {
     await this.enqueue(id, async () => {
       const encoded = await encodeMetadata(this.codec, metadata);
       const record: JsonlMetadataRecord = {
@@ -160,16 +191,30 @@ export class FilesystemJsonlSessionStore implements SessionStore {
       const replayed = await this.replayFile(join(this.directory, entry.name));
       if (replayed.id === undefined || replayed.state === undefined) continue;
       if (isExpired(replayed.expiresAt)) continue;
-      if (normalized.prefix !== undefined && !replayed.id.startsWith(normalized.prefix)) continue;
-      if (normalized.tenantId !== undefined && replayed.state.tenantId !== normalized.tenantId) continue;
+      if (
+        normalized.prefix !== undefined &&
+        !replayed.id.startsWith(normalized.prefix)
+      )
+        continue;
+      if (
+        normalized.tenantId !== undefined &&
+        replayed.state.tenantId !== normalized.tenantId
+      )
+        continue;
       const resume = readResumeInfo(replayed.state);
       rows.push({
         id: replayed.id,
-        ...(replayed.createdAt !== undefined ? { createdAt: replayed.createdAt } : {}),
-        ...(replayed.updatedAt !== undefined ? { updatedAt: replayed.updatedAt } : {}),
+        ...(replayed.createdAt !== undefined
+          ? { createdAt: replayed.createdAt }
+          : {}),
+        ...(replayed.updatedAt !== undefined
+          ? { updatedAt: replayed.updatedAt }
+          : {}),
         messageCount: replayed.state.messages.length,
         version: replayed.state.version ?? 0,
-        ...(replayed.state.tenantId !== undefined ? { tenantId: replayed.state.tenantId } : {}),
+        ...(replayed.state.tenantId !== undefined
+          ? { tenantId: replayed.state.tenantId }
+          : {}),
         ...(resume !== undefined ? { resume } : {}),
       });
     }
@@ -180,15 +225,22 @@ export class FilesystemJsonlSessionStore implements SessionStore {
       return byRecent === 0 ? a.id.localeCompare(b.id) : byRecent;
     });
 
-    const page = rows.slice(normalized.offset, normalized.offset + normalized.limit);
+    const page = rows.slice(
+      normalized.offset,
+      normalized.offset + normalized.limit,
+    );
     const hasMore = normalized.offset + normalized.limit < rows.length;
     return {
       sessions: page,
       ...(hasMore
         ? {
             cursor: encodeSessionListCursor({
-              ...(normalized.prefix !== undefined ? { prefix: normalized.prefix } : {}),
-              ...(normalized.tenantId !== undefined ? { tenantId: normalized.tenantId } : {}),
+              ...(normalized.prefix !== undefined
+                ? { prefix: normalized.prefix }
+                : {}),
+              ...(normalized.tenantId !== undefined
+                ? { tenantId: normalized.tenantId }
+                : {}),
               order: normalized.order,
               offset: normalized.offset + normalized.limit,
             }),
@@ -199,7 +251,8 @@ export class FilesystemJsonlSessionStore implements SessionStore {
 
   async save(state: SessionState): Promise<void> {
     await this.enqueue(state.id, async () => {
-      const existing = (await this.replayFile(this.pathFor(state.id), state.id)).state;
+      const existing = (await this.replayFile(this.pathFor(state.id), state.id))
+        .state;
       const stateVersion = state.version ?? existing?.version ?? 0;
       const tenantId = state.tenantId ?? existing?.tenantId;
       const metadata = await encodeMetadata(this.codec, state.metadata);
@@ -219,8 +272,12 @@ export class FilesystemJsonlSessionStore implements SessionStore {
 
   async claimTenant(claim: SessionTenantClaim): Promise<boolean> {
     return this.enqueue(claim.id, async () => {
-      const existing = (await this.replayFile(this.pathFor(claim.id), claim.id)).state;
-      if (existing?.tenantId !== undefined && existing.tenantId !== claim.tenantId) {
+      const existing = (await this.replayFile(this.pathFor(claim.id), claim.id))
+        .state;
+      if (
+        existing?.tenantId !== undefined &&
+        existing.tenantId !== claim.tenantId
+      ) {
         throw new Error(`session "${claim.id}" is owned by a different tenant`);
       }
 
@@ -228,11 +285,16 @@ export class FilesystemJsonlSessionStore implements SessionStore {
         claim.messages !== undefined &&
         claim.messages.length > 0 &&
         (existing === undefined || existing.messages.length === 0);
-      const shouldSeedMetadata = claim.metadata !== undefined && existing === undefined;
+      const shouldSeedMetadata =
+        claim.metadata !== undefined && existing === undefined;
       const shouldSeedTenant = existing?.tenantId === undefined;
-      if (!shouldSeedMessages && !shouldSeedMetadata && !shouldSeedTenant) return false;
+      if (!shouldSeedMessages && !shouldSeedMetadata && !shouldSeedTenant)
+        return false;
 
-      const metadata = await encodeMetadata(this.codec, shouldSeedMetadata ? claim.metadata : existing?.metadata);
+      const metadata = await encodeMetadata(
+        this.codec,
+        shouldSeedMetadata ? claim.metadata : existing?.metadata,
+      );
       const record: JsonlSaveRecord = {
         version: SESSION_STORE_SCHEMA_VERSION,
         op: "save",
@@ -240,7 +302,9 @@ export class FilesystemJsonlSessionStore implements SessionStore {
         at: new Date().toISOString(),
         messages: await encodeMessages(
           this.codec,
-          shouldSeedMessages ? claim.messages ?? [] : existing?.messages ?? [],
+          shouldSeedMessages
+            ? (claim.messages ?? [])
+            : (existing?.messages ?? []),
         ),
         ...(metadata !== undefined ? { metadata } : {}),
         stateVersion: existing?.version ?? 0,
@@ -280,7 +344,8 @@ export class FilesystemJsonlSessionStore implements SessionStore {
   async purgeExpired(options: PurgeExpiredOptions = {}): Promise<string[]> {
     await this.ensureDirectory();
     const now = Date.now();
-    const idleCutoff = options.maxIdleMs === undefined ? undefined : now - options.maxIdleMs;
+    const idleCutoff =
+      options.maxIdleMs === undefined ? undefined : now - options.maxIdleMs;
     const purged: string[] = [];
     const entries = await readdir(this.directory, { withFileTypes: true });
     for (const entry of entries) {
@@ -334,7 +399,10 @@ export class FilesystemJsonlSessionStore implements SessionStore {
   private async enqueue<T>(id: string, task: () => Promise<T>): Promise<T> {
     const previous = this.queues.get(id) ?? Promise.resolve();
     const run = previous.catch(() => {}).then(task);
-    const next = run.then(() => undefined, () => undefined);
+    const next = run.then(
+      () => undefined,
+      () => undefined,
+    );
     this.queues.set(id, next);
     try {
       return await run;
@@ -391,11 +459,13 @@ export class FilesystemJsonlSessionStore implements SessionStore {
         exists = true;
         messages = await decodeMessages(this.codec, record.messages);
         metadata = await decodeMetadata(this.codec, record.metadata);
-        stateVersion = typeof record.stateVersion === "number" ? record.stateVersion : 0;
-        tenantId = typeof record.tenantId === "string" ? record.tenantId : undefined;
+        stateVersion =
+          typeof record.stateVersion === "number" ? record.stateVersion : 0;
+        tenantId =
+          typeof record.tenantId === "string" ? record.tenantId : undefined;
       } else if (record.op === "append") {
         exists = true;
-        messages.push(...await decodeMessages(this.codec, record.messages));
+        messages.push(...(await decodeMessages(this.codec, record.messages)));
       } else if (record.op === "metadata") {
         exists = true;
         metadata = await decodeMetadata(this.codec, record.metadata);
@@ -405,10 +475,20 @@ export class FilesystemJsonlSessionStore implements SessionStore {
       }
     }
 
-    if (!exists || id === undefined || (!includeExpired && isExpired(expiresAt))) {
+    if (
+      !exists ||
+      id === undefined ||
+      (!includeExpired && isExpired(expiresAt))
+    ) {
       return { id, state: undefined, createdAt, updatedAt, expiresAt };
     }
-    return { id, state: buildState(id, messages, metadata, stateVersion, tenantId), createdAt, updatedAt, expiresAt };
+    return {
+      id,
+      state: buildState(id, messages, metadata, stateVersion, tenantId),
+      createdAt,
+      updatedAt,
+      expiresAt,
+    };
   }
 
   private async compactFile(path: string, expectedId?: string): Promise<void> {
@@ -428,7 +508,9 @@ export class FilesystemJsonlSessionStore implements SessionStore {
       messages: await encodeMessages(this.codec, replayed.state.messages),
       ...(metadata !== undefined ? { metadata } : {}),
       stateVersion: replayed.state.version ?? 0,
-      ...(replayed.state.tenantId !== undefined ? { tenantId: replayed.state.tenantId } : {}),
+      ...(replayed.state.tenantId !== undefined
+        ? { tenantId: replayed.state.tenantId }
+        : {}),
     };
     const tmp = `${path}.tmp-${process.pid}-${Date.now()}`;
     await writeFile(tmp, `${JSON.stringify(record)}\n`, "utf8");

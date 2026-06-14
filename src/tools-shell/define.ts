@@ -27,7 +27,12 @@ import {
   emitPolicy,
 } from "./events";
 import { execCommand } from "./exec";
-import { classifyCommand, filterEnv, normalizeAllowedCwds, resolveCwd } from "./policy";
+import {
+  classifyCommand,
+  filterEnv,
+  normalizeAllowedCwds,
+  resolveCwd,
+} from "./policy";
 import type {
   ApprovalDecision,
   CommandRequest,
@@ -41,13 +46,22 @@ const DEFAULT_MAX_OUTPUT_BYTES = 100_000;
 
 /** Model-facing parameters, identical for both tools. */
 const PARAMS = s.object({
-  command: s.string({ description: "Program to run (argv[0]). Not interpreted by a shell." }),
-  args: s.optional(s.array(s.string(), { description: "Arguments passed to the program." })),
+  command: s.string({
+    description: "Program to run (argv[0]). Not interpreted by a shell.",
+  }),
+  args: s.optional(
+    s.array(s.string(), { description: "Arguments passed to the program." }),
+  ),
   cwd: s.optional(
-    s.string({ description: "Working directory. Must resolve within an allowed root." }),
+    s.string({
+      description: "Working directory. Must resolve within an allowed root.",
+    }),
   ),
   timeoutMs: s.optional(
-    s.number({ int: true, description: "Kill the command after this many milliseconds." }),
+    s.number({
+      int: true,
+      description: "Kill the command after this many milliseconds.",
+    }),
   ),
 });
 
@@ -94,20 +108,39 @@ export function shellTools(config: ShellToolsConfig): ShellTools {
         const cwd = resolveCwd(args.cwd, allowedRoots);
         if (cwd === null) {
           const reason = `cwd ${JSON.stringify(args.cwd ?? ".")} is outside the allowed roots`;
-          emitPolicy(ctx, "deny", { command: args.command, args: cmdArgs, mode }, reason);
+          emitPolicy(
+            ctx,
+            "deny",
+            { command: args.command, args: cmdArgs, mode },
+            reason,
+          );
           return { ok: false, error: reason };
         }
 
         // Gate 2: command allow/deny policy.
         const verdict = classifyCommand(args.command, cmdArgs, config.policy);
         if (!verdict.allowed) {
-          emitPolicy(ctx, "deny", { command: args.command, args: cmdArgs, mode }, verdict.reason);
-          return { ok: false, error: verdict.reason ?? "command denied by policy" };
+          emitPolicy(
+            ctx,
+            "deny",
+            { command: args.command, args: cmdArgs, mode },
+            verdict.reason,
+          );
+          return {
+            ok: false,
+            error: verdict.reason ?? "command denied by policy",
+          };
         }
-        emitPolicy(ctx, "allow", { command: args.command, args: cmdArgs, mode });
+        emitPolicy(ctx, "allow", {
+          command: args.command,
+          args: cmdArgs,
+          mode,
+        });
 
         const timeoutMs = Math.min(
-          args.timeoutMs !== undefined && args.timeoutMs > 0 ? args.timeoutMs : defaultTimeout,
+          args.timeoutMs !== undefined && args.timeoutMs > 0
+            ? args.timeoutMs
+            : defaultTimeout,
           maxTimeout,
         );
         const req: CommandRequest = {
@@ -128,7 +161,8 @@ export function shellTools(config: ShellToolsConfig): ShellTools {
             emitApproval(ctx, "denied", req, decision.reason);
             return {
               ok: false,
-              error: decision.reason ?? `command "${args.command}" was not approved`,
+              error:
+                decision.reason ?? `command "${args.command}" was not approved`,
             };
           }
           emitApproval(ctx, "approved", req, decision.reason);

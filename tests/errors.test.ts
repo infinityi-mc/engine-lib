@@ -29,7 +29,10 @@ describe("error taxonomy", () => {
 
   it("sets a stable name and preserves cause + typed fields", () => {
     const cause = new Error("root");
-    const err = new ProviderError("upstream failed", { provider: "openai", cause });
+    const err = new ProviderError("upstream failed", {
+      provider: "openai",
+      cause,
+    });
     expect(err.name).toBe("ProviderError");
     expect(err.provider).toBe("openai");
     expect(err.cause).toBe(cause);

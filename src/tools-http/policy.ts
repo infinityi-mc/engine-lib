@@ -71,7 +71,8 @@ function normalizeProtocol(protocol: string): string {
 
 function normalizeHeaderName(name: string): string {
   const trimmed = name.trim().toLowerCase();
-  if (trimmed === "") throw new HttpPolicyError("header name must be non-empty");
+  if (trimmed === "")
+    throw new HttpPolicyError("header name must be non-empty");
   if (!/^[!#$%&'*+\-.^_`|~0-9a-z]+$/.test(trimmed)) {
     throw new HttpPolicyError(`invalid header name ${JSON.stringify(name)}`);
   }
@@ -79,7 +80,10 @@ function normalizeHeaderName(name: string): string {
 }
 
 function headerEntries(
-  headers: readonly HeaderEntry[] | Readonly<Record<string, string>> | undefined,
+  headers:
+    | readonly HeaderEntry[]
+    | Readonly<Record<string, string>>
+    | undefined,
 ): HeaderEntry[] {
   if (headers === undefined) return [];
   const entries = Array.isArray(headers)
@@ -88,26 +92,38 @@ function headerEntries(
   return entries.map((entry) => {
     const name = normalizeHeaderName(entry.name);
     if (typeof entry.value !== "string") {
-      throw new HttpPolicyError(`header ${JSON.stringify(entry.name)} value must be a string`);
+      throw new HttpPolicyError(
+        `header ${JSON.stringify(entry.name)} value must be a string`,
+      );
     }
     if (/[\r\n]/.test(entry.value)) {
-      throw new HttpPolicyError(`header ${JSON.stringify(entry.name)} value contains a newline`);
+      throw new HttpPolicyError(
+        `header ${JSON.stringify(entry.name)} value contains a newline`,
+      );
     }
     return { name, value: entry.value };
   });
 }
 
 /** Normalize and validate host configuration. */
-export function normalizeHttpConfig(config: HttpToolsConfig): NormalizedHttpConfig {
+export function normalizeHttpConfig(
+  config: HttpToolsConfig,
+): NormalizedHttpConfig {
   const allowedHosts = config.allowedHosts ?? [];
   const allowPublicInternet = config.allowPublicInternet ?? false;
   if (!allowPublicInternet && allowedHosts.length === 0) {
-    throw new HttpPolicyError("tools-http requires allowedHosts or allowPublicInternet: true");
+    throw new HttpPolicyError(
+      "tools-http requires allowedHosts or allowPublicInternet: true",
+    );
   }
 
-  const allowedProtocols = (config.allowedProtocols ?? DEFAULT_PROTOCOLS).map(normalizeProtocol);
+  const allowedProtocols = (config.allowedProtocols ?? DEFAULT_PROTOCOLS).map(
+    normalizeProtocol,
+  );
   if (allowedProtocols.length === 0) {
-    throw new HttpPolicyError("allowedProtocols must contain at least one protocol");
+    throw new HttpPolicyError(
+      "allowedProtocols must contain at least one protocol",
+    );
   }
 
   const minTimeoutMs = config.minTimeoutMs ?? 100;
@@ -141,9 +157,13 @@ export function normalizeHttpConfig(config: HttpToolsConfig): NormalizedHttpConf
     allowPrivateNetwork: config.allowPrivateNetwork ?? false,
     allowCredentialedUrls: config.allowCredentialedUrls ?? false,
     defaultHeaders: headerEntries(config.defaultHeaders),
-    allowedRequestHeaders: new Set((config.allowedRequestHeaders ?? []).map(normalizeHeaderName)),
+    allowedRequestHeaders: new Set(
+      (config.allowedRequestHeaders ?? []).map(normalizeHeaderName),
+    ),
     responseHeaderAllowlist: new Set(
-      (config.responseHeaderAllowlist ?? DEFAULT_RESPONSE_HEADERS).map(normalizeHeaderName),
+      (config.responseHeaderAllowlist ?? DEFAULT_RESPONSE_HEADERS).map(
+        normalizeHeaderName,
+      ),
     ),
     defaultTimeoutMs: clamp(defaultTimeoutMs, minTimeoutMs, maxTimeoutMs),
     minTimeoutMs,
@@ -165,7 +185,11 @@ export function clamp(value: number, min: number, max: number): number {
 }
 
 function cleanHostname(hostname: string): string {
-  return hostname.toLowerCase().replace(/^\[/, "").replace(/\]$/, "").replace(/\.$/, "");
+  return hostname
+    .toLowerCase()
+    .replace(/^\[/, "")
+    .replace(/\]$/, "")
+    .replace(/\.$/, "");
 }
 
 function cleanHost(host: string): string {
@@ -248,16 +272,24 @@ export function assertUrlAllowed(url: URL, config: NormalizedHttpConfig): void {
   if (!config.allowedProtocols.includes(url.protocol.toLowerCase())) {
     throw new HttpPolicyError(`protocol ${url.protocol} is not allowed`);
   }
-  if (!config.allowCredentialedUrls && (url.username !== "" || url.password !== "")) {
+  if (
+    !config.allowCredentialedUrls &&
+    (url.username !== "" || url.password !== "")
+  ) {
     throw new HttpPolicyError("credentialed URLs are not allowed");
   }
   if (!config.allowPrivateNetwork && isPrivateTarget(url.hostname)) {
-    throw new HttpPolicyError(`private or localhost target ${url.hostname} is not allowed`);
+    throw new HttpPolicyError(
+      `private or localhost target ${url.hostname} is not allowed`,
+    );
   }
   if (config.deniedHosts.some((pattern) => matchesHost(url, pattern))) {
     throw new HttpPolicyError(`host ${url.host} is denied by policy`);
   }
-  if (!config.allowPublicInternet && !config.allowedHosts.some((pattern) => matchesHost(url, pattern))) {
+  if (
+    !config.allowPublicInternet &&
+    !config.allowedHosts.some((pattern) => matchesHost(url, pattern))
+  ) {
     throw new HttpPolicyError(`host ${url.host} is not in allowedHosts`);
   }
 }
@@ -271,12 +303,15 @@ export function buildRequestHeaders(
 ): Headers {
   const headers = new Headers();
   if (options?.includeConfiguredHeaders ?? true) {
-    for (const entry of config.defaultHeaders) headers.set(entry.name, entry.value);
+    for (const entry of config.defaultHeaders)
+      headers.set(entry.name, entry.value);
     for (const entry of modelHeaders ?? []) {
       const name = normalizeHeaderName(entry.name);
       if (!config.allowedRequestHeaders.has(name)) continue;
       if (/[\r\n]/.test(entry.value)) {
-        throw new HttpPolicyError(`header ${JSON.stringify(entry.name)} value contains a newline`);
+        throw new HttpPolicyError(
+          `header ${JSON.stringify(entry.name)} value contains a newline`,
+        );
       }
       headers.set(name, entry.value);
     }

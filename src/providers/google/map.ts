@@ -6,8 +6,21 @@
  */
 
 import type { ImagePart, Message } from "../../messages/types";
-import { isText, isToolCall, isToolResult, systemText, toolResultText, withoutSystem } from "../shared";
-import type { CompletionRequest, CompletionResult, FinishReason, ToolCall, ToolChoice } from "../types";
+import {
+  isText,
+  isToolCall,
+  isToolResult,
+  systemText,
+  toolResultText,
+  withoutSystem,
+} from "../shared";
+import type {
+  CompletionRequest,
+  CompletionResult,
+  FinishReason,
+  ToolCall,
+  ToolChoice,
+} from "../types";
 
 interface GeminiUsage {
   promptTokenCount?: number;
@@ -20,7 +33,12 @@ interface GeminiUsage {
 interface GeminiResponse {
   modelVersion?: string;
   candidates?: Array<{
-    content?: { parts?: Array<{ text?: string; functionCall?: { id?: string; name?: string; args?: unknown } }> };
+    content?: {
+      parts?: Array<{
+        text?: string;
+        functionCall?: { id?: string; name?: string; args?: unknown };
+      }>;
+    };
     finishReason?: string;
   }>;
   usageMetadata?: GeminiUsage;
@@ -69,7 +87,13 @@ function toContents(messages: readonly Message[]): unknown[] {
       for (const part of message.content) {
         if (isText(part)) parts.push({ text: part.text });
         else if (isToolCall(part)) {
-          parts.push({ functionCall: { id: part.id, name: part.name, args: part.arguments ?? {} } });
+          parts.push({
+            functionCall: {
+              id: part.id,
+              name: part.name,
+              args: part.arguments ?? {},
+            },
+          });
         }
       }
       contents.push({ role: "model", parts });
@@ -89,49 +113,72 @@ function toContents(messages: readonly Message[]): unknown[] {
 
 function toToolConfig(choice: ToolChoice): unknown {
   if (typeof choice === "object") {
-    return { functionCallingConfig: { mode: "ANY", allowedFunctionNames: [choice.name] } };
+    return {
+      functionCallingConfig: {
+        mode: "ANY",
+        allowedFunctionNames: [choice.name],
+      },
+    };
   }
-  const mode = choice === "none" ? "NONE" : choice === "required" ? "ANY" : "AUTO";
+  const mode =
+    choice === "none" ? "NONE" : choice === "required" ? "ANY" : "AUTO";
   return { functionCallingConfig: { mode } };
 }
 
 /** Build a Gemini generateContent request body. */
-export function buildGoogleBody(req: CompletionRequest, _model: string, _stream: boolean): unknown {
+export function buildGoogleBody(
+  req: CompletionRequest,
+  _model: string,
+  _stream: boolean,
+): unknown {
   const system = systemText(req.messages);
   const body: Record<string, unknown> = {
     contents: toContents(withoutSystem(req.messages)),
   };
-  if (system !== undefined) body["systemInstruction"] = { parts: [{ text: system }] };
+  if (system !== undefined)
+    body["systemInstruction"] = { parts: [{ text: system }] };
   if (req.tools && req.tools.length > 0) {
     body["tools"] = [
       {
         functionDeclarations: req.tools.map((t) => ({
           name: t.name,
-          ...(t.description !== undefined ? { description: t.description } : {}),
+          ...(t.description !== undefined
+            ? { description: t.description }
+            : {}),
           parameters: t.parameters,
         })),
       },
     ];
   }
-  if (req.toolChoice !== undefined) body["toolConfig"] = toToolConfig(req.toolChoice);
+  if (req.toolChoice !== undefined)
+    body["toolConfig"] = toToolConfig(req.toolChoice);
 
   const generationConfig: Record<string, unknown> = {};
-  if (req.temperature !== undefined) generationConfig["temperature"] = req.temperature;
+  if (req.temperature !== undefined)
+    generationConfig["temperature"] = req.temperature;
   if (req.topP !== undefined) generationConfig["topP"] = req.topP;
-  if (req.maxOutputTokens !== undefined) generationConfig["maxOutputTokens"] = req.maxOutputTokens;
-  if (req.stopSequences !== undefined) generationConfig["stopSequences"] = req.stopSequences;
+  if (req.maxOutputTokens !== undefined)
+    generationConfig["maxOutputTokens"] = req.maxOutputTokens;
+  if (req.stopSequences !== undefined)
+    generationConfig["stopSequences"] = req.stopSequences;
   if (req.responseSchema !== undefined) {
     generationConfig["responseMimeType"] = "application/json";
     generationConfig["responseSchema"] = req.responseSchema.schema;
   }
-  if (Object.keys(generationConfig).length > 0) body["generationConfig"] = generationConfig;
-  if (req.providerOptions !== undefined) Object.assign(body, req.providerOptions);
+  if (Object.keys(generationConfig).length > 0)
+    body["generationConfig"] = generationConfig;
+  if (req.providerOptions !== undefined)
+    Object.assign(body, req.providerOptions);
   return body;
 }
 
 /** Map a Gemini `finishReason` to a normalized {@link FinishReason}. */
-export function mapGoogleFinish(reason: string | undefined, hadToolCalls: boolean): FinishReason {
-  if (hadToolCalls && (reason === undefined || reason === "STOP")) return "tool_calls";
+export function mapGoogleFinish(
+  reason: string | undefined,
+  hadToolCalls: boolean,
+): FinishReason {
+  if (hadToolCalls && (reason === undefined || reason === "STOP"))
+    return "tool_calls";
   switch (reason) {
     case "STOP":
       return "stop";
@@ -152,7 +199,10 @@ export function mapGoogleFinish(reason: string | undefined, hadToolCalls: boolea
 }
 
 /** Parse a Gemini generateContent response into a {@link CompletionResult}. */
-export function parseGoogleResponse(raw: unknown, model: string): CompletionResult {
+export function parseGoogleResponse(
+  raw: unknown,
+  model: string,
+): CompletionResult {
   const response = (raw ?? {}) as GeminiResponse;
   const candidate = response.candidates?.[0];
   let text = "";
@@ -176,7 +226,12 @@ export function parseGoogleResponse(raw: unknown, model: string): CompletionResu
   const content = [];
   if (text !== "") content.push({ type: "text" as const, text });
   for (const call of toolCalls) {
-    content.push({ type: "tool_call" as const, id: call.id, name: call.name, arguments: call.arguments });
+    content.push({
+      type: "tool_call" as const,
+      id: call.id,
+      name: call.name,
+      arguments: call.arguments,
+    });
   }
 
   const meta = response.usageMetadata;
@@ -184,17 +239,25 @@ export function parseGoogleResponse(raw: unknown, model: string): CompletionResu
     ? {
         inputTokens: meta.promptTokenCount ?? 0,
         outputTokens: meta.candidatesTokenCount ?? 0,
-        totalTokens: meta.totalTokenCount
-          ?? (meta.promptTokenCount ?? 0) + (meta.candidatesTokenCount ?? 0),
-        ...(meta.thoughtsTokenCount !== undefined ? { reasoningTokens: meta.thoughtsTokenCount } : {}),
-        ...(meta.cachedContentTokenCount !== undefined ? { cachedInputTokens: meta.cachedContentTokenCount } : {}),
+        totalTokens:
+          meta.totalTokenCount ??
+          (meta.promptTokenCount ?? 0) + (meta.candidatesTokenCount ?? 0),
+        ...(meta.thoughtsTokenCount !== undefined
+          ? { reasoningTokens: meta.thoughtsTokenCount }
+          : {}),
+        ...(meta.cachedContentTokenCount !== undefined
+          ? { cachedInputTokens: meta.cachedContentTokenCount }
+          : {}),
       }
     : undefined;
 
   return {
     message: { role: "assistant", content },
     toolCalls,
-    finishReason: mapGoogleFinish(candidate?.finishReason, toolCalls.length > 0),
+    finishReason: mapGoogleFinish(
+      candidate?.finishReason,
+      toolCalls.length > 0,
+    ),
     ...(usage !== undefined ? { usage } : {}),
     model: response.modelVersion ?? model,
     raw,

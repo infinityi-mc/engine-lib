@@ -1,7 +1,11 @@
 import { describe, expect, it } from "bun:test";
 
 import type { RunBridgeEvent } from "../src/execution/types";
-import type { ToolContext, ToolDefinition, ToolResult } from "../src/tools/types";
+import type {
+  ToolContext,
+  ToolDefinition,
+  ToolResult,
+} from "../src/tools/types";
 import {
   HttpPolicyError,
   createHttpToolClient,
@@ -9,7 +13,10 @@ import {
   type HttpRequestResult,
 } from "../src/tools-http/index";
 
-function captureCtx(signal?: AbortSignal): { ctx: ToolContext; events: RunBridgeEvent[] } {
+function captureCtx(signal?: AbortSignal): {
+  ctx: ToolContext;
+  events: RunBridgeEvent[];
+} {
   const events: RunBridgeEvent[] = [];
   return {
     events,
@@ -26,15 +33,24 @@ function captureCtx(signal?: AbortSignal): { ctx: ToolContext; events: RunBridge
 
 function customNames(events: readonly RunBridgeEvent[]): string[] {
   return events
-    .filter((event): event is Extract<RunBridgeEvent, { type: "custom" }> => event.type === "custom")
+    .filter(
+      (event): event is Extract<RunBridgeEvent, { type: "custom" }> =>
+        event.type === "custom",
+    )
     .map((event) => event.name);
 }
 
-async function run(tool: ToolDefinition, args: unknown, ctx: ToolContext = { toolCallId: "call" }): Promise<ToolResult> {
+async function run(
+  tool: ToolDefinition,
+  args: unknown,
+  ctx: ToolContext = { toolCallId: "call" },
+): Promise<ToolResult> {
   return tool.execute(args as never, ctx);
 }
 
-function asFetch(fn: (input: unknown, init?: RequestInit) => Promise<Response> | Response): typeof fetch {
+function asFetch(
+  fn: (input: unknown, init?: RequestInit) => Promise<Response> | Response,
+): typeof fetch {
   return fn as unknown as typeof fetch;
 }
 
@@ -42,19 +58,33 @@ function json(data: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(data), {
     status: init?.status ?? 200,
     statusText: init?.statusText,
-    headers: { "content-type": "application/json", ...(init?.headers as Record<string, string> | undefined) },
+    headers: {
+      "content-type": "application/json",
+      ...(init?.headers as Record<string, string> | undefined),
+    },
   });
 }
 
 describe("tools-http config validation", () => {
   it("requires explicit network scope and valid limits", () => {
     expect(() => createHttpToolClient({})).toThrow(HttpPolicyError);
-    expect(() => createHttpToolClient({ allowPublicInternet: true, maxResponseBytes: 0 })).toThrow(HttpPolicyError);
-    expect(() => createHttpToolClient({ allowPublicInternet: true, minTimeoutMs: 500, maxTimeoutMs: 100 })).toThrow(HttpPolicyError);
+    expect(() =>
+      createHttpToolClient({ allowPublicInternet: true, maxResponseBytes: 0 }),
+    ).toThrow(HttpPolicyError);
+    expect(() =>
+      createHttpToolClient({
+        allowPublicInternet: true,
+        minTimeoutMs: 500,
+        maxTimeoutMs: 100,
+      }),
+    ).toThrow(HttpPolicyError);
   });
 
   it("exposes http_get and http_post", () => {
-    const tools = httpTools({ allowedHosts: ["example.com"], fetch: asFetch(async () => new Response("ok")) });
+    const tools = httpTools({
+      allowedHosts: ["example.com"],
+      fetch: asFetch(async () => new Response("ok")),
+    });
     expect(tools.httpGet.name).toBe("http_get");
     expect(tools.httpPost.name).toBe("http_post");
   });
@@ -85,12 +115,17 @@ describe("tools-http policy", () => {
 
     const redirecting = httpTools({
       allowedHosts: ["example.com"],
-      fetch: asFetch(async () => new Response(null, {
-        status: 302,
-        headers: { location: "https://other.example/" },
-      })),
+      fetch: asFetch(
+        async () =>
+          new Response(null, {
+            status: 302,
+            headers: { location: "https://other.example/" },
+          }),
+      ),
     });
-    const redirect = await run(redirecting.httpGet, { url: "https://example.com/" });
+    const redirect = await run(redirecting.httpGet, {
+      url: "https://example.com/",
+    });
     expect(redirect.ok).toBe(false);
     expect(calls).toBe(0);
   });
@@ -125,7 +160,9 @@ describe("http_get/http_post behavior", () => {
   it("parses JSON and text/html responses with compact metadata and events", async () => {
     const { httpGet } = httpTools({
       allowedHosts: ["example.com"],
-      fetch: asFetch(async () => json({ answer: 42 }, { headers: { etag: "v1", "x-secret": "hidden" } })),
+      fetch: asFetch(async () =>
+        json({ answer: 42 }, { headers: { etag: "v1", "x-secret": "hidden" } }),
+      ),
     });
     const { ctx, events } = captureCtx();
     const res = await run(httpGet, { url: "https://example.com/json" }, ctx);
@@ -136,26 +173,38 @@ describe("http_get/http_post behavior", () => {
       { name: "content-type", value: "application/json" },
       { name: "etag", value: "v1" },
     ]);
-    expect(customNames(events)).toEqual(["http.policy", "http.request.start", "http.request.end"]);
+    expect(customNames(events)).toEqual([
+      "http.policy",
+      "http.request.start",
+      "http.request.end",
+    ]);
 
     const htmlTools = httpTools({
       allowedHosts: ["example.com"],
-      fetch: asFetch(async () => new Response("<html><body>Hello</body></html>", {
-        headers: { "content-type": "text/html" },
-      })),
+      fetch: asFetch(
+        async () =>
+          new Response("<html><body>Hello</body></html>", {
+            headers: { "content-type": "text/html" },
+          }),
+      ),
     });
     const html = await run(htmlTools.httpGet, { url: "https://example.com/" });
     expect(html.ok).toBe(true);
-    expect(((html as { content: HttpRequestResult }).content).body).toContain("Hello");
+    expect((html as { content: HttpRequestResult }).content.body).toContain(
+      "Hello",
+    );
   });
 
   it("caps response bytes and reports truncation", async () => {
     const { httpGet } = httpTools({
       allowedHosts: ["example.com"],
       maxResponseBytes: 5,
-      fetch: asFetch(async () => new Response("hello world", {
-        headers: { "content-type": "text/plain" },
-      })),
+      fetch: asFetch(
+        async () =>
+          new Response("hello world", {
+            headers: { "content-type": "text/plain" },
+          }),
+      ),
     });
     const res = await run(httpGet, { url: "https://example.com/" });
     const out = (res as { content: HttpRequestResult }).content;
@@ -189,35 +238,50 @@ describe("http_get/http_post behavior", () => {
       fetch: asFetch(async (input) => {
         const url = String(input);
         if (url.endsWith("/start")) {
-          return new Response(new ReadableStream({
-            cancel: () => {
-              followedRedirectCancelled = true;
+          return new Response(
+            new ReadableStream({
+              cancel: () => {
+                followedRedirectCancelled = true;
+              },
+            }),
+            {
+              status: 302,
+              headers: { location: "https://example.com/final" },
             },
-          }), {
-            status: 302,
-            headers: { location: "https://example.com/final" },
-          });
+          );
         }
-        return new Response("done", { headers: { "content-type": "text/plain" } });
+        return new Response("done", {
+          headers: { "content-type": "text/plain" },
+        });
       }),
     });
-    const followed = await run(followedTools.httpGet, { url: "https://example.com/start" });
+    const followed = await run(followedTools.httpGet, {
+      url: "https://example.com/start",
+    });
     expect(followed.ok).toBe(true);
     expect(followedRedirectCancelled).toBe(true);
 
     let deniedRedirectCancelled = false;
     const deniedTools = httpTools({
       allowedHosts: ["example.com"],
-      fetch: asFetch(async () => new Response(new ReadableStream({
-        cancel: () => {
-          deniedRedirectCancelled = true;
-        },
-      }), {
-        status: 302,
-        headers: { location: "https://other.example/final" },
-      })),
+      fetch: asFetch(
+        async () =>
+          new Response(
+            new ReadableStream({
+              cancel: () => {
+                deniedRedirectCancelled = true;
+              },
+            }),
+            {
+              status: 302,
+              headers: { location: "https://other.example/final" },
+            },
+          ),
+      ),
     });
-    const denied = await run(deniedTools.httpGet, { url: "https://example.com/start" });
+    const denied = await run(deniedTools.httpGet, {
+      url: "https://example.com/start",
+    });
     expect(denied.ok).toBe(false);
     expect(deniedRedirectCancelled).toBe(true);
   });
@@ -268,7 +332,9 @@ describe("http_get/http_post behavior", () => {
       fetch: asFetch(async () => {
         getAttempts += 1;
         if (getAttempts === 1) throw new Error("temporary network failure");
-        return new Response("ok", { headers: { "content-type": "text/plain" } });
+        return new Response("ok", {
+          headers: { "content-type": "text/plain" },
+        });
       }),
     });
     const get = await run(getTools.httpGet, { url: "https://example.com/" });
@@ -280,10 +346,16 @@ describe("http_get/http_post behavior", () => {
       allowedHosts: ["example.com"],
       fetch: asFetch(async () => {
         postAttempts += 1;
-        return new Response("unavailable", { status: 503, headers: { "content-type": "text/plain" } });
+        return new Response("unavailable", {
+          status: 503,
+          headers: { "content-type": "text/plain" },
+        });
       }),
     });
-    const post = await run(postTools.httpPost, { url: "https://example.com/", body: "x" });
+    const post = await run(postTools.httpPost, {
+      url: "https://example.com/",
+      body: "x",
+    });
     expect(post.ok).toBe(true);
     expect((post as { content: HttpRequestResult }).content.status).toBe(503);
     expect(postAttempts).toBe(1);
@@ -311,11 +383,16 @@ describe("http_get/http_post behavior", () => {
             headers: { "content-type": "text/plain" },
           });
         }
-        return new Response("ok", { headers: { "content-type": "text/plain" } });
+        return new Response("ok", {
+          headers: { "content-type": "text/plain" },
+        });
       }),
     });
 
-    const res = await run(httpPost, { url: "https://example.com/start", body: "x" });
+    const res = await run(httpPost, {
+      url: "https://example.com/start",
+      body: "x",
+    });
     expect(res.ok).toBe(true);
     const out = (res as { content: HttpRequestResult }).content;
     expect(out.status).toBe(200);

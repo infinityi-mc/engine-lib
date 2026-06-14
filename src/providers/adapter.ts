@@ -41,7 +41,10 @@ export interface AdapterSpec {
   /** Parse a buffered provider response into the normalized result. */
   parseResponse(raw: unknown, model: string): CompletionResult;
   /** Translate the provider's SSE messages into unified {@link StreamEvent}s. */
-  translateStream(messages: AsyncIterable<SseMessage>, model: string): AsyncIterable<StreamEvent>;
+  translateStream(
+    messages: AsyncIterable<SseMessage>,
+    model: string,
+  ): AsyncIterable<StreamEvent>;
 }
 
 /**
@@ -56,21 +59,31 @@ export function createProvider(spec: AdapterSpec): Provider {
     defaultModel: spec.defaultModel,
     capabilities: spec.capabilities,
 
-    async complete(req: CompletionRequest, ctx?: EngineContext): Promise<CompletionResult> {
+    async complete(
+      req: CompletionRequest,
+      ctx?: EngineContext,
+    ): Promise<CompletionResult> {
       const model = req.model ?? spec.defaultModel;
       const http = createProviderHttp(spec.http, ctx);
       const body = spec.buildBody(req, model, false);
       try {
-        const res = await http.post<unknown>(spec.completePath(model, req), body, {
-          signal: ctx?.signal,
-        });
+        const res = await http.post<unknown>(
+          spec.completePath(model, req),
+          body,
+          {
+            signal: ctx?.signal,
+          },
+        );
         return spec.parseResponse(res.body, model);
       } catch (error) {
         throw toProviderError(spec.name, error);
       }
     },
 
-    async *stream(req: CompletionRequest, ctx?: EngineContext): AsyncIterable<StreamEvent> {
+    async *stream(
+      req: CompletionRequest,
+      ctx?: EngineContext,
+    ): AsyncIterable<StreamEvent> {
       const model = req.model ?? spec.defaultModel;
       const body = spec.buildBody(req, model, true);
       const stream = await openSseStream(

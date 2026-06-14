@@ -8,7 +8,10 @@ import { InMemorySessionStore } from "../src/session/index";
 import { mockProvider } from "../src/testing/index";
 
 /** A minimal lifecycle context for driving hooks directly. */
-const ctx = { signal: new AbortController().signal, logger: { debug() {}, info() {}, warn() {}, error() {} } };
+const ctx = {
+  signal: new AbortController().signal,
+  logger: { debug() {}, info() {}, warn() {}, error() {} },
+};
 
 /** Boot options that never touch real process signals or `process.exit`. */
 const bootOpts = (components: BootOptions["components"]): BootOptions => ({
@@ -30,9 +33,14 @@ describe("agentRuntimeComponent — config validation on start", () => {
 
   it("rejects duplicate provider names", async () => {
     const component = agentRuntimeComponent({
-      providers: [mockProvider({ name: "openai" }), mockProvider({ name: "openai" })],
+      providers: [
+        mockProvider({ name: "openai" }),
+        mockProvider({ name: "openai" }),
+      ],
     });
-    await expect(component.start?.(ctx)).rejects.toThrow(/duplicate provider name/);
+    await expect(component.start?.(ctx)).rejects.toThrow(
+      /duplicate provider name/,
+    );
   });
 
   it("rejects a provider with an empty defaultModel", async () => {
@@ -49,7 +57,9 @@ describe("agentRuntimeComponent — config validation on start", () => {
       probe,
       probeOnStart: true,
     });
-    await expect(component.start?.(ctx)).rejects.toThrow(/probe failed on start/);
+    await expect(component.start?.(ctx)).rejects.toThrow(
+      /probe failed on start/,
+    );
   });
 
   it("does not probe on start unless probeOnStart is set", async () => {
@@ -67,7 +77,9 @@ describe("agentRuntimeComponent — config validation on start", () => {
 
 describe("agentRuntimeComponent — healthcheck", () => {
   it("is healthy with no probe configured", async () => {
-    const result = await agentRuntimeComponent({ providers: [mockProvider()] }).healthcheck?.(ctx);
+    const result = await agentRuntimeComponent({
+      providers: [mockProvider()],
+    }).healthcheck?.(ctx);
     expect(result?.status).toBe("healthy");
     expect(result?.data?.["providers"]).toBe(1);
   });
@@ -81,7 +93,8 @@ describe("agentRuntimeComponent — healthcheck", () => {
   });
 
   it("is degraded when some providers fail", async () => {
-    const probe: ProviderProbe = (p) => (p.name === "b" ? Promise.reject(new Error("down")) : Promise.resolve());
+    const probe: ProviderProbe = (p) =>
+      p.name === "b" ? Promise.reject(new Error("down")) : Promise.resolve();
     const component = agentRuntimeComponent({
       providers: [mockProvider({ name: "a" }), mockProvider({ name: "b" })],
       probe,

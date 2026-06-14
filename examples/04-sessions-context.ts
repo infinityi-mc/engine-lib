@@ -37,4 +37,3 @@ console.log({
   secondOutput: second.output,
   persistedRoles: persisted.map((message) => message.role),
 });
-

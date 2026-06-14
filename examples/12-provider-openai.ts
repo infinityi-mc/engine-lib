@@ -21,4 +21,3 @@ const agent = defineAgent({
 const result = await runAgent(agent, { input: "What is engine-lib?" });
 
 console.log(result.output);
-

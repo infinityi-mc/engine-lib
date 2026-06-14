@@ -38,8 +38,19 @@ export {
 export type { SchemaIssue } from "./errors";
 
 // Schema
-export { asSchema, fromJsonSchema, s, toJsonSchema, validateJsonSchema } from "./schema/index";
-export type { Infer, JsonSchema, SafeParseResult, Schema } from "./schema/index";
+export {
+  asSchema,
+  fromJsonSchema,
+  s,
+  toJsonSchema,
+  validateJsonSchema,
+} from "./schema/index";
+export type {
+  Infer,
+  JsonSchema,
+  SafeParseResult,
+  Schema,
+} from "./schema/index";
 
 // Messages
 export {

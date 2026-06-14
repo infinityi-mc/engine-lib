@@ -1,6 +1,10 @@
 import { defineAgent, runAgent } from "@infinityi/engine-lib";
 import { handoffToolName } from "@infinityi/engine-lib/agent";
-import { scriptedProvider, textResult, toolCallResult } from "@infinityi/engine-lib/testing";
+import {
+  scriptedProvider,
+  textResult,
+  toolCallResult,
+} from "@infinityi/engine-lib/testing";
 
 const billing = defineAgent({
   name: "billing",
@@ -13,7 +17,9 @@ const triage = defineAgent({
   instructions: "Route to the right specialist.",
   handoffs: [billing],
   provider: scriptedProvider([
-    toolCallResult([{ id: "handoff-1", name: handoffToolName("billing"), arguments: {} }]),
+    toolCallResult([
+      { id: "handoff-1", name: handoffToolName("billing"), arguments: {} },
+    ]),
   ]),
 });
 
@@ -24,4 +30,3 @@ console.log({
   finalAgent: result.agent,
   handoffs: result.handoffs,
 });
-

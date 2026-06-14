@@ -15,21 +15,42 @@ describe("StreamAccumulator", () => {
     acc.push({ type: "text_delta", text: "world" });
     acc.push({ type: "finish", finishReason: "stop" });
     const result = acc.result("m");
-    expect(result.message).toEqual({ role: "assistant", content: [{ type: "text", text: "Hello, world" }] });
+    expect(result.message).toEqual({
+      role: "assistant",
+      content: [{ type: "text", text: "Hello, world" }],
+    });
     expect(result.finishReason).toBe("stop");
     expect(result.toolCalls).toEqual([]);
   });
 
   it("assembles tool-call arguments by index", () => {
     const acc = new StreamAccumulator();
-    acc.push({ type: "tool_call_start", index: 0, id: "call_1", name: "get_weather" });
-    acc.push({ type: "tool_call_delta", index: 0, argumentsTextDelta: '{"city":' });
-    acc.push({ type: "tool_call_delta", index: 0, argumentsTextDelta: '"SF"}' });
+    acc.push({
+      type: "tool_call_start",
+      index: 0,
+      id: "call_1",
+      name: "get_weather",
+    });
+    acc.push({
+      type: "tool_call_delta",
+      index: 0,
+      argumentsTextDelta: '{"city":',
+    });
+    acc.push({
+      type: "tool_call_delta",
+      index: 0,
+      argumentsTextDelta: '"SF"}',
+    });
     acc.push({ type: "tool_call_end", index: 0 });
     acc.push({ type: "finish", finishReason: "tool_calls" });
     const result = acc.result("m");
     expect(result.toolCalls).toEqual([
-      { id: "call_1", name: "get_weather", arguments: { city: "SF" }, argumentsText: '{"city":"SF"}' },
+      {
+        id: "call_1",
+        name: "get_weather",
+        arguments: { city: "SF" },
+        argumentsText: '{"city":"SF"}',
+      },
     ]);
     expect(result.finishReason).toBe("tool_calls");
     expect(result.message.content).toContainEqual({
@@ -44,8 +65,16 @@ describe("StreamAccumulator", () => {
     const acc = new StreamAccumulator();
     acc.push({ type: "tool_call_start", index: 0, id: "a", name: "one" });
     acc.push({ type: "tool_call_start", index: 1, id: "b", name: "two" });
-    acc.push({ type: "tool_call_delta", index: 1, argumentsTextDelta: '{"x":1}' });
-    acc.push({ type: "tool_call_delta", index: 0, argumentsTextDelta: '{"y":2}' });
+    acc.push({
+      type: "tool_call_delta",
+      index: 1,
+      argumentsTextDelta: '{"x":1}',
+    });
+    acc.push({
+      type: "tool_call_delta",
+      index: 0,
+      argumentsTextDelta: '{"y":2}',
+    });
     acc.push({ type: "finish", finishReason: "tool_calls" });
     const result = acc.result("m");
     expect(result.toolCalls.map((t) => t.id)).toEqual(["a", "b"]);
@@ -60,11 +89,19 @@ describe("collectStream", () => {
       events(
         { type: "message_start", model: "m" },
         { type: "text_delta", text: "hi" },
-        { type: "finish", finishReason: "stop", usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 } },
+        {
+          type: "finish",
+          finishReason: "stop",
+          usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
+        },
       ),
       "m",
     );
     expect(result.message.content).toEqual([{ type: "text", text: "hi" }]);
-    expect(result.usage).toEqual({ inputTokens: 1, outputTokens: 2, totalTokens: 3 });
+    expect(result.usage).toEqual({
+      inputTokens: 1,
+      outputTokens: 2,
+      totalTokens: 3,
+    });
   });
 });

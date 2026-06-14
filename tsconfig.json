@@ -13,7 +13,7 @@
     "moduleResolution": "bundler",
     "paths": {
       "@infinityi/engine-lib": ["./src/index.ts"],
-      "@infinityi/engine-lib/*": ["./src/*/index.ts", "./src/*.ts"],
+      "@infinityi/engine-lib/*": ["./src/*/index.ts", "./src/*.ts"]
     },
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
@@ -29,6 +29,6 @@
     // Some stricter flags (disabled by default)
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "noPropertyAccessFromIndexSignature": false,
-  },
+    "noPropertyAccessFromIndexSignature": false
+  }
 }

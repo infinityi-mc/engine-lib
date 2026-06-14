@@ -48,7 +48,8 @@ export function createGoogle(opts: GoogleOptions): Provider {
     defaultModel: opts.model ?? "gemini-2.5-pro",
     capabilities: CAPABILITIES,
     http: {
-      baseUrl: opts.baseUrl ?? "https://generativelanguage.googleapis.com/v1beta",
+      baseUrl:
+        opts.baseUrl ?? "https://generativelanguage.googleapis.com/v1beta",
       headers: {
         ...opts.defaultHeaders,
         "x-goog-api-key": apiKey,

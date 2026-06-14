@@ -15,12 +15,16 @@ export function streamOf(...chunks: string[]): ReadableStream<Uint8Array> {
 }
 
 /** An async iterable of canned SSE messages. */
-export async function* sseMessages(...messages: SseMessage[]): AsyncIterable<SseMessage> {
+export async function* sseMessages(
+  ...messages: SseMessage[]
+): AsyncIterable<SseMessage> {
   for (const message of messages) yield message;
 }
 
 /** Collect an async iterable of stream events into an array. */
-export async function collect(events: AsyncIterable<StreamEvent>): Promise<StreamEvent[]> {
+export async function collect(
+  events: AsyncIterable<StreamEvent>,
+): Promise<StreamEvent[]> {
   const out: StreamEvent[] = [];
   for await (const event of events) out.push(event);
   return out;
@@ -32,7 +36,10 @@ export function jsonFetch(
   init?: { status?: number },
 ): { fetch: typeof fetch; calls: Array<{ url: string; init?: RequestInit }> } {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
-  const fetchImpl = (async (input: Parameters<typeof fetch>[0], requestInit?: RequestInit) => {
+  const fetchImpl = (async (
+    input: Parameters<typeof fetch>[0],
+    requestInit?: RequestInit,
+  ) => {
     calls.push({ url: String(input), init: requestInit });
     return new Response(JSON.stringify(body), {
       status: init?.status ?? 200,
@@ -43,9 +50,15 @@ export function jsonFetch(
 }
 
 /** A `fetch` returning a fixed SSE body. */
-export function sseFetch(sse: string): { fetch: typeof fetch; calls: Array<{ url: string; init?: RequestInit }> } {
+export function sseFetch(sse: string): {
+  fetch: typeof fetch;
+  calls: Array<{ url: string; init?: RequestInit }>;
+} {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
-  const fetchImpl = (async (input: Parameters<typeof fetch>[0], requestInit?: RequestInit) => {
+  const fetchImpl = (async (
+    input: Parameters<typeof fetch>[0],
+    requestInit?: RequestInit,
+  ) => {
     calls.push({ url: String(input), init: requestInit });
     return new Response(streamOf(sse), {
       status: 200,

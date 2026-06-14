@@ -31,9 +31,10 @@ export async function* parseSse(
 
   const flush = (): SseMessage | undefined => {
     if (data.length === 0 && event === undefined) return undefined;
-    const message: SseMessage = event !== undefined
-      ? { event, data: data.join("\n") }
-      : { data: data.join("\n") };
+    const message: SseMessage =
+      event !== undefined
+        ? { event, data: data.join("\n") }
+        : { data: data.join("\n") };
     event = undefined;
     data = [];
     return message;

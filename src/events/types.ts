@@ -39,5 +39,9 @@ export interface EventHubOptions {
    * If this callback throws, that failure is swallowed so isolation is
    * preserved.
    */
-  readonly onSubscriberError?: (error: unknown, event: RunEvent, index: number) => void;
+  readonly onSubscriberError?: (
+    error: unknown,
+    event: RunEvent,
+    index: number,
+  ) => void;
 }

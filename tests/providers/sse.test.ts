@@ -4,7 +4,9 @@ import { parseSse } from "../../src/providers/sse";
 import type { SseMessage } from "../../src/providers/sse";
 import { streamOf } from "./helpers";
 
-async function drain(stream: ReadableStream<Uint8Array>): Promise<SseMessage[]> {
+async function drain(
+  stream: ReadableStream<Uint8Array>,
+): Promise<SseMessage[]> {
   const out: SseMessage[] = [];
   for await (const message of parseSse(stream)) out.push(message);
   return out;
@@ -12,7 +14,7 @@ async function drain(stream: ReadableStream<Uint8Array>): Promise<SseMessage[]> 
 
 describe("parseSse", () => {
   it("dispatches on a blank line and parses event/data fields", async () => {
-    const messages = await drain(streamOf("event: ping\ndata: {\"a\":1}\n\n"));
+    const messages = await drain(streamOf('event: ping\ndata: {"a":1}\n\n'));
     expect(messages).toEqual([{ event: "ping", data: '{"a":1}' }]);
   });
 
@@ -39,7 +41,9 @@ describe("parseSse", () => {
   it("keeps a single event when a CRLF is split across chunk boundaries", async () => {
     // The `\r` of the first `\r\n` lands at the end of chunk 1; the `\n` opens
     // chunk 2. Eager normalization would split this into two events.
-    const messages = await drain(streamOf("data: hello\r", "\ndata: world\r\n\r\n"));
+    const messages = await drain(
+      streamOf("data: hello\r", "\ndata: world\r\n\r\n"),
+    );
     expect(messages).toEqual([{ data: "hello\nworld" }]);
   });
 

@@ -10,7 +10,10 @@ describe("s — JSON Schema generation", () => {
     expect(s.number().jsonSchema).toEqual({ type: "number" });
     expect(s.number({ int: true }).jsonSchema).toEqual({ type: "integer" });
     expect(s.boolean().jsonSchema).toEqual({ type: "boolean" });
-    expect(s.enum(["a", "b"]).jsonSchema).toEqual({ type: "string", enum: ["a", "b"] });
+    expect(s.enum(["a", "b"]).jsonSchema).toEqual({
+      type: "string",
+      enum: ["a", "b"],
+    });
   });
 
   it("emits nested objects with required derived from optionality", () => {
@@ -94,6 +97,7 @@ describe("adapters", () => {
     expect(schema.parse(3)).toBe(3);
     const result = schema.safeParse("x");
     expect(result.success).toBe(false);
-    if (!result.success) expect(result.error).toBeInstanceOf(SchemaValidationError);
+    if (!result.success)
+      expect(result.error).toBeInstanceOf(SchemaValidationError);
   });
 });

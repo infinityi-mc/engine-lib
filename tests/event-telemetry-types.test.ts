@@ -25,7 +25,11 @@ import type { Logger, TelemetryHandle } from "../src/runtime/index";
 import type { MessageBus } from "@infinityi/forge/messaging";
 
 function assertEventTelemetryTypes(): void {
-  const event: RunEvent = { type: "run.start", runId: "run_test", agent: "typed" };
+  const event: RunEvent = {
+    type: "run.start",
+    runId: "run_test",
+    agent: "typed",
+  };
 
   const syncSubscriber: RunSubscriber = (e) => {
     const type: RunEvent["type"] = e.type;
@@ -81,7 +85,11 @@ function assertEventTelemetryTypes(): void {
   const telemetryHandle = undefined as unknown as TelemetryHandle;
   const runTelemetry: RunTelemetry = createRunTelemetry(telemetryHandle);
   const span = runTelemetry.startSpan(SPAN_RUN, attrs);
-  runTelemetry.recordRun(attrs, 10, { inputTokens: 1, outputTokens: 2, totalTokens: 3 });
+  runTelemetry.recordRun(attrs, 10, {
+    inputTokens: 1,
+    outputTokens: 2,
+    totalTokens: 3,
+  });
   runTelemetry.recordTool(attrs, 5);
   runTelemetry.withSpan(SPAN_PROVIDER, attrs, async (activeSpan) => {
     activeSpan.ok();

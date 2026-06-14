@@ -8,7 +8,11 @@ import type {
   VectorStoreStats,
 } from "./types";
 import { assertPositiveInteger, throwIfAborted } from "./utils";
-import { assertVector, scoreVectors, type VectorSimilarity } from "./vector-store";
+import {
+  assertVector,
+  scoreVectors,
+  type VectorSimilarity,
+} from "./vector-store";
 
 /** Options for {@link InMemoryVectorStore}. */
 export interface InMemoryVectorStoreOptions {
@@ -61,18 +65,28 @@ export class InMemoryVectorStore implements VectorStore {
       return;
     }
     if (vector.length !== this.recordDimensions) {
-      throw new TypeError(`${label} has ${vector.length} dimensions; expected ${this.recordDimensions}`);
+      throw new TypeError(
+        `${label} has ${vector.length} dimensions; expected ${this.recordDimensions}`,
+      );
     }
   }
 
   private ensureQueryDimensions(vector: EmbeddingVector): void {
     assertVector(vector, "query vector");
-    if (this.recordDimensions !== undefined && vector.length !== this.recordDimensions) {
-      throw new TypeError(`query vector has ${vector.length} dimensions; expected ${this.recordDimensions}`);
+    if (
+      this.recordDimensions !== undefined &&
+      vector.length !== this.recordDimensions
+    ) {
+      throw new TypeError(
+        `query vector has ${vector.length} dimensions; expected ${this.recordDimensions}`,
+      );
     }
   }
 
-  async upsert(records: readonly VectorRecord[], ctx?: EngineContext): Promise<void> {
+  async upsert(
+    records: readonly VectorRecord[],
+    ctx?: EngineContext,
+  ): Promise<void> {
     for (const record of records) {
       throwIfAborted(ctx);
       if (record.id === "") throw new TypeError("record id must not be empty");
@@ -81,7 +95,10 @@ export class InMemoryVectorStore implements VectorStore {
     }
   }
 
-  async query(query: VectorQuery, ctx?: EngineContext): Promise<readonly VectorSearchResult[]> {
+  async query(
+    query: VectorQuery,
+    ctx?: EngineContext,
+  ): Promise<readonly VectorSearchResult[]> {
     throwIfAborted(ctx);
     this.ensureQueryDimensions(query.vector);
     const topK = query.topK ?? 10;
@@ -98,7 +115,9 @@ export class InMemoryVectorStore implements VectorStore {
         text: record.text,
         ...(record.source !== undefined ? { source: record.source } : {}),
         ...(record.metadata !== undefined ? { metadata: record.metadata } : {}),
-        ...(query.includeVectors === true ? { vector: cloneVector(record.vector) } : {}),
+        ...(query.includeVectors === true
+          ? { vector: cloneVector(record.vector) }
+          : {}),
       });
     }
     hits.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
@@ -121,7 +140,9 @@ export class InMemoryVectorStore implements VectorStore {
     throwIfAborted(ctx);
     return {
       records: this.records.size,
-      ...(this.recordDimensions !== undefined ? { dimensions: this.recordDimensions } : {}),
+      ...(this.recordDimensions !== undefined
+        ? { dimensions: this.recordDimensions }
+        : {}),
     };
   }
 }

@@ -5,7 +5,11 @@
  * @module
  */
 
-import type { ContextResolveContext, ContextProvider, TokenCounter } from "../context/types";
+import type {
+  ContextResolveContext,
+  ContextProvider,
+  TokenCounter,
+} from "../context/types";
 import type { EngineContext } from "../runtime/types";
 
 /** Location of a document or chunk inside its source. */
@@ -35,12 +39,16 @@ export interface LoadedDocument {
 }
 
 /** The values a document loader may return. */
-export type DocumentLoaderOutput = Iterable<LoadedDocument> | AsyncIterable<LoadedDocument>;
+export type DocumentLoaderOutput =
+  | Iterable<LoadedDocument>
+  | AsyncIterable<LoadedDocument>;
 
 /** Loads source documents from a host-owned corpus. */
 export interface DocumentLoader {
   readonly name: string;
-  load(ctx?: EngineContext): DocumentLoaderOutput | Promise<DocumentLoaderOutput>;
+  load(
+    ctx?: EngineContext,
+  ): DocumentLoaderOutput | Promise<DocumentLoaderOutput>;
 }
 
 /** Result summary for loading documents from one or more loaders. */
@@ -167,7 +175,10 @@ export interface VectorStore {
   readonly name: string;
   readonly dimensions?: number;
   upsert(records: readonly VectorRecord[], ctx?: EngineContext): Promise<void>;
-  query(query: VectorQuery, ctx?: EngineContext): Promise<readonly VectorSearchResult[]>;
+  query(
+    query: VectorQuery,
+    ctx?: EngineContext,
+  ): Promise<readonly VectorSearchResult[]>;
   delete?(ids: readonly string[], ctx?: EngineContext): Promise<void>;
   clear?(ctx?: EngineContext): Promise<void>;
   stats?(ctx?: EngineContext): Promise<VectorStoreStats>;
@@ -203,7 +214,10 @@ export interface RetrievalResult {
 /** Main retrieval contract. */
 export interface Retriever {
   readonly name: string;
-  retrieve(query: RetrievalQuery, ctx?: EngineContext): Promise<readonly RetrievalResult[]>;
+  retrieve(
+    query: RetrievalQuery,
+    ctx?: EngineContext,
+  ): Promise<readonly RetrievalResult[]>;
 }
 
 /** Keyword retrieval hit used for hybrid merging. */
@@ -218,7 +232,10 @@ export interface KeywordRetrievalResult {
 /** Optional keyword retriever hook. */
 export interface KeywordRetriever {
   readonly name?: string;
-  retrieve(query: RetrievalQuery, ctx?: EngineContext): Promise<readonly KeywordRetrievalResult[]>;
+  retrieve(
+    query: RetrievalQuery,
+    ctx?: EngineContext,
+  ): Promise<readonly KeywordRetrievalResult[]>;
 }
 
 /** Hybrid merge settings for vector and keyword retrieval results. */
@@ -279,7 +296,12 @@ export interface RetrieverContextOptions extends RetrieverContextBudgetOptions {
   readonly retriever: Retriever;
   readonly name?: string;
   readonly title?: string;
-  readonly query?: string | ((ctx: EngineContext, run?: ContextResolveContext) => string | undefined | Promise<string | undefined>);
+  readonly query?:
+    | string
+    | ((
+        ctx: EngineContext,
+        run?: ContextResolveContext,
+      ) => string | undefined | Promise<string | undefined>);
   readonly topK?: number;
   readonly minScore?: number;
   /** Include numeric retrieval scores in rendered context. Defaults to false. */

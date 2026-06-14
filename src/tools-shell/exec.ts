@@ -55,7 +55,10 @@ async function collectStream(
       if (done) break;
       if (value === undefined || value.length === 0) continue;
       if (onChunk !== undefined) {
-        onChunk({ stream: which, text: chunkDecoder.decode(value, { stream: true }) });
+        onChunk({
+          stream: which,
+          text: chunkDecoder.decode(value, { stream: true }),
+        });
       }
       if (keptBytes < maxBytes) {
         const remaining = maxBytes - keptBytes;
@@ -123,8 +126,18 @@ export async function execCommand(opts: ExecOptions): Promise<CommandResult> {
 
   try {
     const [out, err] = await Promise.all([
-      collectStream(proc.stdout as ReadableStream<Uint8Array> | undefined, "stdout", opts.maxOutputBytes, opts.onChunk),
-      collectStream(proc.stderr as ReadableStream<Uint8Array> | undefined, "stderr", opts.maxOutputBytes, opts.onChunk),
+      collectStream(
+        proc.stdout as ReadableStream<Uint8Array> | undefined,
+        "stdout",
+        opts.maxOutputBytes,
+        opts.onChunk,
+      ),
+      collectStream(
+        proc.stderr as ReadableStream<Uint8Array> | undefined,
+        "stderr",
+        opts.maxOutputBytes,
+        opts.onChunk,
+      ),
       proc.exited,
     ]);
     return {

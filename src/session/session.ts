@@ -69,14 +69,26 @@ export function createSession(opts: CreateSessionOptions = {}): Session {
       }
 
       const existing = await store.load(id);
-      const shouldSeedMessages = seed !== undefined && seed.length > 0 && (existing === undefined || existing.messages.length === 0);
-      const shouldSeedMetadata = metadata !== undefined && existing === undefined;
+      const shouldSeedMessages =
+        seed !== undefined &&
+        seed.length > 0 &&
+        (existing === undefined || existing.messages.length === 0);
+      const shouldSeedMetadata =
+        metadata !== undefined && existing === undefined;
       if (shouldSeedMessages || shouldSeedMetadata) {
         await store.save({
           id,
-          messages: shouldSeedMessages ? seed ?? [] : existing?.messages ?? [],
-          ...(shouldSeedMetadata ? { metadata } : existing?.metadata !== undefined ? { metadata: existing.metadata } : {}),
-          ...(existing?.version !== undefined ? { version: existing.version } : {}),
+          messages: shouldSeedMessages
+            ? (seed ?? [])
+            : (existing?.messages ?? []),
+          ...(shouldSeedMetadata
+            ? { metadata }
+            : existing?.metadata !== undefined
+              ? { metadata: existing.metadata }
+              : {}),
+          ...(existing?.version !== undefined
+            ? { version: existing.version }
+            : {}),
         });
       }
     })();
@@ -87,8 +99,12 @@ export function createSession(opts: CreateSessionOptions = {}): Session {
     id,
     ...(metadata !== undefined ? { metadata } : {}),
     ...(tenantId !== undefined ? { tenantId } : {}),
-    ...(opts.expectedModel !== undefined ? { expectedModel: opts.expectedModel } : {}),
-    ...(opts.expectedProvider !== undefined ? { expectedProvider: opts.expectedProvider } : {}),
+    ...(opts.expectedModel !== undefined
+      ? { expectedModel: opts.expectedModel }
+      : {}),
+    ...(opts.expectedProvider !== undefined
+      ? { expectedProvider: opts.expectedProvider }
+      : {}),
     async messages(): Promise<Message[]> {
       await ensureSeeded();
       const state = await store.load(id);

@@ -29,11 +29,17 @@ function assertSessionAndContextTypes(): void {
       return undefined;
     }
 
-    async append(_id: string, _messages: readonly Message[]): Promise<AppendResult> {
+    async append(
+      _id: string,
+      _messages: readonly Message[],
+    ): Promise<AppendResult> {
       return {};
     }
 
-    async setMetadata(_id: string, _metadata: Record<string, unknown>): Promise<void> {}
+    async setMetadata(
+      _id: string,
+      _metadata: Record<string, unknown>,
+    ): Promise<void> {}
 
     async list(): Promise<SessionListPage> {
       return { sessions: [] };
@@ -64,7 +70,8 @@ function assertSessionAndContextTypes(): void {
   };
   const session: Session = createSession(opts);
   const id: string = session.id;
-  const metadata: Readonly<Record<string, unknown>> | undefined = session.metadata;
+  const metadata: Readonly<Record<string, unknown>> | undefined =
+    session.metadata;
   void [id, metadata];
 
   const syncContext: ContextProvider = {
@@ -80,14 +87,26 @@ function assertSessionAndContextTypes(): void {
     },
   };
   const staticProvider: ContextProvider = staticContext("fixed", "Title");
-  const dynamicProvider: ContextProvider = dynamicContext("runtime", async (ctx) => ({
-    hasSignal: ctx.signal !== undefined,
-  }));
-  const dynamicRunProvider: ContextProvider = dynamicContext("runtime-run", (_ctx, run) => ({
-    agent: run?.agentName,
-    inputCount: run?.input.length ?? 0,
-  }));
-  void [syncContext, asyncContext, staticProvider, dynamicProvider, dynamicRunProvider];
+  const dynamicProvider: ContextProvider = dynamicContext(
+    "runtime",
+    async (ctx) => ({
+      hasSignal: ctx.signal !== undefined,
+    }),
+  );
+  const dynamicRunProvider: ContextProvider = dynamicContext(
+    "runtime-run",
+    (_ctx, run) => ({
+      agent: run?.agentName,
+      inputCount: run?.input.length ?? 0,
+    }),
+  );
+  void [
+    syncContext,
+    asyncContext,
+    staticProvider,
+    dynamicProvider,
+    dynamicRunProvider,
+  ];
 
   const resolveCtx: ContextResolveContext = {
     agentName: "typed",

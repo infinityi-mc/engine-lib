@@ -7,7 +7,11 @@ import type {
   SourceLocation,
   TextChunkerOptions,
 } from "./types";
-import { assertNonNegativeInteger, assertPositiveInteger, throwIfAborted } from "./utils";
+import {
+  assertNonNegativeInteger,
+  assertPositiveInteger,
+  throwIfAborted,
+} from "./utils";
 
 const DEFAULT_SEPARATORS = ["\n\n", "\n", ". ", " "] as const;
 
@@ -38,15 +42,26 @@ function lineNumberAt(starts: readonly number[], offset: number): number {
   return Math.max(1, starts.length);
 }
 
-function trimRange(text: string, start: number, end: number): { readonly start: number; readonly end: number } {
+function trimRange(
+  text: string,
+  start: number,
+  end: number,
+): { readonly start: number; readonly end: number } {
   let trimmedStart = start;
   let trimmedEnd = end;
-  while (trimmedStart < trimmedEnd && /\s/.test(text[trimmedStart] ?? "")) trimmedStart += 1;
-  while (trimmedEnd > trimmedStart && /\s/.test(text[trimmedEnd - 1] ?? "")) trimmedEnd -= 1;
+  while (trimmedStart < trimmedEnd && /\s/.test(text[trimmedStart] ?? ""))
+    trimmedStart += 1;
+  while (trimmedEnd > trimmedStart && /\s/.test(text[trimmedEnd - 1] ?? ""))
+    trimmedEnd -= 1;
   return { start: trimmedStart, end: trimmedEnd };
 }
 
-function findChunkEnd(text: string, start: number, maxChars: number, separators: readonly string[]): number {
+function findChunkEnd(
+  text: string,
+  start: number,
+  maxChars: number,
+  separators: readonly string[],
+): number {
   const maxEnd = Math.min(text.length, start + maxChars);
   if (maxEnd >= text.length) return text.length;
 
@@ -54,7 +69,8 @@ function findChunkEnd(text: string, start: number, maxChars: number, separators:
   for (const separator of separators) {
     if (separator === "") continue;
     const index = text.lastIndexOf(separator, maxEnd);
-    if (index > minBreak) return Math.min(text.length, index + separator.length);
+    if (index > minBreak)
+      return Math.min(text.length, index + separator.length);
   }
   return maxEnd;
 }
@@ -62,12 +78,19 @@ function findChunkEnd(text: string, start: number, maxChars: number, separators:
 function fixedRanges(text: string, offset: number, maxChars: number): Range[] {
   const ranges: Range[] = [];
   for (let start = 0; start < text.length; start += maxChars) {
-    ranges.push({ start: offset + start, end: offset + Math.min(text.length, start + maxChars) });
+    ranges.push({
+      start: offset + start,
+      end: offset + Math.min(text.length, start + maxChars),
+    });
   }
   return ranges;
 }
 
-function splitBySeparator(text: string, offset: number, separator: string): Range[] {
+function splitBySeparator(
+  text: string,
+  offset: number,
+  separator: string,
+): Range[] {
   const ranges: Range[] = [];
   let start = 0;
   while (start < text.length) {
@@ -86,18 +109,36 @@ function recursiveUnits(
   separators: readonly string[],
   separatorIndex: number,
 ): Range[] {
-  if (text.length <= maxChars) return [{ start: offset, end: offset + text.length }];
+  if (text.length <= maxChars)
+    return [{ start: offset, end: offset + text.length }];
   const separator = separators[separatorIndex];
-  if (separator === undefined || separator === "") return fixedRanges(text, offset, maxChars);
+  if (separator === undefined || separator === "")
+    return fixedRanges(text, offset, maxChars);
 
   const split = splitBySeparator(text, offset, separator);
-  if (split.length <= 1) return recursiveUnits(text, offset, maxChars, separators, separatorIndex + 1);
+  if (split.length <= 1)
+    return recursiveUnits(
+      text,
+      offset,
+      maxChars,
+      separators,
+      separatorIndex + 1,
+    );
 
   const out: Range[] = [];
   for (const range of split) {
     const length = range.end - range.start;
     if (length <= maxChars) out.push(range);
-    else out.push(...recursiveUnits(text.slice(range.start - offset, range.end - offset), range.start, maxChars, separators, separatorIndex + 1));
+    else
+      out.push(
+        ...recursiveUnits(
+          text.slice(range.start - offset, range.end - offset),
+          range.start,
+          maxChars,
+          separators,
+          separatorIndex + 1,
+        ),
+      );
   }
   return out;
 }
@@ -127,13 +168,23 @@ function sourceForChunk(
 ): SourceAttribution {
   return {
     ...(document.source ?? {}),
-    ...(document.id !== undefined && document.source?.id === undefined ? { id: document.id } : {}),
+    ...(document.id !== undefined && document.source?.id === undefined
+      ? { id: document.id }
+      : {}),
     location,
   };
 }
 
-function chunkId(document: LoadedDocument, documentIndex: number, chunkIndex: number): string {
-  const sourceId = document.id ?? document.source?.id ?? document.source?.uri ?? `document-${documentIndex + 1}`;
+function chunkId(
+  document: LoadedDocument,
+  documentIndex: number,
+  chunkIndex: number,
+): string {
+  const sourceId =
+    document.id ??
+    document.source?.id ??
+    document.source?.uri ??
+    `document-${documentIndex + 1}`;
   return `${sourceId}#chunk-${chunkIndex + 1}`;
 }
 
@@ -160,12 +211,17 @@ function chunkFromRange(
   };
 }
 
-function createChunker(name: string, options: TextChunkerOptions, recursive: boolean): Chunker {
+function createChunker(
+  name: string,
+  options: TextChunkerOptions,
+  recursive: boolean,
+): Chunker {
   const maxChars = options.maxChars;
   const overlapChars = options.overlapChars ?? 0;
   assertPositiveInteger("maxChars", maxChars);
   assertNonNegativeInteger("overlapChars", overlapChars);
-  if (overlapChars >= maxChars) throw new TypeError("overlapChars must be smaller than maxChars");
+  if (overlapChars >= maxChars)
+    throw new TypeError("overlapChars must be smaller than maxChars");
   const separators = options.separators ?? DEFAULT_SEPARATORS;
 
   return {
@@ -177,7 +233,10 @@ function createChunker(name: string, options: TextChunkerOptions, recursive: boo
 
       const starts = lineStarts(text);
       const baseRanges = recursive
-        ? mergeRanges(recursiveUnits(text, 0, maxChars, separators, 0), maxChars)
+        ? mergeRanges(
+            recursiveUnits(text, 0, maxChars, separators, 0),
+            maxChars,
+          )
         : (() => {
             const ranges: Range[] = [];
             let start = 0;
@@ -191,7 +250,10 @@ function createChunker(name: string, options: TextChunkerOptions, recursive: boo
           })();
       const ranges = recursive
         ? baseRanges.map((range, index) => ({
-            start: index === 0 ? range.start : Math.max(0, range.end - maxChars, range.start - overlapChars),
+            start:
+              index === 0
+                ? range.start
+                : Math.max(0, range.end - maxChars, range.start - overlapChars),
             end: range.end,
           }))
         : baseRanges;
@@ -199,7 +261,13 @@ function createChunker(name: string, options: TextChunkerOptions, recursive: boo
       const chunks: RetrievalChunk[] = [];
       for (const range of ranges) {
         throwIfAborted(ctx);
-        const chunk = chunkFromRange(document, ctx?.documentIndex ?? 0, chunks.length, starts, range);
+        const chunk = chunkFromRange(
+          document,
+          ctx?.documentIndex ?? 0,
+          chunks.length,
+          starts,
+          range,
+        );
         if (chunk !== undefined) chunks.push(chunk);
       }
       return chunks;

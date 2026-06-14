@@ -44,10 +44,7 @@ export class AgentError extends Error {
 export class ProviderError extends AgentError {
   readonly provider?: string;
 
-  constructor(
-    message: string,
-    options?: ErrorOptions & { provider?: string },
-  ) {
+  constructor(message: string, options?: ErrorOptions & { provider?: string }) {
     super(message, options);
     this.name = "ProviderError";
     if (options?.provider !== undefined) this.provider = options.provider;
@@ -58,10 +55,7 @@ export class ProviderError extends AgentError {
 export class ToolError extends AgentError {
   readonly toolName?: string;
 
-  constructor(
-    message: string,
-    options?: ErrorOptions & { toolName?: string },
-  ) {
+  constructor(message: string, options?: ErrorOptions & { toolName?: string }) {
     super(message, options);
     this.name = "ToolError";
     if (options?.toolName !== undefined) this.toolName = options.toolName;
@@ -108,10 +102,7 @@ export class ExecutionError extends AgentError {
 export class MaxStepsExceededError extends ExecutionError {
   readonly steps?: number;
 
-  constructor(
-    message: string,
-    options?: ErrorOptions & { steps?: number },
-  ) {
+  constructor(message: string, options?: ErrorOptions & { steps?: number }) {
     super(message, options);
     this.name = "MaxStepsExceededError";
     if (options?.steps !== undefined) this.steps = options.steps;
@@ -122,10 +113,7 @@ export class MaxStepsExceededError extends ExecutionError {
 export class MaxHandoffsExceededError extends ExecutionError {
   readonly handoffs?: number;
 
-  constructor(
-    message: string,
-    options?: ErrorOptions & { handoffs?: number },
-  ) {
+  constructor(message: string, options?: ErrorOptions & { handoffs?: number }) {
     super(message, options);
     this.name = "MaxHandoffsExceededError";
     if (options?.handoffs !== undefined) this.handoffs = options.handoffs;

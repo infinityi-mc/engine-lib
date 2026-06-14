@@ -11,7 +11,10 @@ export interface SummarizingCompactorOptions {
   readonly provider: Provider;
   readonly model: string;
   readonly keepRecentTurns?: number;
-  readonly shouldCompactAt?: { readonly messages?: number; readonly tokens?: number };
+  readonly shouldCompactAt?: {
+    readonly messages?: number;
+    readonly tokens?: number;
+  };
   readonly countTokens?: TokenCounter;
 }
 
@@ -19,8 +22,10 @@ function textOf(message: Message): string {
   return message.content
     .map((part) => {
       if (part.type === "text") return part.text;
-      if (part.type === "tool_result") return part.content.map((text) => text.text).join(" ");
-      if (part.type === "tool_call") return `[tool_call ${part.name} ${JSON.stringify(part.arguments)}]`;
+      if (part.type === "tool_result")
+        return part.content.map((text) => text.text).join(" ");
+      if (part.type === "tool_call")
+        return `[tool_call ${part.name} ${JSON.stringify(part.arguments)}]`;
       return "";
     })
     .filter((text) => text !== "")
@@ -28,7 +33,9 @@ function textOf(message: Message): string {
 }
 
 function transcript(messages: readonly Message[]): string {
-  return messages.map((message) => `${message.role}: ${textOf(message)}`).join("\n");
+  return messages
+    .map((message) => `${message.role}: ${textOf(message)}`)
+    .join("\n");
 }
 
 function isSummaryMessage(message: Message): boolean {
@@ -36,7 +43,10 @@ function isSummaryMessage(message: Message): boolean {
 }
 
 function summaryText(messages: readonly Message[]): string {
-  return messages.map(textOf).filter((text) => text !== "").join("\n\n");
+  return messages
+    .map(textOf)
+    .filter((text) => text !== "")
+    .join("\n\n");
 }
 
 function flatten(groups: ReturnType<typeof splitConversationTurns>): Message[] {
@@ -44,7 +54,10 @@ function flatten(groups: ReturnType<typeof splitConversationTurns>): Message[] {
 }
 
 function makeSummaryMessage(summary: string): Message {
-  const part: TextPart = { type: "text", text: `Summary of earlier conversation:\n${summary}` };
+  const part: TextPart = {
+    type: "text",
+    text: `Summary of earlier conversation:\n${summary}`,
+  };
   return {
     role: "system",
     content: [part],
@@ -53,29 +66,43 @@ function makeSummaryMessage(summary: string): Message {
 }
 
 /** Persistently compress old turns into one pinned system summary message. */
-export function summarizingCompactor(opts: SummarizingCompactorOptions): SessionCompactor {
+export function summarizingCompactor(
+  opts: SummarizingCompactorOptions,
+): SessionCompactor {
   const keepRecentTurns = opts.keepRecentTurns ?? 6;
   const threshold = opts.shouldCompactAt ?? { messages: 50 };
   const countTokens = opts.countTokens ?? estimateTokens;
 
   return {
     shouldCompact(state) {
-      const nonSummaryMessages = state.messages.filter((message) => !isSummaryMessage(message));
-      const rest = nonSummaryMessages.filter((message) => message.role !== "system");
+      const nonSummaryMessages = state.messages.filter(
+        (message) => !isSummaryMessage(message),
+      );
+      const rest = nonSummaryMessages.filter(
+        (message) => message.role !== "system",
+      );
       const groups = splitConversationTurns(rest);
       if (groups.length <= keepRecentTurns) return false;
 
       const messageThresholdHit =
-        threshold.messages !== undefined && state.messages.length > threshold.messages;
+        threshold.messages !== undefined &&
+        state.messages.length > threshold.messages;
       const tokenThresholdHit =
-        threshold.tokens !== undefined && countTokens(state.messages) > threshold.tokens;
+        threshold.tokens !== undefined &&
+        countTokens(state.messages) > threshold.tokens;
       return messageThresholdHit || tokenThresholdHit;
     },
     async compact(state) {
       const existingSummaries = state.messages.filter(isSummaryMessage);
-      const withoutSummaries = state.messages.filter((message) => !isSummaryMessage(message));
-      const systemMessages = withoutSummaries.filter((message) => message.role === "system");
-      const rest = withoutSummaries.filter((message) => message.role !== "system");
+      const withoutSummaries = state.messages.filter(
+        (message) => !isSummaryMessage(message),
+      );
+      const systemMessages = withoutSummaries.filter(
+        (message) => message.role === "system",
+      );
+      const rest = withoutSummaries.filter(
+        (message) => message.role !== "system",
+      );
       const groups = splitConversationTurns(rest);
       const splitAt = Math.max(0, groups.length - keepRecentTurns);
       const older = flatten(groups.slice(0, splitAt));
@@ -87,7 +114,9 @@ export function summarizingCompactor(opts: SummarizingCompactorOptions): Session
       const promptBody = [
         priorSummary === "" ? undefined : `Existing summary:\n${priorSummary}`,
         `Conversation to fold into the summary:\n${transcript(older)}`,
-      ].filter((part): part is string => part !== undefined).join("\n\n");
+      ]
+        .filter((part): part is string => part !== undefined)
+        .join("\n\n");
 
       const completion = await opts.provider.complete({
         model: opts.model,

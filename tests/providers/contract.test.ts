@@ -17,7 +17,10 @@ describe("mockProvider", () => {
     const seen: CompletionRequest[] = [];
     const provider = mockProvider({
       result: {
-        message: { role: "assistant", content: [{ type: "text", text: "scripted" }] },
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "scripted" }],
+        },
         toolCalls: [],
         finishReason: "stop",
         model: "mock-model",
@@ -26,7 +29,9 @@ describe("mockProvider", () => {
       onRequest: (r) => seen.push(r),
     });
     const result = await provider.complete(req);
-    expect(result.message.content).toEqual([{ type: "text", text: "scripted" }]);
+    expect(result.message.content).toEqual([
+      { type: "text", text: "scripted" },
+    ]);
     expect(seen).toHaveLength(1);
   });
 
@@ -43,11 +48,21 @@ describe("mockProvider", () => {
           role: "assistant",
           content: [
             { type: "text", text: "checking" },
-            { type: "tool_call", id: "call_1", name: "lookup", arguments: { city: "SF" } },
+            {
+              type: "tool_call",
+              id: "call_1",
+              name: "lookup",
+              arguments: { city: "SF" },
+            },
           ],
         },
         toolCalls: [
-          { id: "call_1", name: "lookup", arguments: { city: "SF" }, argumentsText: '{"city":"SF"}' },
+          {
+            id: "call_1",
+            name: "lookup",
+            arguments: { city: "SF" },
+            argumentsText: '{"city":"SF"}',
+          },
         ],
         finishReason: "tool_calls",
         model: "mock-model",
@@ -59,10 +74,20 @@ describe("mockProvider", () => {
 
     expect(result.message.content).toEqual([
       { type: "text", text: "checking" },
-      { type: "tool_call", id: "call_1", name: "lookup", arguments: { city: "SF" } },
+      {
+        type: "tool_call",
+        id: "call_1",
+        name: "lookup",
+        arguments: { city: "SF" },
+      },
     ]);
     expect(result.toolCalls).toEqual([
-      { id: "call_1", name: "lookup", arguments: { city: "SF" }, argumentsText: '{"city":"SF"}' },
+      {
+        id: "call_1",
+        name: "lookup",
+        arguments: { city: "SF" },
+        argumentsText: '{"city":"SF"}',
+      },
     ]);
     expect(result.finishReason).toBe("tool_calls");
   });
@@ -73,7 +98,9 @@ describe("adapter complete() over injected fetch", () => {
     const { fetch, calls } = jsonFetch({
       model: "gpt-5",
       status: "completed",
-      output: [{ type: "message", content: [{ type: "output_text", text: "hi" }] }],
+      output: [
+        { type: "message", content: [{ type: "output_text", text: "hi" }] },
+      ],
     });
     const provider = createOpenAI({ apiKey: "k", fetch });
     const result = await provider.complete(req);
@@ -82,7 +109,11 @@ describe("adapter complete() over injected fetch", () => {
   });
 
   it("anthropic posts to /messages", async () => {
-    const { fetch, calls } = jsonFetch({ model: "claude", content: [{ type: "text", text: "hi" }], stop_reason: "end_turn" });
+    const { fetch, calls } = jsonFetch({
+      model: "claude",
+      content: [{ type: "text", text: "hi" }],
+      stop_reason: "end_turn",
+    });
     const provider = createAnthropic({ apiKey: "k", fetch });
     const result = await provider.complete(req);
     expect(calls[0]?.url).toBe("https://api.anthropic.com/v1/messages");
@@ -90,16 +121,31 @@ describe("adapter complete() over injected fetch", () => {
   });
 
   it("google posts to models/{model}:generateContent", async () => {
-    const { fetch, calls } = jsonFetch({ candidates: [{ content: { parts: [{ text: "hi" }] }, finishReason: "STOP" }] });
-    const provider = createGoogle({ apiKey: "k", model: "gemini-2.5-pro", fetch });
+    const { fetch, calls } = jsonFetch({
+      candidates: [
+        { content: { parts: [{ text: "hi" }] }, finishReason: "STOP" },
+      ],
+    });
+    const provider = createGoogle({
+      apiKey: "k",
+      model: "gemini-2.5-pro",
+      fetch,
+    });
     const result = await provider.complete(req);
     expect(calls[0]?.url).toContain("models/gemini-2.5-pro:generateContent");
     expect(result.message.content).toEqual([{ type: "text", text: "hi" }]);
   });
 
   it("openai-compatible posts to /chat/completions", async () => {
-    const { fetch, calls } = jsonFetch({ model: "m", choices: [{ finish_reason: "stop", message: { content: "hi" } }] });
-    const provider = createOpenAICompatible({ baseUrl: "https://host/v1", model: "m", fetch });
+    const { fetch, calls } = jsonFetch({
+      model: "m",
+      choices: [{ finish_reason: "stop", message: { content: "hi" } }],
+    });
+    const provider = createOpenAICompatible({
+      baseUrl: "https://host/v1",
+      model: "m",
+      fetch,
+    });
     const result = await provider.complete(req);
     expect(calls[0]?.url).toBe("https://host/v1/chat/completions");
     expect(result.message.content).toEqual([{ type: "text", text: "hi" }]);
@@ -112,16 +158,23 @@ describe("adapter complete() over injected fetch", () => {
       fetch: openaiFetch.fetch,
       defaultHeaders: { authorization: "Bearer sk-other" },
     }).complete(req);
-    expect(new Headers(openaiFetch.calls[0]?.init?.headers).get("authorization")).toBe("Bearer sk-real");
+    expect(
+      new Headers(openaiFetch.calls[0]?.init?.headers).get("authorization"),
+    ).toBe("Bearer sk-real");
 
     const anthropicFetch = jsonFetch({ content: [], stop_reason: "end_turn" });
     await createAnthropic({
       apiKey: "anthropic-real",
       version: "2023-06-01",
       fetch: anthropicFetch.fetch,
-      defaultHeaders: { "x-api-key": "anthropic-other", "anthropic-version": "other-version" },
+      defaultHeaders: {
+        "x-api-key": "anthropic-other",
+        "anthropic-version": "other-version",
+      },
     }).complete(req);
-    const anthropicHeaders = new Headers(anthropicFetch.calls[0]?.init?.headers);
+    const anthropicHeaders = new Headers(
+      anthropicFetch.calls[0]?.init?.headers,
+    );
     expect(anthropicHeaders.get("x-api-key")).toBe("anthropic-real");
     expect(anthropicHeaders.get("anthropic-version")).toBe("2023-06-01");
 
@@ -131,7 +184,9 @@ describe("adapter complete() over injected fetch", () => {
       fetch: googleFetch.fetch,
       defaultHeaders: { "x-goog-api-key": "google-other" },
     }).complete(req);
-    expect(new Headers(googleFetch.calls[0]?.init?.headers).get("x-goog-api-key")).toBe("google-real");
+    expect(
+      new Headers(googleFetch.calls[0]?.init?.headers).get("x-goog-api-key"),
+    ).toBe("google-real");
   });
 });
 
@@ -143,12 +198,19 @@ describe("adapter stream() over injected SSE fetch", () => {
       "data: [DONE]\n\n",
     ].join("");
     const { fetch } = sseFetch(sse);
-    const provider = createOpenAICompatible({ baseUrl: "https://host/v1", model: "m", fetch });
+    const provider = createOpenAICompatible({
+      baseUrl: "https://host/v1",
+      model: "m",
+      fetch,
+    });
     const events = await collect(provider.stream(req));
     expect(events[0]).toEqual({ type: "message_start", model: "m" });
     expect(events).toContainEqual({ type: "text_delta", text: "he" });
     expect(events).toContainEqual({ type: "text_delta", text: "llo" });
-    expect(events[events.length - 1]).toEqual({ type: "finish", finishReason: "stop" });
+    expect(events[events.length - 1]).toEqual({
+      type: "finish",
+      finishReason: "stop",
+    });
   });
 
   it("wraps a mid-stream body error as ProviderError", async () => {
@@ -156,7 +218,9 @@ describe("adapter stream() over injected SSE fetch", () => {
     const body = new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ model: "m", choices: [{ delta: { content: "he" } }] })}\n\n`),
+          encoder.encode(
+            `data: ${JSON.stringify({ model: "m", choices: [{ delta: { content: "he" } }] })}\n\n`,
+          ),
         );
         controller.error(new Error("network drop"));
       },
@@ -166,7 +230,13 @@ describe("adapter stream() over injected SSE fetch", () => {
         status: 200,
         headers: { "content-type": "text/event-stream" },
       })) as unknown as typeof fetch;
-    const provider = createOpenAICompatible({ baseUrl: "https://host/v1", model: "m", fetch: fetchImpl });
-    await expect(collect(provider.stream(req))).rejects.toBeInstanceOf(ProviderError);
+    const provider = createOpenAICompatible({
+      baseUrl: "https://host/v1",
+      model: "m",
+      fetch: fetchImpl,
+    });
+    await expect(collect(provider.stream(req))).rejects.toBeInstanceOf(
+      ProviderError,
+    );
   });
 });

@@ -38,7 +38,9 @@ function isStatus(value: unknown): value is SessionResumeInfo["lastRunStatus"] {
 }
 
 function isStringArray(value: unknown): value is readonly string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === "string");
+  return (
+    Array.isArray(value) && value.every((item) => typeof item === "string")
+  );
 }
 
 function metadataOf(
@@ -64,19 +66,31 @@ export function readResumeInfo(
   if (typeof value.agentName !== "string") return undefined;
   if (typeof value.lastActiveAt !== "string") return undefined;
   if (!isStatus(value.lastRunStatus)) return undefined;
-  if (value.model !== undefined && typeof value.model !== "string") return undefined;
-  if (value.provider !== undefined && typeof value.provider !== "string") return undefined;
-  if (value.agentVersion !== undefined && typeof value.agentVersion !== "string") return undefined;
-  if (value.toolNames !== undefined && !isStringArray(value.toolNames)) return undefined;
-  if (value.totalUsage !== undefined && !isUsage(value.totalUsage)) return undefined;
+  if (value.model !== undefined && typeof value.model !== "string")
+    return undefined;
+  if (value.provider !== undefined && typeof value.provider !== "string")
+    return undefined;
+  if (
+    value.agentVersion !== undefined &&
+    typeof value.agentVersion !== "string"
+  )
+    return undefined;
+  if (value.toolNames !== undefined && !isStringArray(value.toolNames))
+    return undefined;
+  if (value.totalUsage !== undefined && !isUsage(value.totalUsage))
+    return undefined;
 
   return {
     schemaVersion: value.schemaVersion,
     agentName: value.agentName,
     ...(value.model !== undefined ? { model: value.model } : {}),
     ...(value.provider !== undefined ? { provider: value.provider } : {}),
-    ...(value.agentVersion !== undefined ? { agentVersion: value.agentVersion } : {}),
-    ...(value.toolNames !== undefined ? { toolNames: [...value.toolNames] } : {}),
+    ...(value.agentVersion !== undefined
+      ? { agentVersion: value.agentVersion }
+      : {}),
+    ...(value.toolNames !== undefined
+      ? { toolNames: [...value.toolNames] }
+      : {}),
     lastActiveAt: value.lastActiveAt,
     lastRunStatus: value.lastRunStatus,
     ...(value.totalUsage !== undefined ? { totalUsage: value.totalUsage } : {}),

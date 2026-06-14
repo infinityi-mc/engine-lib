@@ -13,7 +13,12 @@ import { mapGoogleFinish } from "./map";
 
 interface GeminiChunk {
   candidates?: Array<{
-    content?: { parts?: Array<{ text?: string; functionCall?: { id?: string; name?: string; args?: unknown } }> };
+    content?: {
+      parts?: Array<{
+        text?: string;
+        functionCall?: { id?: string; name?: string; args?: unknown };
+      }>;
+    };
     finishReason?: string;
   }>;
   usageMetadata?: {
@@ -58,7 +63,12 @@ export async function* translateGoogleStream(
         const index = toolIndex++;
         hadToolCalls = true;
         const name = part.functionCall.name ?? "";
-        yield { type: "tool_call_start", index, id: part.functionCall.id ?? `call_${name}_${index}`, name };
+        yield {
+          type: "tool_call_start",
+          index,
+          id: part.functionCall.id ?? `call_${name}_${index}`,
+          name,
+        };
         yield {
           type: "tool_call_delta",
           index,
@@ -67,16 +77,23 @@ export async function* translateGoogleStream(
         yield { type: "tool_call_end", index };
       }
     }
-    if (candidate?.finishReason !== undefined) finishReason = candidate.finishReason;
+    if (candidate?.finishReason !== undefined)
+      finishReason = candidate.finishReason;
 
     if (chunk.usageMetadata) {
       const meta = chunk.usageMetadata;
       usage = {
         inputTokens: meta.promptTokenCount ?? 0,
         outputTokens: meta.candidatesTokenCount ?? 0,
-        totalTokens: meta.totalTokenCount ?? (meta.promptTokenCount ?? 0) + (meta.candidatesTokenCount ?? 0),
-        ...(meta.thoughtsTokenCount !== undefined ? { reasoningTokens: meta.thoughtsTokenCount } : {}),
-        ...(meta.cachedContentTokenCount !== undefined ? { cachedInputTokens: meta.cachedContentTokenCount } : {}),
+        totalTokens:
+          meta.totalTokenCount ??
+          (meta.promptTokenCount ?? 0) + (meta.candidatesTokenCount ?? 0),
+        ...(meta.thoughtsTokenCount !== undefined
+          ? { reasoningTokens: meta.thoughtsTokenCount }
+          : {}),
+        ...(meta.cachedContentTokenCount !== undefined
+          ? { cachedInputTokens: meta.cachedContentTokenCount }
+          : {}),
       };
     }
   }

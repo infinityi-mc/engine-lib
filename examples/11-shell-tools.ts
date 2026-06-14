@@ -1,4 +1,8 @@
-import type { ToolContext, ToolDefinition, ToolResult } from "@infinityi/engine-lib/tools";
+import type {
+  ToolContext,
+  ToolDefinition,
+  ToolResult,
+} from "@infinityi/engine-lib/tools";
 import { shellTools } from "@infinityi/engine-lib/tools-shell";
 
 const cwd = process.cwd();
@@ -10,7 +14,10 @@ const shell = shellTools({
   },
   env: { allow: ["PATH"] },
   requiresApproval: (request) => request.command !== process.execPath,
-  approve: () => ({ approved: false, reason: "example denies unrecognized commands" }),
+  approve: () => ({
+    approved: false,
+    reason: "example denies unrecognized commands",
+  }),
 });
 
 const result = await runTool(shell.runCommand, {
@@ -26,7 +33,10 @@ async function runTool<TArgs>(
   tool: ToolDefinition<TArgs>,
   args: TArgs,
 ): Promise<ToolResult> {
-  const ctx: ToolContext = { toolCallId: "example-shell", agentName: "example" };
+  const ctx: ToolContext = {
+    toolCallId: "example-shell",
+    agentName: "example",
+  };
   return tool.execute(args, ctx);
 }
 
@@ -36,4 +46,3 @@ function content(result: ToolResult): unknown {
   }
   return result.content;
 }
-

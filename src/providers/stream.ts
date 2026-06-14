@@ -30,10 +30,23 @@ import type { CompletionResult, FinishReason, ToolCall, Usage } from "./types";
 export type StreamEvent =
   | { readonly type: "message_start"; readonly model: string }
   | { readonly type: "text_delta"; readonly text: string }
-  | { readonly type: "tool_call_start"; readonly index: number; readonly id: string; readonly name: string }
-  | { readonly type: "tool_call_delta"; readonly index: number; readonly argumentsTextDelta: string }
+  | {
+      readonly type: "tool_call_start";
+      readonly index: number;
+      readonly id: string;
+      readonly name: string;
+    }
+  | {
+      readonly type: "tool_call_delta";
+      readonly index: number;
+      readonly argumentsTextDelta: string;
+    }
   | { readonly type: "tool_call_end"; readonly index: number }
-  | { readonly type: "finish"; readonly finishReason: FinishReason; readonly usage?: Usage }
+  | {
+      readonly type: "finish";
+      readonly finishReason: FinishReason;
+      readonly usage?: Usage;
+    }
   | { readonly type: "error"; readonly error: ProviderError };
 
 interface PartialToolCall {
@@ -99,7 +112,9 @@ export class StreamAccumulator {
   /** Build the final result. `model` is a fallback when no `message_start` was seen. */
   result(model: string, raw?: unknown): CompletionResult {
     const resolvedModel = this.model ?? model;
-    const ordered = [...this.toolCalls.entries()].sort(([a], [b]) => a - b).map(([, c]) => c);
+    const ordered = [...this.toolCalls.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([, c]) => c);
 
     const content: ContentPart[] = [];
     if (this.text !== "") content.push({ type: "text", text: this.text });
@@ -124,9 +139,10 @@ export class StreamAccumulator {
     return {
       message,
       toolCalls,
-      finishReason: this.toolCalls.size > 0 && this.finishReason === "stop"
-        ? "tool_calls"
-        : this.finishReason,
+      finishReason:
+        this.toolCalls.size > 0 && this.finishReason === "stop"
+          ? "tool_calls"
+          : this.finishReason,
       ...(this.usage !== undefined ? { usage: this.usage } : {}),
       model: resolvedModel,
       raw,

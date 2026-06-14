@@ -40,7 +40,11 @@ function assertProviderTypes(): void {
     messages: [user("weather?")],
     tools: [{ name: "weather", description: "Get weather.", parameters }],
     toolChoice: toolChoiceByName,
-    responseSchema: { name: "weather_report", schema: parameters, strict: true },
+    responseSchema: {
+      name: "weather_report",
+      schema: parameters,
+      strict: true,
+    },
     maxOutputTokens: 500,
     temperature: 0.2,
     topP: 0.9,
@@ -62,7 +66,10 @@ function assertProviderTypes(): void {
   };
 
   // @ts-expect-error every capability flag is required.
-  const incompleteCapabilities: ProviderCapabilities = { tools: true, streaming: true };
+  const incompleteCapabilities: ProviderCapabilities = {
+    tools: true,
+    streaming: true,
+  };
   void [capabilities, incompleteCapabilities];
 
   const result: CompletionResult = {
@@ -84,10 +91,14 @@ function assertProviderTypes(): void {
     { type: "text_delta", text: "he" },
     { type: "text_delta", text: "llo" },
     { type: "tool_call_start", index: 0, id: "call_1", name: "weather" },
-    { type: "tool_call_delta", index: 0, argumentsTextDelta: "{\"city\"" },
-    { type: "tool_call_delta", index: 0, argumentsTextDelta: ":\"SF\"}" },
+    { type: "tool_call_delta", index: 0, argumentsTextDelta: '{"city"' },
+    { type: "tool_call_delta", index: 0, argumentsTextDelta: ':"SF"}' },
     { type: "tool_call_end", index: 0 },
-    { type: "finish", finishReason: "tool_calls", usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } },
+    {
+      type: "finish",
+      finishReason: "tool_calls",
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+    },
   ];
   void streamEvents;
 

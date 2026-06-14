@@ -76,13 +76,15 @@ export function asTool<TArgs = { input: string }>(
   agent: AgentDefinition,
   opts: AsToolOptions<TArgs> = {},
 ): ToolDefinition<TArgs> {
-  const parameters = (opts.parameters ?? DEFAULT_PARAMETERS) as unknown as Schema<TArgs>;
+  const parameters = (opts.parameters ??
+    DEFAULT_PARAMETERS) as unknown as Schema<TArgs>;
   const toInput =
     opts.toInput ?? ((args: TArgs) => (args as { input: string }).input);
 
   return defineTool<TArgs>({
     name: opts.name ?? agent.name,
-    description: opts.description ?? `Delegate the task to the "${agent.name}" agent.`,
+    description:
+      opts.description ?? `Delegate the task to the "${agent.name}" agent.`,
     parameters,
     execute: async (args: TArgs, ctx: ToolContext): Promise<ToolResult> => {
       const bridge = ctx.run;

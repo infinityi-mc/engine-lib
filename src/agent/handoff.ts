@@ -48,7 +48,8 @@ export function resolveHandoffTargets(
 ): Map<string, AgentDefinition> {
   const targets = new Map<string, AgentDefinition>();
   for (const entry of agent.handoffs ?? []) {
-    const target = typeof entry === "string" ? resolveByName(agent, entry, registry) : entry;
+    const target =
+      typeof entry === "string" ? resolveByName(agent, entry, registry) : entry;
     const toolName = handoffToolName(target.name);
     if (targets.has(toolName)) {
       throw new ExecutionError(

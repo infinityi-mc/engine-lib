@@ -1,7 +1,11 @@
 import { describe, expect, it } from "bun:test";
 
 import { s, type Infer } from "../src/schema/index";
-import { defineTool, type ToolContext, type ToolResult } from "../src/tools/index";
+import {
+  defineTool,
+  type ToolContext,
+  type ToolResult,
+} from "../src/tools/index";
 
 const ctx = undefined as unknown as ToolContext;
 
@@ -13,14 +17,22 @@ function assertToolAndSchemaTypes(): void {
   });
 
   type Params = Infer<typeof params>;
-  const withOptional: Params = { path: "README.md", mode: "text", maxBytes: 1024 };
+  const withOptional: Params = {
+    path: "README.md",
+    mode: "text",
+    maxBytes: 1024,
+  };
   const withoutOptional: Params = { path: "README.md", mode: "text" };
   void [withOptional, withoutOptional];
 
   // @ts-expect-error path is required.
   const missingRequired: Params = { mode: "text" };
   // @ts-expect-error maxBytes is a number when present.
-  const wrongOptionalType: Params = { path: "README.md", mode: "text", maxBytes: "1024" };
+  const wrongOptionalType: Params = {
+    path: "README.md",
+    mode: "text",
+    maxBytes: "1024",
+  };
   void [missingRequired, wrongOptionalType];
 
   const readFile = defineTool({

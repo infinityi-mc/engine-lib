@@ -1,7 +1,11 @@
 import { describe, expect, it } from "bun:test";
 
 import { ExecutionError } from "../src/errors";
-import { createToolRegistry, defineAgent, defineTool } from "../src/agent/index";
+import {
+  createToolRegistry,
+  defineAgent,
+  defineTool,
+} from "../src/agent/index";
 import type { AgentHooks, Instructions } from "../src/agent/index";
 import { s } from "../src/schema/index";
 import { mockProvider } from "../src/testing/index";
@@ -39,7 +43,11 @@ describe("defineAgent", () => {
     const staticInstr: Instructions = "be terse";
     const dynamicInstr: Instructions = (c) => `agent is ${c.agent.name}`;
 
-    const agent = defineAgent({ name: "dyn", provider, instructions: dynamicInstr });
+    const agent = defineAgent({
+      name: "dyn",
+      provider,
+      instructions: dynamicInstr,
+    });
     expect(staticInstr).toBe("be terse");
     expect(typeof agent.instructions).toBe("function");
     if (typeof agent.instructions === "function") {
@@ -63,8 +71,14 @@ describe("defineAgent", () => {
   });
 
   it("throws on duplicate tool names at definition time", () => {
-    const dup = defineTool({ name: "echo", parameters: s.object({}), execute: () => ({ ok: true, content: "" }) });
-    expect(() => defineAgent({ name: "bad", provider, tools: [echo, dup] })).toThrow(ExecutionError);
+    const dup = defineTool({
+      name: "echo",
+      parameters: s.object({}),
+      execute: () => ({ ok: true, content: "" }),
+    });
+    expect(() =>
+      defineAgent({ name: "bad", provider, tools: [echo, dup] }),
+    ).toThrow(ExecutionError);
   });
 });
 
@@ -81,7 +95,9 @@ describe("createToolRegistry", () => {
   it("generates a provider toolset preserving order", () => {
     const reg = createToolRegistry([echo, ping]);
     expect(reg.toProviderTools().map((t) => t.name)).toEqual(["echo", "ping"]);
-    expect(reg.toProviderTools()[0]?.parameters).toMatchObject({ type: "object" });
+    expect(reg.toProviderTools()[0]?.parameters).toMatchObject({
+      type: "object",
+    });
   });
 
   it("throws ExecutionError on duplicate names", () => {

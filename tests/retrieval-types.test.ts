@@ -30,15 +30,44 @@ import {
 } from "../src/retrieval/index";
 
 function assertRetrievalTypes(): void {
-  const location: SourceLocation = { startLine: 1, endLine: 2, startOffset: 0, endOffset: 42 };
-  const source: SourceAttribution = { uri: "doc.md", title: "Doc", location, metadata: { kind: "runbook" } };
-  const doc: LoadedDocument = { id: "doc", content: "hello", source, metadata: { tenant: "t1" } };
+  const location: SourceLocation = {
+    startLine: 1,
+    endLine: 2,
+    startOffset: 0,
+    endOffset: 42,
+  };
+  const source: SourceAttribution = {
+    uri: "doc.md",
+    title: "Doc",
+    location,
+    metadata: { kind: "runbook" },
+  };
+  const doc: LoadedDocument = {
+    id: "doc",
+    content: "hello",
+    source,
+    metadata: { tenant: "t1" },
+  };
   const loader: DocumentLoader = staticDocumentLoader([doc]);
-  const customLoader: DocumentLoader = createDocumentLoader("custom", () => [doc]);
-  const chunker: Chunker = createTextChunker({ maxChars: 100, overlapChars: 10 });
+  const customLoader: DocumentLoader = createDocumentLoader("custom", () => [
+    doc,
+  ]);
+  const chunker: Chunker = createTextChunker({
+    maxChars: 100,
+    overlapChars: 10,
+  });
 
-  const request: EmbeddingRequest = { input: ["hello"], model: "m", metadata: { tenant: "t1" } };
-  const result: EmbeddingResult = { model: "m", vectors: [[1, 0]], dimensions: 2, usage: { inputTokens: 1 } };
+  const request: EmbeddingRequest = {
+    input: ["hello"],
+    model: "m",
+    metadata: { tenant: "t1" },
+  };
+  const result: EmbeddingResult = {
+    model: "m",
+    vectors: [[1, 0]],
+    dimensions: 2,
+    usage: { inputTokens: 1 },
+  };
   void [request, result];
 
   const embeddings: EmbeddingProvider = {
@@ -46,13 +75,28 @@ function assertRetrievalTypes(): void {
     defaultModel: "m",
     dimensions: 2,
     async embed(req) {
-      return { model: req.model ?? "m", vectors: req.input.map(() => [1, 0]), dimensions: 2 };
+      return {
+        model: req.model ?? "m",
+        vectors: req.input.map(() => [1, 0]),
+        dimensions: 2,
+      };
     },
   };
 
   const vector: EmbeddingVector = [1, 0];
-  const record: VectorRecord = { id: "r1", vector, text: "hello", source, metadata: { tag: "x" } };
-  const query: VectorQuery = { vector, topK: 5, filter: (candidate) => candidate.id === record.id, minScore: 0 };
+  const record: VectorRecord = {
+    id: "r1",
+    vector,
+    text: "hello",
+    source,
+    metadata: { tag: "x" },
+  };
+  const query: VectorQuery = {
+    vector,
+    topK: 5,
+    filter: (candidate) => candidate.id === record.id,
+    minScore: 0,
+  };
   const store: VectorStore = new InMemoryVectorStore({ dimensions: 2 });
   void [query, store.upsert([record])];
 
@@ -61,8 +105,17 @@ function assertRetrievalTypes(): void {
       return [{ id: q.query, score: 1, text: q.query, source }];
     },
   };
-  const hybrid: HybridRetrievalOptions = { vectorWeight: 0.5, keywordWeight: 0.5, topK: 3 };
-  const retriever: Retriever = createVectorRetriever({ embeddings, store, keyword, hybrid });
+  const hybrid: HybridRetrievalOptions = {
+    vectorWeight: 0.5,
+    keywordWeight: 0.5,
+    topK: 3,
+  };
+  const retriever: Retriever = createVectorRetriever({
+    embeddings,
+    store,
+    keyword,
+    hybrid,
+  });
   const retrievalResult: RetrievalResult = {
     id: "r1",
     rank: 1,
@@ -77,7 +130,9 @@ function assertRetrievalTypes(): void {
     retriever,
     query: (_ctx, run) => run?.agentName,
     maxContextTokens: 100,
-    onResults: (results, q) => { void [results, q]; },
+    onResults: (results, q) => {
+      void [results, q];
+    },
   };
   void retrieverContext(contextOptions);
   void [loader, customLoader, chunker];

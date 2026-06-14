@@ -51,7 +51,10 @@ import type { TelemetryHandle } from "../runtime/types";
 import type { SessionStore } from "../session/types";
 
 /** Probe a single provider for readiness; rejects/throws when unhealthy. */
-export type ProviderProbe = (provider: Provider, signal: AbortSignal) => Promise<void> | void;
+export type ProviderProbe = (
+  provider: Provider,
+  signal: AbortSignal,
+) => Promise<void> | void;
 
 /** Configuration for {@link agentRuntimeComponent}. */
 export interface AgentRuntimeOptions {
@@ -81,13 +84,20 @@ function validateProviders(providers: readonly Provider[]): void {
   const seen = new Set<string>();
   for (const provider of providers) {
     if (typeof provider.name !== "string" || provider.name.trim() === "") {
-      throw new Error("agentRuntimeComponent: every provider must have a non-empty name");
+      throw new Error(
+        "agentRuntimeComponent: every provider must have a non-empty name",
+      );
     }
     if (seen.has(provider.name)) {
-      throw new Error(`agentRuntimeComponent: duplicate provider name "${provider.name}"`);
+      throw new Error(
+        `agentRuntimeComponent: duplicate provider name "${provider.name}"`,
+      );
     }
     seen.add(provider.name);
-    if (typeof provider.defaultModel !== "string" || provider.defaultModel.trim() === "") {
+    if (
+      typeof provider.defaultModel !== "string" ||
+      provider.defaultModel.trim() === ""
+    ) {
       throw new Error(
         `agentRuntimeComponent: provider "${provider.name}" has an empty defaultModel`,
       );
@@ -133,7 +143,9 @@ export function agentRuntimeComponent(opts: AgentRuntimeOptions): Component {
         const failures = await probeAll(providers, probe, ctx.signal);
         if (failures.length > 0) {
           const names = failures.map((f) => f.name).join(", ");
-          throw new Error(`agentRuntimeComponent: provider probe failed on start for: ${names}`);
+          throw new Error(
+            `agentRuntimeComponent: provider probe failed on start for: ${names}`,
+          );
         }
       }
       ctx.logger.info("agent runtime started", {
@@ -153,13 +165,20 @@ export function agentRuntimeComponent(opts: AgentRuntimeOptions): Component {
       }
       const failures = await probeAll(providers, probe, ctx.signal);
       const status: HealthStatus =
-        failures.length === 0 ? "healthy" : failures.length < providers.length ? "degraded" : "unhealthy";
+        failures.length === 0
+          ? "healthy"
+          : failures.length < providers.length
+            ? "degraded"
+            : "unhealthy";
       const result: HealthResult = {
         status,
         data: { providers: providers.length, unhealthy: failures.length },
       };
       if (failures.length === 0) return result;
-      return { ...result, detail: `provider probe failed: ${failures.map((f) => f.name).join(", ")}` };
+      return {
+        ...result,
+        detail: `provider probe failed: ${failures.map((f) => f.name).join(", ")}`,
+      };
     },
   };
 }

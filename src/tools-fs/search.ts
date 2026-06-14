@@ -4,14 +4,23 @@ import { dirname, isAbsolute, relative } from "node:path";
 
 import MiniSearch from "minisearch";
 
-import { isProbablyTextPath, lineOffsets, listEntries, readTextFile } from "./files";
+import {
+  isProbablyTextPath,
+  lineOffsets,
+  listEntries,
+  readTextFile,
+} from "./files";
 
 export interface TextSearchResult {
   readonly path: string;
   readonly line: number;
   readonly column: number;
   readonly preview: string;
-  readonly context: readonly { readonly line: number; readonly text: string; readonly match: boolean }[];
+  readonly context: readonly {
+    readonly line: number;
+    readonly text: string;
+    readonly match: boolean;
+  }[];
 }
 
 export interface SemanticSearchResult {
@@ -24,11 +33,20 @@ export interface SemanticSearchResult {
 }
 
 function truncate(text: string, maxChars: number): string {
-  return text.length > maxChars ? `${text.slice(0, Math.max(0, maxChars - 13))}\n[truncated]` : text;
+  return text.length > maxChars
+    ? `${text.slice(0, Math.max(0, maxChars - 13))}\n[truncated]`
+    : text;
 }
 
-function buildRegex(pattern: string, mode: "literal" | "regex", caseSensitive: boolean): RegExp {
-  const source = mode === "literal" ? pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : pattern;
+function buildRegex(
+  pattern: string,
+  mode: "literal" | "regex",
+  caseSensitive: boolean,
+): RegExp {
+  const source =
+    mode === "literal"
+      ? pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      : pattern;
   return new RegExp(source, caseSensitive ? "g" : "gi");
 }
 
@@ -93,14 +111,17 @@ async function tryRipgrepSearch(options: {
       String(options.contextLines),
       ...(options.caseSensitive ? [] : ["--ignore-case"]),
       ...(options.mode === "literal" ? ["--fixed-strings"] : []),
-      ...((options.includeGlobs ?? []).flatMap((glob) => ["--glob", glob])),
-      ...((options.excludeGlobs ?? []).flatMap((glob) => ["--glob", `!${glob}`])),
+      ...(options.includeGlobs ?? []).flatMap((glob) => ["--glob", glob]),
+      ...(options.excludeGlobs ?? []).flatMap((glob) => ["--glob", `!${glob}`]),
       "--",
       options.pattern,
       options.root,
     ];
     const stdout = await new Promise<string>((resolve, reject) => {
-      const child = spawn(rgPath, args, { cwd: options.root, stdio: ["ignore", "pipe", "pipe"] });
+      const child = spawn(rgPath, args, {
+        cwd: options.root,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
       let out = "";
       let err = "";
       child.stdout.setEncoding("utf8");
@@ -132,7 +153,9 @@ async function tryRipgrepSearch(options: {
       };
       if (event.type !== "match" || event.data === undefined) continue;
       const rawPath = event.data.path?.text ?? "";
-      const path = isAbsolute(rawPath) ? relative(options.root, rawPath) : rawPath;
+      const path = isAbsolute(rawPath)
+        ? relative(options.root, rawPath)
+        : rawPath;
       const line = event.data.line_number ?? 1;
       const text = event.data.lines?.text?.replace(/\r?\n$/, "") ?? "";
       const column = (event.data.submatches?.[0]?.start ?? 0) + 1;
@@ -151,19 +174,30 @@ async function tryRipgrepSearch(options: {
   }
 }
 
-export async function searchText(root: string, options: {
-  readonly pattern: string;
-  readonly mode: "literal" | "regex";
-  readonly includeGlobs?: readonly string[];
-  readonly excludeGlobs?: readonly string[];
-  readonly caseSensitive: boolean;
-  readonly contextLines: number;
-  readonly maxResults: number;
-  readonly maxPreviewChars: number;
-}): Promise<{ readonly results: TextSearchResult[]; readonly backend: "ripgrep" | "node"; readonly truncated: boolean }> {
+export async function searchText(
+  root: string,
+  options: {
+    readonly pattern: string;
+    readonly mode: "literal" | "regex";
+    readonly includeGlobs?: readonly string[];
+    readonly excludeGlobs?: readonly string[];
+    readonly caseSensitive: boolean;
+    readonly contextLines: number;
+    readonly maxResults: number;
+    readonly maxPreviewChars: number;
+  },
+): Promise<{
+  readonly results: TextSearchResult[];
+  readonly backend: "ripgrep" | "node";
+  readonly truncated: boolean;
+}> {
   const rg = await tryRipgrepSearch({ root, ...options });
   if (rg !== null) {
-    return { results: rg, backend: "ripgrep", truncated: rg.length >= options.maxResults };
+    return {
+      results: rg,
+      backend: "ripgrep",
+      truncated: rg.length >= options.maxResults,
+    };
   }
 
   const files = await listEntries(root, {
@@ -174,40 +208,68 @@ export async function searchText(root: string, options: {
     excludeGlobs: options.excludeGlobs,
     maxEntries: Number.POSITIVE_INFINITY,
   });
-  const regex = buildRegex(options.pattern, options.mode, options.caseSensitive);
+  const regex = buildRegex(
+    options.pattern,
+    options.mode,
+    options.caseSensitive,
+  );
   const out: TextSearchResult[] = [];
   for (const entry of files.entries) {
     if (!isProbablyTextPath(entry.path)) continue;
     const text = await readFile(entry.path, "utf8").catch(() => "");
-    out.push(...searchOneFile(
-      text,
-      entry.relativePath,
-      regex,
-      options.contextLines,
-      options.maxPreviewChars,
-      options.maxResults - out.length,
-    ));
+    out.push(
+      ...searchOneFile(
+        text,
+        entry.relativePath,
+        regex,
+        options.contextLines,
+        options.maxPreviewChars,
+        options.maxResults - out.length,
+      ),
+    );
     if (out.length >= options.maxResults) break;
   }
-  return { results: out, backend: "node", truncated: files.truncated || out.length >= options.maxResults };
+  return {
+    results: out,
+    backend: "node",
+    truncated: files.truncated || out.length >= options.maxResults,
+  };
 }
 
-function chunksForText(path: string, text: string, maxPreviewChars: number): SemanticSearchResult[] {
+function chunksForText(
+  path: string,
+  text: string,
+  maxPreviewChars: number,
+): SemanticSearchResult[] {
   const lines = lineOffsets(text);
   const chunks: SemanticSearchResult[] = [];
   const chunkSize = 40;
   for (let start = 0; start < lines.length; start += chunkSize) {
     const end = Math.min(lines.length, start + chunkSize);
-    const preview = truncate(lines.slice(start, end).join("\n"), maxPreviewChars);
-    chunks.push({ path, score: 0, startLine: start + 1, endLine: end, preview });
+    const preview = truncate(
+      lines.slice(start, end).join("\n"),
+      maxPreviewChars,
+    );
+    chunks.push({
+      path,
+      score: 0,
+      startLine: start + 1,
+      endLine: end,
+      preview,
+    });
   }
   return chunks;
 }
 
-function symbolDocsForText(path: string, text: string, maxPreviewChars: number): SemanticSearchResult[] {
+function symbolDocsForText(
+  path: string,
+  text: string,
+  maxPreviewChars: number,
+): SemanticSearchResult[] {
   const lines = lineOffsets(text);
   const out: SemanticSearchResult[] = [];
-  const regex = /^\s*(?:export\s+)?(?:class|function|interface|type|const|let|var)\s+([A-Za-z_$][\w$]*)/;
+  const regex =
+    /^\s*(?:export\s+)?(?:class|function|interface|type|const|let|var)\s+([A-Za-z_$][\w$]*)/;
   lines.forEach((line, index) => {
     const match = regex.exec(line);
     if (match === null) return;
@@ -223,14 +285,20 @@ function symbolDocsForText(path: string, text: string, maxPreviewChars: number):
   return out;
 }
 
-export async function searchSemantic(root: string, options: {
-  readonly query: string;
-  readonly includeGlobs?: readonly string[];
-  readonly excludeGlobs?: readonly string[];
-  readonly granularity: "file" | "chunk" | "symbol";
-  readonly maxResults: number;
-  readonly maxPreviewChars: number;
-}): Promise<{ readonly results: SemanticSearchResult[]; readonly truncated: boolean }> {
+export async function searchSemantic(
+  root: string,
+  options: {
+    readonly query: string;
+    readonly includeGlobs?: readonly string[];
+    readonly excludeGlobs?: readonly string[];
+    readonly granularity: "file" | "chunk" | "symbol";
+    readonly maxResults: number;
+    readonly maxPreviewChars: number;
+  },
+): Promise<{
+  readonly results: SemanticSearchResult[];
+  readonly truncated: boolean;
+}> {
   const files = await listEntries(root, {
     onlyFiles: true,
     respectGitignore: true,
@@ -241,7 +309,8 @@ export async function searchSemantic(root: string, options: {
   const docs: Array<SemanticSearchResult & { id: string; text: string }> = [];
   for (const entry of files.entries) {
     if (!isProbablyTextPath(entry.path)) continue;
-    const text = (await readTextFile(entry.path, 200_000).catch(() => null))?.text;
+    const text = (await readTextFile(entry.path, 200_000).catch(() => null))
+      ?.text;
     if (text === undefined) continue;
     if (options.granularity === "file") {
       docs.push({
@@ -254,10 +323,13 @@ export async function searchSemantic(root: string, options: {
         text: `${entry.relativePath}\n${text}`,
       });
     } else {
-      const units = options.granularity === "symbol"
-        ? symbolDocsForText(entry.relativePath, text, options.maxPreviewChars)
-        : chunksForText(entry.relativePath, text, options.maxPreviewChars);
-      for (const chunk of units.length > 0 ? units : chunksForText(entry.relativePath, text, options.maxPreviewChars)) {
+      const units =
+        options.granularity === "symbol"
+          ? symbolDocsForText(entry.relativePath, text, options.maxPreviewChars)
+          : chunksForText(entry.relativePath, text, options.maxPreviewChars);
+      for (const chunk of units.length > 0
+        ? units
+        : chunksForText(entry.relativePath, text, options.maxPreviewChars)) {
         docs.push({
           id: `${entry.relativePath}:${chunk.startLine}:${chunk.symbol ?? ""}`,
           ...chunk,
@@ -284,7 +356,8 @@ export async function searchSemantic(root: string, options: {
       preview: String(match.preview),
       ...(match.symbol !== undefined ? { symbol: String(match.symbol) } : {}),
     })),
-    truncated: matches.length >= options.maxResults && docs.length > matches.length,
+    truncated:
+      matches.length >= options.maxResults && docs.length > matches.length,
   };
 }
 

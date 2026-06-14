@@ -57,7 +57,9 @@ export interface HttpToolsConfig extends HttpPolicy {
    */
   readonly allowPublicInternet?: boolean;
   /** Headers supplied by the host on every request. */
-  readonly defaultHeaders?: readonly HeaderEntry[] | Readonly<Record<string, string>>;
+  readonly defaultHeaders?:
+    | readonly HeaderEntry[]
+    | Readonly<Record<string, string>>;
   /** Model-supplied request headers accepted by name. Defaults to none. */
   readonly allowedRequestHeaders?: readonly string[];
   /** Response headers exposed in results. Defaults to a compact safe allowlist. */
@@ -114,9 +116,23 @@ export interface HttpRequestResult {
 
 /** Low-level HTTP client backing both the HTTP and web tool packs. */
 export interface HttpToolClient {
-  request(req: HttpClientRequest, ctx?: import("../tools/types").ToolContext): Promise<HttpRequestResult>;
-  get(url: string, options?: Omit<HttpClientRequest, "method" | "url" | "body" | "bodyJson" | "contentType">, ctx?: import("../tools/types").ToolContext): Promise<HttpRequestResult>;
-  post(url: string, options?: Omit<HttpClientRequest, "method" | "url">, ctx?: import("../tools/types").ToolContext): Promise<HttpRequestResult>;
+  request(
+    req: HttpClientRequest,
+    ctx?: import("../tools/types").ToolContext,
+  ): Promise<HttpRequestResult>;
+  get(
+    url: string,
+    options?: Omit<
+      HttpClientRequest,
+      "method" | "url" | "body" | "bodyJson" | "contentType"
+    >,
+    ctx?: import("../tools/types").ToolContext,
+  ): Promise<HttpRequestResult>;
+  post(
+    url: string,
+    options?: Omit<HttpClientRequest, "method" | "url">,
+    ctx?: import("../tools/types").ToolContext,
+  ): Promise<HttpRequestResult>;
 }
 
 /** The ready-made HTTP tool definitions. */

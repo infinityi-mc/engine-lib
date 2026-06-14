@@ -4,7 +4,9 @@ const VALID_TABLE_PREFIX_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 export function assertTablePrefix(prefix: string): string {
   if (!VALID_TABLE_PREFIX_RE.test(prefix)) {
-    throw new Error(`Invalid session store table prefix: ${JSON.stringify(prefix)}`);
+    throw new Error(
+      `Invalid session store table prefix: ${JSON.stringify(prefix)}`,
+    );
   }
   return prefix;
 }

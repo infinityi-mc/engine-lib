@@ -49,9 +49,12 @@ const DEFAULT_CAPABILITIES: ProviderCapabilities = {
  * honestly describe the target server when it lacks tool, stream, multimodal,
  * parallel-tool, or structured-output support.
  */
-export function createOpenAICompatible(opts: OpenAICompatibleOptions): Provider {
+export function createOpenAICompatible(
+  opts: OpenAICompatibleOptions,
+): Provider {
   const headers: Record<string, string> = { ...opts.defaultHeaders };
-  if (opts.apiKey !== undefined) headers["authorization"] = `Bearer ${resolveSecret(opts.apiKey)}`;
+  if (opts.apiKey !== undefined)
+    headers["authorization"] = `Bearer ${resolveSecret(opts.apiKey)}`;
   return createProvider({
     name: opts.name ?? "openai-compatible",
     defaultModel: opts.model,

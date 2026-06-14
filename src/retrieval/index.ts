@@ -11,10 +11,18 @@
 
 export { createTextChunker, recursiveTextChunker } from "./chunking";
 export { retrieverContext } from "./context";
-export { createDocumentLoader, loadDocuments, staticDocumentLoader } from "./loaders";
+export {
+  createDocumentLoader,
+  loadDocuments,
+  staticDocumentLoader,
+} from "./loaders";
 export { InMemoryVectorStore } from "./memory";
 export type { InMemoryVectorStoreOptions } from "./memory";
-export { createVectorRetriever, indexDocuments, mergeHybridResults } from "./retriever";
+export {
+  createVectorRetriever,
+  indexDocuments,
+  mergeHybridResults,
+} from "./retriever";
 export {
   assertVector,
   cosineSimilarity,

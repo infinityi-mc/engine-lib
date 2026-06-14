@@ -1,6 +1,10 @@
 import { defineAgent, defineTool, runAgent, s } from "@infinityi/engine-lib";
 import type { RunEvent } from "@infinityi/engine-lib/execution";
-import { scriptedProvider, textResult, toolCallResult } from "@infinityi/engine-lib/testing";
+import {
+  scriptedProvider,
+  textResult,
+  toolCallResult,
+} from "@infinityi/engine-lib/testing";
 
 const echo = defineTool({
   name: "echo",
@@ -12,7 +16,9 @@ const agent = defineAgent({
   name: "streamer",
   tools: [echo],
   provider: scriptedProvider([
-    toolCallResult([{ id: "echo-1", name: "echo", arguments: { value: "checked" } }]),
+    toolCallResult([
+      { id: "echo-1", name: "echo", arguments: { value: "checked" } },
+    ]),
     textResult("Streaming run completed."),
   ]),
 });
@@ -43,4 +49,3 @@ function describeEvent(event: RunEvent): string {
       return event.type;
   }
 }
-

@@ -46,9 +46,18 @@ const GET_PARAMS = fromJsonSchema<HttpGetArgs>({
   properties: {
     url: { type: "string", description: "Absolute http(s) URL to fetch." },
     headers: HEADER_SCHEMA,
-    timeout_ms: { type: "integer", description: "Request timeout in milliseconds; clamped by host policy." },
-    max_bytes: { type: "integer", description: "Response byte cap; clamped by host policy." },
-    max_body_chars: { type: "integer", description: "Returned text character cap; clamped by host policy." },
+    timeout_ms: {
+      type: "integer",
+      description: "Request timeout in milliseconds; clamped by host policy.",
+    },
+    max_bytes: {
+      type: "integer",
+      description: "Response byte cap; clamped by host policy.",
+    },
+    max_body_chars: {
+      type: "integer",
+      description: "Returned text character cap; clamped by host policy.",
+    },
   },
   required: ["url"],
   additionalProperties: false,
@@ -61,10 +70,22 @@ const POST_PARAMS = fromJsonSchema<HttpPostArgs>({
     headers: HEADER_SCHEMA,
     body: { type: "string", description: "Raw request body." },
     body_json: { description: "JSON value to serialize as the request body." },
-    content_type: { type: "string", description: "Content-Type for body/body_json when not already set." },
-    timeout_ms: { type: "integer", description: "Request timeout in milliseconds; clamped by host policy." },
-    max_bytes: { type: "integer", description: "Response byte cap; clamped by host policy." },
-    max_body_chars: { type: "integer", description: "Returned text character cap; clamped by host policy." },
+    content_type: {
+      type: "string",
+      description: "Content-Type for body/body_json when not already set.",
+    },
+    timeout_ms: {
+      type: "integer",
+      description: "Request timeout in milliseconds; clamped by host policy.",
+    },
+    max_bytes: {
+      type: "integer",
+      description: "Response byte cap; clamped by host policy.",
+    },
+    max_body_chars: {
+      type: "integer",
+      description: "Returned text character cap; clamped by host policy.",
+    },
   },
   required: ["url"],
   additionalProperties: false,
@@ -81,16 +102,21 @@ export function httpTools(config: HttpToolsConfig): HttpTools {
 
   const httpGet = defineTool<HttpGetArgs>({
     name: "http_get",
-    description: "Fetch one HTTP(S) URL under the host network policy and return compact parsed response metadata.",
+    description:
+      "Fetch one HTTP(S) URL under the host network policy and return compact parsed response metadata.",
     parameters: GET_PARAMS,
     async execute(args, ctx: ToolContext) {
       try {
-        const content = await client.get(args.url, {
-          headers: args.headers,
-          timeoutMs: args.timeout_ms,
-          maxBytes: args.max_bytes,
-          maxBodyChars: args.max_body_chars,
-        }, ctx);
+        const content = await client.get(
+          args.url,
+          {
+            headers: args.headers,
+            timeoutMs: args.timeout_ms,
+            maxBytes: args.max_bytes,
+            maxBodyChars: args.max_body_chars,
+          },
+          ctx,
+        );
         return { ok: true, content };
       } catch (error) {
         return fail(error);
@@ -100,19 +126,24 @@ export function httpTools(config: HttpToolsConfig): HttpTools {
 
   const httpPost = defineTool<HttpPostArgs>({
     name: "http_post",
-    description: "POST to one HTTP(S) URL under the host network policy and return compact parsed response metadata.",
+    description:
+      "POST to one HTTP(S) URL under the host network policy and return compact parsed response metadata.",
     parameters: POST_PARAMS,
     async execute(args, ctx: ToolContext) {
       try {
-        const content = await client.post(args.url, {
-          headers: args.headers,
-          body: args.body,
-          bodyJson: args.body_json,
-          contentType: args.content_type,
-          timeoutMs: args.timeout_ms,
-          maxBytes: args.max_bytes,
-          maxBodyChars: args.max_body_chars,
-        }, ctx);
+        const content = await client.post(
+          args.url,
+          {
+            headers: args.headers,
+            body: args.body,
+            bodyJson: args.body_json,
+            contentType: args.content_type,
+            timeoutMs: args.timeout_ms,
+            maxBytes: args.max_bytes,
+            maxBodyChars: args.max_body_chars,
+          },
+          ctx,
+        );
         return { ok: true, content };
       } catch (error) {
         return fail(error);

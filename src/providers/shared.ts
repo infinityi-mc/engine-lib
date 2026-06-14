@@ -4,7 +4,13 @@
  * @module
  */
 
-import type { ImagePart, Message, TextPart, ToolCallPart, ToolResultPart } from "../messages/types";
+import type {
+  ImagePart,
+  Message,
+  TextPart,
+  ToolCallPart,
+  ToolResultPart,
+} from "../messages/types";
 import type { FinishReason } from "./types";
 
 /**
@@ -12,7 +18,9 @@ import type { FinishReason } from "./types";
  * an `http(s)` URL is passed through, raw base64 is wrapped as a `data:` URI.
  */
 export function imageDataUrl(part: ImagePart): string {
-  return /^https?:\/\//.test(part.data) ? part.data : `data:${part.mimeType};base64,${part.data}`;
+  return /^https?:\/\//.test(part.data)
+    ? part.data
+    : `data:${part.mimeType};base64,${part.data}`;
 }
 
 /** Concatenated text of every `system` message, or `undefined` if none. */
@@ -39,8 +47,10 @@ export function toolResultText(part: ToolResultPart): string {
 
 /** Type guards for content parts. */
 export const isText = (p: { type: string }): p is TextPart => p.type === "text";
-export const isToolCall = (p: { type: string }): p is ToolCallPart => p.type === "tool_call";
-export const isToolResult = (p: { type: string }): p is ToolResultPart => p.type === "tool_result";
+export const isToolCall = (p: { type: string }): p is ToolCallPart =>
+  p.type === "tool_call";
+export const isToolResult = (p: { type: string }): p is ToolResultPart =>
+  p.type === "tool_result";
 
 /** Parse a JSON arguments string, tolerating empty/invalid input. */
 export function parseJsonArguments(text: string): unknown {
@@ -60,6 +70,9 @@ export function stringifyArguments(value: unknown): string {
 }
 
 /** A `finish`-style normalization shared where vendors use the same buckets. */
-export function defaultFinish(hadToolCalls: boolean, base: FinishReason): FinishReason {
+export function defaultFinish(
+  hadToolCalls: boolean,
+  base: FinishReason,
+): FinishReason {
   return hadToolCalls && base === "stop" ? "tool_calls" : base;
 }

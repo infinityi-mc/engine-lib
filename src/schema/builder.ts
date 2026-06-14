@@ -23,7 +23,12 @@
  */
 
 import { SchemaValidationError } from "../errors";
-import type { JsonSchema, OptionalSchema, SafeParseResult, Schema } from "./types";
+import type {
+  JsonSchema,
+  OptionalSchema,
+  SafeParseResult,
+  Schema,
+} from "./types";
 import { validateJsonSchema } from "./validate";
 
 /** Tracks which schemas were produced by `s.optional` (excluded from `required`). */
@@ -38,7 +43,9 @@ function makeSchema<T>(jsonSchema: JsonSchema): Schema<T> {
       if (issues.length === 0) return { success: true, data: input as T };
       return {
         success: false,
-        error: new SchemaValidationError("schema validation failed", { issues }),
+        error: new SchemaValidationError("schema validation failed", {
+          issues,
+        }),
       };
     },
     parse(input: unknown): T {
@@ -57,13 +64,18 @@ type RequiredKeys<P extends ObjectShape> = Exclude<keyof P, OptionalKeys<P>>;
 type InferShape<P extends ObjectShape> = {
   [K in RequiredKeys<P>]: P[K] extends Schema<infer T> ? T : never;
 } & {
-  [K in OptionalKeys<P>]?: P[K] extends Schema<infer T> ? Exclude<T, undefined> : never;
+  [K in OptionalKeys<P>]?: P[K] extends Schema<infer T>
+    ? Exclude<T, undefined>
+    : never;
 };
 
 /** Public schema-builder surface. */
 export const s = {
   /** A string, optionally constrained to an enum. */
-  string(opts?: { description?: string; enum?: readonly string[] }): Schema<string> {
+  string(opts?: {
+    description?: string;
+    enum?: readonly string[];
+  }): Schema<string> {
     const node: JsonSchema = { type: "string" };
     if (opts?.description !== undefined) node.description = opts.description;
     if (opts?.enum !== undefined) node.enum = opts.enum;

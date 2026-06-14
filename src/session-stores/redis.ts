@@ -1,5 +1,8 @@
 import type { Message } from "../messages/types";
-import { encodeSessionListCursor, normalizeSessionListOptions } from "../session/list";
+import {
+  encodeSessionListCursor,
+  normalizeSessionListOptions,
+} from "../session/list";
 import { readResumeInfo } from "../session/resume";
 import type {
   AppendResult,
@@ -9,7 +12,13 @@ import type {
   SessionState,
   SessionStore,
 } from "../session/types";
-import { decodeMessages, decodeMetadata, encodeMessages, encodeMetadata, jsonSessionStoreCodec } from "./codec";
+import {
+  decodeMessages,
+  decodeMetadata,
+  encodeMessages,
+  encodeMetadata,
+  jsonSessionStoreCodec,
+} from "./codec";
 import { safeSessionKey } from "./ids";
 import type { PurgeExpiredOptions, SessionStoreCodec } from "./types";
 import { SESSION_STORE_SCHEMA_VERSION } from "./versioning";
@@ -23,19 +32,38 @@ export interface RedisSessionStoreTransaction {
 }
 
 export interface RedisSessionStoreClient {
-  get(key: string): Promise<string | null | undefined> | string | null | undefined;
+  get(
+    key: string,
+  ): Promise<string | null | undefined> | string | null | undefined;
   set(key: string, value: string): Promise<unknown> | unknown;
   del(...keys: string[]): Promise<unknown> | unknown;
-  lRange?(key: string, start: number, stop: number): Promise<string[]> | string[];
-  lrange?(key: string, start: number, stop: number): Promise<string[]> | string[];
+  lRange?(
+    key: string,
+    start: number,
+    stop: number,
+  ): Promise<string[]> | string[];
+  lrange?(
+    key: string,
+    start: number,
+    stop: number,
+  ): Promise<string[]> | string[];
   rPush?(key: string, ...values: string[]): Promise<unknown> | unknown;
   rpush?(key: string, ...values: string[]): Promise<unknown> | unknown;
   pExpire?(key: string, ttlMs: number): Promise<unknown> | unknown;
   pexpire?(key: string, ttlMs: number): Promise<unknown> | unknown;
   scan?(
     cursor: string,
-    options?: { readonly MATCH?: string; readonly match?: string; readonly COUNT?: number; readonly count?: number },
-  ): Promise<{ cursor: string | number; keys: string[] } | [string | number, string[]]>
+    options?: {
+      readonly MATCH?: string;
+      readonly match?: string;
+      readonly COUNT?: number;
+      readonly count?: number;
+    },
+  ):
+    | Promise<
+        | { cursor: string | number; keys: string[] }
+        | [string | number, string[]]
+      >
     | { cursor: string | number; keys: string[] }
     | [string | number, string[]];
   multi?(): RedisSessionStoreTransaction;
@@ -62,7 +90,11 @@ function metadataState(
   };
 }
 
-function rpushTransaction(tx: RedisSessionStoreTransaction, key: string, values: readonly string[]): void {
+function rpushTransaction(
+  tx: RedisSessionStoreTransaction,
+  key: string,
+  values: readonly string[],
+): void {
   if (values.length === 0) return;
   if (tx.rPush !== undefined) {
     tx.rPush(key, ...values);
@@ -86,16 +118,25 @@ function encodeExistsInfo(info: RedisExistsInfo): string {
   return JSON.stringify(info);
 }
 
-function decodeExistsInfo(payload: string | null | undefined): RedisExistsInfo | undefined {
+function decodeExistsInfo(
+  payload: string | null | undefined,
+): RedisExistsInfo | undefined {
   if (payload == null || payload === "1") return undefined;
   try {
     const parsed = JSON.parse(payload) as Partial<RedisExistsInfo>;
-    if (typeof parsed.createdAt === "string" && typeof parsed.updatedAt === "string") {
+    if (
+      typeof parsed.createdAt === "string" &&
+      typeof parsed.updatedAt === "string"
+    ) {
       return {
         createdAt: parsed.createdAt,
         updatedAt: parsed.updatedAt,
-        ...(typeof parsed.version === "number" ? { version: parsed.version } : {}),
-        ...(typeof parsed.tenantId === "string" ? { tenantId: parsed.tenantId } : {}),
+        ...(typeof parsed.version === "number"
+          ? { version: parsed.version }
+          : {}),
+        ...(typeof parsed.tenantId === "string"
+          ? { tenantId: parsed.tenantId }
+          : {}),
       };
     }
   } catch {
@@ -130,21 +171,28 @@ export class RedisSessionStore implements SessionStore {
   }
 
   async migrate(): Promise<void> {
-    await this.client.set(this.versionKey(), String(SESSION_STORE_SCHEMA_VERSION));
+    await this.client.set(
+      this.versionKey(),
+      String(SESSION_STORE_SCHEMA_VERSION),
+    );
   }
 
   async load(id: string): Promise<SessionState | undefined> {
     const payloads = await this.lRange(this.messagesKey(id), 0, -1);
     const metadataPayload = await this.client.get(this.metadataKey(id));
     const exists = await this.client.get(this.existsKey(id));
-    if (payloads.length === 0 && metadataPayload == null && exists == null) return undefined;
+    if (payloads.length === 0 && metadataPayload == null && exists == null)
+      return undefined;
     const existsInfo = decodeExistsInfo(exists);
     const metadata = await decodeMetadata(this.codec, metadataPayload);
     const messages = await decodeMessages(this.codec, payloads);
     return metadataState(id, messages, metadata, existsInfo);
   }
 
-  async append(id: string, messages: readonly Message[]): Promise<AppendResult> {
+  async append(
+    id: string,
+    messages: readonly Message[],
+  ): Promise<AppendResult> {
     if (messages.length === 0) return {};
     const encoded = await encodeMessages(this.codec, messages);
     await this.enqueue(id, async () => {
@@ -162,7 +210,10 @@ export class RedisSessionStore implements SessionStore {
     return {};
   }
 
-  async setMetadata(id: string, metadata: Record<string, unknown>): Promise<void> {
+  async setMetadata(
+    id: string,
+    metadata: Record<string, unknown>,
+  ): Promise<void> {
     const encoded = await encodeMetadata(this.codec, metadata);
     await this.enqueue(id, async () => {
       const exists = await this.nextExistsInfo(id);
@@ -177,7 +228,10 @@ export class RedisSessionStore implements SessionStore {
   async list(options?: SessionListOptions): Promise<SessionListPage> {
     const normalized = normalizeSessionListOptions(options, "id");
     const scan = this.client.scan;
-    if (scan === undefined) throw new Error("Redis session store client must implement scan for list()");
+    if (scan === undefined)
+      throw new Error(
+        "Redis session store client must implement scan for list()",
+      );
 
     const rawKeys = new Set<string>();
     let cursor = "0";
@@ -207,15 +261,28 @@ export class RedisSessionStore implements SessionStore {
     for (const key of rawKeys) {
       const id = decodeSessionKey(this.keyPrefix, key);
       if (id === undefined) continue;
-      if (normalized.prefix !== undefined && !id.startsWith(normalized.prefix)) continue;
-      const exists = decodeExistsInfo(await this.client.get(this.existsKey(id)));
-      if (normalized.tenantId !== undefined && exists?.tenantId !== normalized.tenantId) continue;
+      if (normalized.prefix !== undefined && !id.startsWith(normalized.prefix))
+        continue;
+      const exists = decodeExistsInfo(
+        await this.client.get(this.existsKey(id)),
+      );
+      if (
+        normalized.tenantId !== undefined &&
+        exists?.tenantId !== normalized.tenantId
+      )
+        continue;
       rows.push({
         id,
-        ...(exists?.createdAt !== undefined ? { createdAt: exists.createdAt } : {}),
-        ...(exists?.updatedAt !== undefined ? { updatedAt: exists.updatedAt } : {}),
+        ...(exists?.createdAt !== undefined
+          ? { createdAt: exists.createdAt }
+          : {}),
+        ...(exists?.updatedAt !== undefined
+          ? { updatedAt: exists.updatedAt }
+          : {}),
         version: exists?.version ?? 0,
-        ...(exists?.tenantId !== undefined ? { tenantId: exists.tenantId } : {}),
+        ...(exists?.tenantId !== undefined
+          ? { tenantId: exists.tenantId }
+          : {}),
       });
     }
 
@@ -227,7 +294,10 @@ export class RedisSessionStore implements SessionStore {
       return a.id.localeCompare(b.id);
     });
 
-    const pageRows = rows.slice(normalized.offset, normalized.offset + normalized.limit);
+    const pageRows = rows.slice(
+      normalized.offset,
+      normalized.offset + normalized.limit,
+    );
     const sessions = [];
     for (const row of pageRows) {
       const state = await this.load(row.id);
@@ -249,8 +319,12 @@ export class RedisSessionStore implements SessionStore {
       ...(hasMore
         ? {
             cursor: encodeSessionListCursor({
-              ...(normalized.prefix !== undefined ? { prefix: normalized.prefix } : {}),
-              ...(normalized.tenantId !== undefined ? { tenantId: normalized.tenantId } : {}),
+              ...(normalized.prefix !== undefined
+                ? { prefix: normalized.prefix }
+                : {}),
+              ...(normalized.tenantId !== undefined
+                ? { tenantId: normalized.tenantId }
+                : {}),
               order: normalized.order,
               offset: normalized.offset + normalized.limit,
             }),
@@ -266,7 +340,10 @@ export class RedisSessionStore implements SessionStore {
   async claimTenant(claim: SessionTenantClaim): Promise<boolean> {
     return this.enqueue(claim.id, async () => {
       const existing = await this.load(claim.id);
-      if (existing?.tenantId !== undefined && existing.tenantId !== claim.tenantId) {
+      if (
+        existing?.tenantId !== undefined &&
+        existing.tenantId !== claim.tenantId
+      ) {
         throw new Error(`session "${claim.id}" is owned by a different tenant`);
       }
 
@@ -274,14 +351,22 @@ export class RedisSessionStore implements SessionStore {
         claim.messages !== undefined &&
         claim.messages.length > 0 &&
         (existing === undefined || existing.messages.length === 0);
-      const shouldSeedMetadata = claim.metadata !== undefined && existing === undefined;
+      const shouldSeedMetadata =
+        claim.metadata !== undefined && existing === undefined;
       const shouldSeedTenant = existing?.tenantId === undefined;
-      if (!shouldSeedMessages && !shouldSeedMetadata && !shouldSeedTenant) return false;
+      if (!shouldSeedMessages && !shouldSeedMetadata && !shouldSeedTenant)
+        return false;
 
       await this.writeState({
         id: claim.id,
-        messages: shouldSeedMessages ? claim.messages ?? [] : existing?.messages ?? [],
-        ...(shouldSeedMetadata ? { metadata: claim.metadata } : existing?.metadata !== undefined ? { metadata: existing.metadata } : {}),
+        messages: shouldSeedMessages
+          ? (claim.messages ?? [])
+          : (existing?.messages ?? []),
+        ...(shouldSeedMetadata
+          ? { metadata: claim.metadata }
+          : existing?.metadata !== undefined
+            ? { metadata: existing.metadata }
+            : {}),
         version: existing?.version ?? 0,
         tenantId: claim.tenantId,
       });
@@ -314,14 +399,20 @@ export class RedisSessionStore implements SessionStore {
 
   private transaction(): RedisSessionStoreTransaction {
     const tx = this.client.multi?.();
-    if (tx === undefined) throw new Error("Redis session store save/delete require a transaction-capable client");
+    if (tx === undefined)
+      throw new Error(
+        "Redis session store save/delete require a transaction-capable client",
+      );
     return tx;
   }
 
   private async enqueue<T>(id: string, task: () => Promise<T>): Promise<T> {
     const previous = this.queues.get(id) ?? Promise.resolve();
     const run = previous.catch(() => {}).then(task);
-    const next = run.then(() => undefined, () => undefined);
+    const next = run.then(
+      () => undefined,
+      () => undefined,
+    );
     this.queues.set(id, next);
     try {
       return await run;
@@ -346,9 +437,15 @@ export class RedisSessionStore implements SessionStore {
     await tx.exec();
   }
 
-  private async lRange(key: string, start: number, stop: number): Promise<string[]> {
-    if (this.client.lRange !== undefined) return this.client.lRange(key, start, stop);
-    if (this.client.lrange !== undefined) return this.client.lrange(key, start, stop);
+  private async lRange(
+    key: string,
+    start: number,
+    stop: number,
+  ): Promise<string[]> {
+    if (this.client.lRange !== undefined)
+      return this.client.lRange(key, start, stop);
+    if (this.client.lrange !== undefined)
+      return this.client.lrange(key, start, stop);
     throw new Error("Redis session store client must implement lRange/lrange");
   }
 
@@ -373,7 +470,9 @@ export class RedisSessionStore implements SessionStore {
       await this.client.pexpire(key, ttlMs);
       return;
     }
-    throw new Error("Redis session store client must implement pExpire/pexpire for setExpiry()");
+    throw new Error(
+      "Redis session store client must implement pExpire/pexpire for setExpiry()",
+    );
   }
 
   private async nextExistsInfo(id: string): Promise<RedisExistsInfo> {
@@ -383,18 +482,28 @@ export class RedisSessionStore implements SessionStore {
       createdAt: current?.createdAt ?? now,
       updatedAt: now,
       version: current?.version ?? 0,
-      ...(current?.tenantId !== undefined ? { tenantId: current.tenantId } : {}),
+      ...(current?.tenantId !== undefined
+        ? { tenantId: current.tenantId }
+        : {}),
     };
   }
 
-  private async existsInfoForState(state: SessionState): Promise<RedisExistsInfo> {
+  private async existsInfoForState(
+    state: SessionState,
+  ): Promise<RedisExistsInfo> {
     const now = new Date().toISOString();
-    const current = decodeExistsInfo(await this.client.get(this.existsKey(state.id)));
+    const current = decodeExistsInfo(
+      await this.client.get(this.existsKey(state.id)),
+    );
     return {
       createdAt: current?.createdAt ?? now,
       updatedAt: now,
       version: state.version ?? current?.version ?? 0,
-      ...(state.tenantId !== undefined ? { tenantId: state.tenantId } : current?.tenantId !== undefined ? { tenantId: current.tenantId } : {}),
+      ...(state.tenantId !== undefined
+        ? { tenantId: state.tenantId }
+        : current?.tenantId !== undefined
+          ? { tenantId: current.tenantId }
+          : {}),
     };
   }
 

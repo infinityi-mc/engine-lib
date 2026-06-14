@@ -18,17 +18,28 @@ import type {
 import { assertPositiveInteger, throwIfAborted } from "./utils";
 import { assertVector } from "./vector-store";
 
-function defaultModel(provider: EmbeddingProvider, model?: string): string | undefined {
+function defaultModel(
+  provider: EmbeddingProvider,
+  model?: string,
+): string | undefined {
   return model ?? provider.defaultModel;
 }
 
-function assertEmbeddingCount(expected: number, actual: readonly EmbeddingVector[]): void {
+function assertEmbeddingCount(
+  expected: number,
+  actual: readonly EmbeddingVector[],
+): void {
   if (actual.length !== expected) {
-    throw new Error(`embedding provider returned ${actual.length} vectors for ${expected} inputs`);
+    throw new Error(
+      `embedding provider returned ${actual.length} vectors for ${expected} inputs`,
+    );
   }
 }
 
-function fromVectorHit(hit: VectorSearchResult, index: number): RetrievalResult {
+function fromVectorHit(
+  hit: VectorSearchResult,
+  index: number,
+): RetrievalResult {
   return {
     id: hit.id,
     rank: index + 1,
@@ -45,7 +56,10 @@ function normalizeScore(score: number, min: number, max: number): number {
   return (score - min) / (max - min);
 }
 
-function scoreBounds(results: readonly { readonly score: number }[]): { readonly min: number; readonly max: number } {
+function scoreBounds(results: readonly { readonly score: number }[]): {
+  readonly min: number;
+  readonly max: number;
+} {
   if (results.length === 0) return { min: 0, max: 0 };
   let min = Number.POSITIVE_INFINITY;
   let max = Number.NEGATIVE_INFINITY;
@@ -88,40 +102,71 @@ export function mergeHybridResults(
     entries.set(result.id, {
       id: result.id,
       text: previous?.text ?? result.text,
-      ...(previous?.source !== undefined || result.source !== undefined ? { source: previous?.source ?? result.source } : {}),
-      ...(previous?.metadata !== undefined || result.metadata !== undefined ? { metadata: previous?.metadata ?? result.metadata } : {}),
-      ...(previous?.keywordRaw !== undefined ? { keywordRaw: previous.keywordRaw } : {}),
-      ...(previous?.keywordNormalized !== undefined ? { keywordNormalized: previous.keywordNormalized } : {}),
+      ...(previous?.source !== undefined || result.source !== undefined
+        ? { source: previous?.source ?? result.source }
+        : {}),
+      ...(previous?.metadata !== undefined || result.metadata !== undefined
+        ? { metadata: previous?.metadata ?? result.metadata }
+        : {}),
+      ...(previous?.keywordRaw !== undefined
+        ? { keywordRaw: previous.keywordRaw }
+        : {}),
+      ...(previous?.keywordNormalized !== undefined
+        ? { keywordNormalized: previous.keywordNormalized }
+        : {}),
       vectorRaw: result.score,
-      vectorNormalized: normalizeScore(result.score, vectorBounds.min, vectorBounds.max),
+      vectorNormalized: normalizeScore(
+        result.score,
+        vectorBounds.min,
+        vectorBounds.max,
+      ),
     });
   }
 
   for (const result of keywordResults) {
     const previous = entries.get(result.id);
-    const text = previous?.text === undefined || previous.text === "" ? result.text : previous.text;
+    const text =
+      previous?.text === undefined || previous.text === ""
+        ? result.text
+        : previous.text;
     entries.set(result.id, {
       id: result.id,
       text,
-      ...(previous?.source !== undefined || result.source !== undefined ? { source: previous?.source ?? result.source } : {}),
-      ...(previous?.metadata !== undefined || result.metadata !== undefined ? { metadata: previous?.metadata ?? result.metadata } : {}),
-      ...(previous?.vectorRaw !== undefined ? { vectorRaw: previous.vectorRaw } : {}),
-      ...(previous?.vectorNormalized !== undefined ? { vectorNormalized: previous.vectorNormalized } : {}),
+      ...(previous?.source !== undefined || result.source !== undefined
+        ? { source: previous?.source ?? result.source }
+        : {}),
+      ...(previous?.metadata !== undefined || result.metadata !== undefined
+        ? { metadata: previous?.metadata ?? result.metadata }
+        : {}),
+      ...(previous?.vectorRaw !== undefined
+        ? { vectorRaw: previous.vectorRaw }
+        : {}),
+      ...(previous?.vectorNormalized !== undefined
+        ? { vectorNormalized: previous.vectorNormalized }
+        : {}),
       keywordRaw: result.score,
-      keywordNormalized: normalizeScore(result.score, keywordBounds.min, keywordBounds.max),
+      keywordNormalized: normalizeScore(
+        result.score,
+        keywordBounds.min,
+        keywordBounds.max,
+      ),
     });
   }
 
   const merged = [...entries.values()]
     .map((entry) => {
-      const combined = (entry.vectorNormalized ?? 0) * vectorWeight + (entry.keywordNormalized ?? 0) * keywordWeight;
+      const combined =
+        (entry.vectorNormalized ?? 0) * vectorWeight +
+        (entry.keywordNormalized ?? 0) * keywordWeight;
       return {
         id: entry.id,
         rank: 0,
         score: combined,
         scores: {
           ...(entry.vectorRaw !== undefined ? { vector: entry.vectorRaw } : {}),
-          ...(entry.keywordRaw !== undefined ? { keyword: entry.keywordRaw } : {}),
+          ...(entry.keywordRaw !== undefined
+            ? { keyword: entry.keywordRaw }
+            : {}),
           combined,
         },
         text: entry.text,
@@ -129,7 +174,10 @@ export function mergeHybridResults(
         ...(entry.metadata !== undefined ? { metadata: entry.metadata } : {}),
       } satisfies RetrievalResult;
     })
-    .filter((result) => options.minScore === undefined || result.score >= options.minScore)
+    .filter(
+      (result) =>
+        options.minScore === undefined || result.score >= options.minScore,
+    )
     .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
     .slice(0, topK);
 
@@ -145,11 +193,18 @@ export async function indexDocuments(
   assertPositiveInteger("batchSize", batchSize);
   const loaded = await loadDocuments(options.loaders, ctx);
   const chunks: RetrievalChunk[] = [];
-  for (let documentIndex = 0; documentIndex < loaded.documents.length; documentIndex += 1) {
+  for (
+    let documentIndex = 0;
+    documentIndex < loaded.documents.length;
+    documentIndex += 1
+  ) {
     throwIfAborted(ctx);
     const document = loaded.documents[documentIndex];
     if (document === undefined) continue;
-    const documentChunks = await options.chunker.chunk(document, { documentIndex, ...(ctx !== undefined ? { engine: ctx } : {}) });
+    const documentChunks = await options.chunker.chunk(document, {
+      documentIndex,
+      ...(ctx !== undefined ? { engine: ctx } : {}),
+    });
     chunks.push(...documentChunks);
   }
 
@@ -159,12 +214,16 @@ export async function indexDocuments(
   for (let start = 0; start < chunks.length; start += batchSize) {
     throwIfAborted(ctx);
     const batch = chunks.slice(start, start + batchSize);
-    const result = await options.embeddings.embed({
-      input: batch.map((chunk) => chunk.text),
-      ...(defaultModel(options.embeddings, options.embeddingModel) !== undefined
-        ? { model: defaultModel(options.embeddings, options.embeddingModel) }
-        : {}),
-    }, ctx);
+    const result = await options.embeddings.embed(
+      {
+        input: batch.map((chunk) => chunk.text),
+        ...(defaultModel(options.embeddings, options.embeddingModel) !==
+        undefined
+          ? { model: defaultModel(options.embeddings, options.embeddingModel) }
+          : {}),
+      },
+      ctx,
+    );
     assertEmbeddingCount(batch.length, result.vectors);
     model = result.model;
     if (result.dimensions !== undefined) dimensions = result.dimensions;
@@ -198,40 +257,62 @@ export async function indexDocuments(
 }
 
 /** Create a retriever that embeds the query and searches a vector store. */
-export function createVectorRetriever(options: VectorRetrieverOptions): Retriever {
+export function createVectorRetriever(
+  options: VectorRetrieverOptions,
+): Retriever {
   assertPositiveInteger("topK", options.topK);
   return {
     name: options.name ?? `vector:${options.store.name}`,
-    async retrieve(query: RetrievalQuery, ctx?: EngineContext): Promise<readonly RetrievalResult[]> {
+    async retrieve(
+      query: RetrievalQuery,
+      ctx?: EngineContext,
+    ): Promise<readonly RetrievalResult[]> {
       throwIfAborted(ctx);
       const topK = query.topK ?? options.hybrid?.topK ?? options.topK ?? 5;
       assertPositiveInteger("topK", topK);
-      const embed = await options.embeddings.embed({
-        input: [query.query],
-        ...(defaultModel(options.embeddings, options.model) !== undefined
-          ? { model: defaultModel(options.embeddings, options.model) }
-          : {}),
-      }, ctx);
+      const embed = await options.embeddings.embed(
+        {
+          input: [query.query],
+          ...(defaultModel(options.embeddings, options.model) !== undefined
+            ? { model: defaultModel(options.embeddings, options.model) }
+            : {}),
+        },
+        ctx,
+      );
       assertEmbeddingCount(1, embed.vectors);
       const vector = embed.vectors[0];
-      if (vector === undefined) throw new Error("embedding provider returned no query vector");
+      if (vector === undefined)
+        throw new Error("embedding provider returned no query vector");
       assertVector(vector, "query embedding");
-      const vectorHits = await options.store.query({
-        vector,
-        topK,
-        ...(query.filter !== undefined || options.filter !== undefined ? { filter: query.filter ?? options.filter } : {}),
-        ...(query.minScore !== undefined || options.minScore !== undefined
-          ? { minScore: query.minScore ?? options.minScore }
-          : {}),
-      }, ctx);
+      const vectorHits = await options.store.query(
+        {
+          vector,
+          topK,
+          ...(query.filter !== undefined || options.filter !== undefined
+            ? { filter: query.filter ?? options.filter }
+            : {}),
+          ...(query.minScore !== undefined || options.minScore !== undefined
+            ? { minScore: query.minScore ?? options.minScore }
+            : {}),
+        },
+        ctx,
+      );
       const vectorResults = vectorHits.map(fromVectorHit);
-      if (options.keyword === undefined) return vectorResults.map((result, index) => ({ ...result, rank: index + 1 }));
+      if (options.keyword === undefined)
+        return vectorResults.map((result, index) => ({
+          ...result,
+          rank: index + 1,
+        }));
 
-      const keywordResults = await options.keyword.retrieve({ ...query, topK }, ctx);
+      const keywordResults = await options.keyword.retrieve(
+        { ...query, topK },
+        ctx,
+      );
       return mergeHybridResults(vectorResults, keywordResults, {
         ...options.hybrid,
         topK,
-        ...(query.minScore !== undefined || options.hybrid?.minScore !== undefined
+        ...(query.minScore !== undefined ||
+        options.hybrid?.minScore !== undefined
           ? { minScore: query.minScore ?? options.hybrid?.minScore }
           : {}),
       });

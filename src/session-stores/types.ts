@@ -6,8 +6,15 @@ import type { RunEventDraft } from "../execution/types";
 export interface SessionStoreCodec {
   encodeMessage(message: Message): Promise<string> | string;
   decodeMessage(payload: string): Promise<Message> | Message;
-  encodeMetadata?(metadata: Readonly<Record<string, unknown>> | undefined): Promise<string | undefined> | string | undefined;
-  decodeMetadata?(payload: string | undefined): Promise<Readonly<Record<string, unknown>> | undefined> | Readonly<Record<string, unknown>> | undefined;
+  encodeMetadata?(
+    metadata: Readonly<Record<string, unknown>> | undefined,
+  ): Promise<string | undefined> | string | undefined;
+  decodeMetadata?(
+    payload: string | undefined,
+  ):
+    | Promise<Readonly<Record<string, unknown>> | undefined>
+    | Readonly<Record<string, unknown>>
+    | undefined;
 }
 
 /** A store that can initialize or migrate its backing data format. */
@@ -22,7 +29,9 @@ export interface CloseableSessionStore extends SessionStore {
 
 export interface PurgeExpiredOptions {
   readonly maxIdleMs?: number;
-  readonly onEvent?: (event: Extract<RunEventDraft, { type: "session.expired" }>) => void;
+  readonly onEvent?: (
+    event: Extract<RunEventDraft, { type: "session.expired" }>,
+  ) => void;
 }
 
 /** A store with opt-in expiry/idle-purge support. */
@@ -53,12 +62,24 @@ export interface SessionCompactionResult {
 }
 
 export interface SessionCompactor {
-  shouldCompact?(state: SessionState, context: SessionStoreHookContext): Promise<boolean> | boolean;
-  compact(state: SessionState, context: SessionStoreHookContext): Promise<SessionState | SessionCompactionResult> | SessionState | SessionCompactionResult;
+  shouldCompact?(
+    state: SessionState,
+    context: SessionStoreHookContext,
+  ): Promise<boolean> | boolean;
+  compact(
+    state: SessionState,
+    context: SessionStoreHookContext,
+  ):
+    | Promise<SessionState | SessionCompactionResult>
+    | SessionState
+    | SessionCompactionResult;
 }
 
 export interface SessionArchiver {
-  archive(record: SessionArchiveRecord, context: SessionStoreHookContext): Promise<void> | void;
+  archive(
+    record: SessionArchiveRecord,
+    context: SessionStoreHookContext,
+  ): Promise<void> | void;
 }
 
 export interface SessionStoreHooks {
