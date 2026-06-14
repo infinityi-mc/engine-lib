@@ -222,7 +222,8 @@ function applyDecisionArguments(
   original: unknown,
   decision: PolicyDecision | { readonly allowed: true; readonly argumentsOverride?: unknown },
 ): unknown {
-  if ("transformArguments" in decision) return decision.transformArguments;
+  if ("transformArguments" in decision && decision.transformArguments !== undefined)
+    return decision.transformArguments;
   if ("argumentsOverride" in decision)
     return decision.argumentsOverride ?? original;
   return original;
@@ -467,6 +468,7 @@ async function* executeAgent(
     active.registry
       .list()
       .map((tool) => tool.name)
+      .filter((name) => !name.startsWith("transfer_to_"))
       .toSorted();
 
   /** The outcome of one tool call: its result plus anything it bridged to the parent run. */
