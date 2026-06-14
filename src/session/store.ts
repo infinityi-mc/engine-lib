@@ -23,6 +23,8 @@ import type {
 interface Entry {
   messages: Message[];
   metadata?: Record<string, unknown>;
+  version: number;
+  tenantId?: string;
   createdAt: string;
   updatedAt: string;
   expiresAt?: string;
@@ -40,6 +42,8 @@ export class InMemorySessionStore implements SessionStore {
       id,
       messages: [...entry.messages],
       ...(entry.metadata !== undefined ? { metadata: { ...entry.metadata } } : {}),
+      version: entry.version,
+      ...(entry.tenantId !== undefined ? { tenantId: entry.tenantId } : {}),
     };
     return Promise.resolve(state);
   }
@@ -49,7 +53,7 @@ export class InMemorySessionStore implements SessionStore {
     const now = new Date().toISOString();
     const entry = this.entries.get(id);
     if (entry === undefined) {
-      this.entries.set(id, { messages: [...messages], createdAt: now, updatedAt: now });
+      this.entries.set(id, { messages: [...messages], version: 0, createdAt: now, updatedAt: now });
     } else {
       entry.messages.push(...messages);
       entry.updatedAt = now;
@@ -64,6 +68,7 @@ export class InMemorySessionStore implements SessionStore {
       this.entries.set(id, {
         messages: [],
         metadata: { ...metadata },
+        version: 0,
         createdAt: now,
         updatedAt: now,
       });
@@ -77,7 +82,11 @@ export class InMemorySessionStore implements SessionStore {
   list(options?: SessionListOptions): Promise<SessionListPage> {
     const normalized = normalizeSessionListOptions(options, "recent");
     const sessions = [...this.entries.entries()]
-      .filter(([id, entry]) => !isExpired(entry) && (normalized.prefix === undefined || id.startsWith(normalized.prefix)))
+      .filter(([id, entry]) => (
+        !isExpired(entry) &&
+        (normalized.prefix === undefined || id.startsWith(normalized.prefix)) &&
+        (normalized.tenantId === undefined || entry.tenantId === normalized.tenantId)
+      ))
       .sort(([aId, a], [bId, b]) => {
         if (normalized.order === "id") return aId.localeCompare(bId);
         const byRecent = b.updatedAt.localeCompare(a.updatedAt);
@@ -92,12 +101,15 @@ export class InMemorySessionStore implements SessionStore {
         createdAt: entry.createdAt,
         updatedAt: entry.updatedAt,
         messageCount: entry.messages.length,
+        version: entry.version,
+        ...(entry.tenantId !== undefined ? { tenantId: entry.tenantId } : {}),
         ...(readResumeInfo(entry.metadata) !== undefined ? { resume: readResumeInfo(entry.metadata) } : {}),
       })),
       ...(hasMore
         ? {
             cursor: encodeSessionListCursor({
-              prefix: normalized.prefix,
+              ...(normalized.prefix !== undefined ? { prefix: normalized.prefix } : {}),
+              ...(normalized.tenantId !== undefined ? { tenantId: normalized.tenantId } : {}),
               order: normalized.order,
               offset: normalized.offset + normalized.limit,
             }),
@@ -112,6 +124,8 @@ export class InMemorySessionStore implements SessionStore {
     this.entries.set(state.id, {
       messages: [...state.messages],
       ...(state.metadata !== undefined ? { metadata: { ...state.metadata } } : {}),
+      version: state.version ?? existing?.version ?? 0,
+      ...(state.tenantId !== undefined ? { tenantId: state.tenantId } : existing?.tenantId !== undefined ? { tenantId: existing.tenantId } : {}),
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
       ...(existing?.expiresAt !== undefined ? { expiresAt: existing.expiresAt } : {}),
@@ -135,6 +149,7 @@ export class InMemorySessionStore implements SessionStore {
     if (entry === undefined) {
       this.entries.set(id, {
         messages: [],
+        version: 0,
         createdAt: nowIso,
         updatedAt: nowIso,
         expiresAt,

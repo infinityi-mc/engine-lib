@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import type { RunEvent } from "../src/execution/types";
+import type { RunBridgeEvent } from "../src/execution/types";
 import type { ToolContext, ToolDefinition, ToolResult } from "../src/tools/types";
 import {
   HttpPolicyError,
@@ -9,8 +9,8 @@ import {
   type HttpRequestResult,
 } from "../src/tools-http/index";
 
-function captureCtx(signal?: AbortSignal): { ctx: ToolContext; events: RunEvent[] } {
-  const events: RunEvent[] = [];
+function captureCtx(signal?: AbortSignal): { ctx: ToolContext; events: RunBridgeEvent[] } {
+  const events: RunBridgeEvent[] = [];
   return {
     events,
     ctx: {
@@ -24,9 +24,9 @@ function captureCtx(signal?: AbortSignal): { ctx: ToolContext; events: RunEvent[
   };
 }
 
-function customNames(events: readonly RunEvent[]): string[] {
+function customNames(events: readonly RunBridgeEvent[]): string[] {
   return events
-    .filter((event): event is Extract<RunEvent, { type: "custom" }> => event.type === "custom")
+    .filter((event): event is Extract<RunBridgeEvent, { type: "custom" }> => event.type === "custom")
     .map((event) => event.name);
 }
 

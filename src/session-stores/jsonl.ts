@@ -44,6 +44,8 @@ interface JsonlSaveRecord extends JsonlBaseRecord {
   readonly op: "save";
   readonly messages: readonly string[];
   readonly metadata?: string;
+  readonly stateVersion?: number;
+  readonly tenantId?: string;
 }
 
 interface JsonlMetadataRecord extends JsonlBaseRecord {
@@ -76,11 +78,15 @@ function buildState(
   id: string,
   messages: readonly Message[],
   metadata: Readonly<Record<string, unknown>> | undefined,
+  version: number,
+  tenantId: string | undefined,
 ): SessionState {
   return {
     id,
     messages: [...messages],
     ...(metadata !== undefined ? { metadata: { ...metadata } } : {}),
+    version,
+    ...(tenantId !== undefined ? { tenantId } : {}),
   };
 }
 
@@ -96,7 +102,7 @@ export class FilesystemJsonlSessionStore implements SessionStore {
   }
 
   async migrate(): Promise<void> {
-    await mkdir(this.directory, { recursive: true });
+    await this.ensureDirectory();
     await writeFile(join(this.directory, ".engine-session-store-version"), `${SESSION_STORE_SCHEMA_VERSION}\n`, "utf8");
   }
 
@@ -135,7 +141,7 @@ export class FilesystemJsonlSessionStore implements SessionStore {
   }
 
   async list(options?: SessionListOptions): Promise<SessionListPage> {
-    await this.migrate();
+    await this.ensureDirectory();
     const normalized = normalizeSessionListOptions(options, "recent");
     const entries = await readdir(this.directory, { withFileTypes: true });
     const rows: Array<{
@@ -144,6 +150,8 @@ export class FilesystemJsonlSessionStore implements SessionStore {
       updatedAt?: string;
       messageCount: number;
       resume?: ReturnType<typeof readResumeInfo>;
+      version?: number;
+      tenantId?: string;
     }> = [];
 
     for (const entry of entries) {
@@ -152,12 +160,15 @@ export class FilesystemJsonlSessionStore implements SessionStore {
       if (replayed.id === undefined || replayed.state === undefined) continue;
       if (isExpired(replayed.expiresAt)) continue;
       if (normalized.prefix !== undefined && !replayed.id.startsWith(normalized.prefix)) continue;
+      if (normalized.tenantId !== undefined && replayed.state.tenantId !== normalized.tenantId) continue;
       const resume = readResumeInfo(replayed.state);
       rows.push({
         id: replayed.id,
         ...(replayed.createdAt !== undefined ? { createdAt: replayed.createdAt } : {}),
         ...(replayed.updatedAt !== undefined ? { updatedAt: replayed.updatedAt } : {}),
         messageCount: replayed.state.messages.length,
+        version: replayed.state.version ?? 0,
+        ...(replayed.state.tenantId !== undefined ? { tenantId: replayed.state.tenantId } : {}),
         ...(resume !== undefined ? { resume } : {}),
       });
     }
@@ -176,6 +187,7 @@ export class FilesystemJsonlSessionStore implements SessionStore {
         ? {
             cursor: encodeSessionListCursor({
               ...(normalized.prefix !== undefined ? { prefix: normalized.prefix } : {}),
+              ...(normalized.tenantId !== undefined ? { tenantId: normalized.tenantId } : {}),
               order: normalized.order,
               offset: normalized.offset + normalized.limit,
             }),
@@ -186,6 +198,9 @@ export class FilesystemJsonlSessionStore implements SessionStore {
 
   async save(state: SessionState): Promise<void> {
     await this.enqueue(state.id, async () => {
+      const existing = (await this.replayFile(this.pathFor(state.id), state.id)).state;
+      const stateVersion = state.version ?? existing?.version ?? 0;
+      const tenantId = state.tenantId ?? existing?.tenantId;
       const metadata = await encodeMetadata(this.codec, state.metadata);
       const record: JsonlSaveRecord = {
         version: SESSION_STORE_SCHEMA_VERSION,
@@ -194,6 +209,8 @@ export class FilesystemJsonlSessionStore implements SessionStore {
         at: new Date().toISOString(),
         messages: await encodeMessages(this.codec, state.messages),
         ...(metadata !== undefined ? { metadata } : {}),
+        stateVersion,
+        ...(tenantId !== undefined ? { tenantId } : {}),
       };
       await this.appendRecord(state.id, record);
     });
@@ -226,7 +243,7 @@ export class FilesystemJsonlSessionStore implements SessionStore {
   }
 
   async purgeExpired(options: PurgeExpiredOptions = {}): Promise<string[]> {
-    await this.migrate();
+    await this.ensureDirectory();
     const now = Date.now();
     const idleCutoff = options.maxIdleMs === undefined ? undefined : now - options.maxIdleMs;
     const purged: string[] = [];
@@ -259,7 +276,7 @@ export class FilesystemJsonlSessionStore implements SessionStore {
       return;
     }
 
-    await this.migrate();
+    await this.ensureDirectory();
     const entries = await readdir(this.directory, { withFileTypes: true });
     for (const entry of entries) {
       if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
@@ -269,6 +286,10 @@ export class FilesystemJsonlSessionStore implements SessionStore {
 
   private pathFor(id: string): string {
     return join(this.directory, sessionFileName(id));
+  }
+
+  private async ensureDirectory(): Promise<void> {
+    await mkdir(this.directory, { recursive: true });
   }
 
   private async waitForWrites(id: string): Promise<void> {
@@ -288,7 +309,7 @@ export class FilesystemJsonlSessionStore implements SessionStore {
   }
 
   private async appendRecord(id: string, record: JsonlRecord): Promise<void> {
-    await mkdir(this.directory, { recursive: true });
+    await this.ensureDirectory();
     await appendFile(this.pathFor(id), `${JSON.stringify(record)}\n`, "utf8");
   }
 
@@ -308,6 +329,8 @@ export class FilesystemJsonlSessionStore implements SessionStore {
     let id = expectedId;
     let messages: Message[] = [];
     let metadata: Readonly<Record<string, unknown>> | undefined;
+    let stateVersion = 0;
+    let tenantId: string | undefined;
     let exists = false;
     let createdAt: string | undefined;
     let updatedAt: string | undefined;
@@ -326,11 +349,15 @@ export class FilesystemJsonlSessionStore implements SessionStore {
         exists = false;
         messages = [];
         metadata = undefined;
+        stateVersion = 0;
+        tenantId = undefined;
         expiresAt = undefined;
       } else if (record.op === "save") {
         exists = true;
         messages = await decodeMessages(this.codec, record.messages);
         metadata = await decodeMetadata(this.codec, record.metadata);
+        stateVersion = typeof record.stateVersion === "number" ? record.stateVersion : 0;
+        tenantId = typeof record.tenantId === "string" ? record.tenantId : undefined;
       } else if (record.op === "append") {
         exists = true;
         messages.push(...await decodeMessages(this.codec, record.messages));
@@ -346,7 +373,7 @@ export class FilesystemJsonlSessionStore implements SessionStore {
     if (!exists || id === undefined || (!includeExpired && isExpired(expiresAt))) {
       return { id, state: undefined, createdAt, updatedAt, expiresAt };
     }
-    return { id, state: buildState(id, messages, metadata), createdAt, updatedAt, expiresAt };
+    return { id, state: buildState(id, messages, metadata, stateVersion, tenantId), createdAt, updatedAt, expiresAt };
   }
 
   private async compactFile(path: string, expectedId?: string): Promise<void> {
@@ -365,6 +392,8 @@ export class FilesystemJsonlSessionStore implements SessionStore {
       at: new Date().toISOString(),
       messages: await encodeMessages(this.codec, replayed.state.messages),
       ...(metadata !== undefined ? { metadata } : {}),
+      stateVersion: replayed.state.version ?? 0,
+      ...(replayed.state.tenantId !== undefined ? { tenantId: replayed.state.tenantId } : {}),
     };
     const tmp = `${path}.tmp-${process.pid}-${Date.now()}`;
     await writeFile(tmp, `${JSON.stringify(record)}\n`, "utf8");

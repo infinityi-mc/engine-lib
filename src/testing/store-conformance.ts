@@ -136,6 +136,38 @@ export function runSessionStoreConformance(
       });
     });
 
+    it("preserves reserved version and tenant fields", async () => {
+      await withStore(async (store) => {
+        await store.save({ id: "tenant/a", messages: [user("a")], version: 7, tenantId: "t1" });
+        await store.save({ id: "tenant/a", messages: [user("replacement")] });
+        await store.save({ id: "tenant/b", messages: [user("b")], tenantId: "t2" });
+        await store.save({ id: "tenant/c", messages: [user("c")], tenantId: "t1" });
+        await store.append("tenant/a", [user("tail")]);
+
+        const loaded = await store.load("tenant/a");
+        expect(loaded?.version).toBe(7);
+        expect(loaded?.tenantId).toBe("t1");
+        expect(messageTexts(loaded)).toEqual(["replacement", "tail"]);
+
+        const tenantPage = await store.list({ tenantId: "t1", order: "id", limit: 1 });
+        expect(tenantPage.sessions.map((session) => session.id)).toEqual(["tenant/a"]);
+        expect(tenantPage.cursor).toBeDefined();
+        expect(tenantPage.sessions[0]?.version).toBe(7);
+        expect(tenantPage.sessions[0]?.tenantId).toBe("t1");
+
+        const nextTenantPage = await store.list({ tenantId: "t1", cursor: tenantPage.cursor });
+        expect(nextTenantPage.sessions.map((session) => session.id)).toEqual(["tenant/c"]);
+        let cursorError: unknown;
+        try {
+          await store.list({ cursor: tenantPage.cursor });
+        } catch (error) {
+          cursorError = error;
+        }
+        expect(cursorError).toBeInstanceOf(Error);
+        expect((cursorError as Error).message).toBe("invalid list cursor");
+      });
+    });
+
     it("exposes opt-in expiry without background deletion", async () => {
       await withStore(async (store) => {
         if (!isExpiringSessionStore(store)) return;

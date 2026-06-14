@@ -25,6 +25,8 @@ const DEFAULT_TABLE_PREFIX = "engine_session";
 interface SessionRow {
   readonly id: string;
   readonly metadata: string | null;
+  readonly version?: number | string | bigint | null;
+  readonly tenant_id?: string | null;
   readonly expires_at?: string | null;
 }
 
@@ -35,6 +37,8 @@ interface MessageRow {
 interface ListRow {
   readonly id: string;
   readonly metadata: string | null;
+  readonly version: number | string | bigint;
+  readonly tenant_id: string | null;
   readonly created_at: string;
   readonly updated_at: string;
   readonly message_count: number | string | bigint;
@@ -102,11 +106,15 @@ function stateOf(
   id: string,
   messages: readonly Message[],
   metadata: Readonly<Record<string, unknown>> | undefined,
+  version: number,
+  tenantId: string | undefined,
 ): SessionState {
   return {
     id,
     messages: [...messages],
     ...(metadata !== undefined ? { metadata: { ...metadata } } : {}),
+    version,
+    ...(tenantId !== undefined ? { tenantId } : {}),
   };
 }
 
@@ -133,6 +141,8 @@ export class ForgeDataSessionStore implements SessionStore {
         id text primary key,
         metadata text null,
         next_seq integer not null default 0,
+        version integer not null default 0,
+        tenant_id text null,
         created_at text not null,
         updated_at text not null,
         expires_at text null
@@ -140,6 +150,8 @@ export class ForgeDataSessionStore implements SessionStore {
     `).execute();
 
     await this.addExpiresAtColumnIfNeeded();
+    await this.addVersionColumnIfNeeded();
+    await this.addTenantIdColumnIfNeeded();
 
     await this.db.raw(sql`
       create table if not exists ${this.tables.messages} (
@@ -159,6 +171,11 @@ export class ForgeDataSessionStore implements SessionStore {
     await this.db.raw(sql`
       create index if not exists ${this.indexName("sessions_expires_at_idx")}
       on ${this.tables.sessions} (expires_at)
+    `).execute();
+
+    await this.db.raw(sql`
+      create index if not exists ${this.indexName("sessions_tenant_id_idx")}
+      on ${this.tables.sessions} (tenant_id)
     `).execute();
 
     await this.db.raw(sql`
@@ -185,7 +202,7 @@ export class ForgeDataSessionStore implements SessionStore {
   async load(id: string): Promise<SessionState | undefined> {
     await this.writeQueue.catch(() => {});
     const session = await this.db.raw<SessionRow>(sql`
-      select id, metadata, expires_at from ${this.tables.sessions} where id = ${id}
+      select id, metadata, version, tenant_id, expires_at from ${this.tables.sessions} where id = ${id}
     `).executeTakeFirst();
     if (session === undefined) return undefined;
     if (session.expires_at !== null && session.expires_at !== undefined && Date.parse(session.expires_at) <= Date.now()) {
@@ -200,7 +217,13 @@ export class ForgeDataSessionStore implements SessionStore {
 
     const messages = await decodeMessages(this.codec, rows.rows.map((row) => row.payload));
     const metadata = await decodeMetadata(this.codec, session.metadata);
-    return stateOf(id, messages, metadata);
+    return stateOf(
+      id,
+      messages,
+      metadata,
+      session.version == null ? 0 : toNumber(session.version),
+      session.tenant_id ?? undefined,
+    );
   }
 
   async append(id: string, messages: readonly Message[]): Promise<AppendResult> {
@@ -253,28 +276,31 @@ export class ForgeDataSessionStore implements SessionStore {
     await this.writeQueue.catch(() => {});
     const normalized = normalizeSessionListOptions(options, "recent");
     const prefix = normalized.prefix;
+    const tenantId = normalized.tenantId;
     const limit = normalized.limit + 1;
     const offset = normalized.offset;
     const pattern = prefix === undefined ? undefined : `${prefix}%`;
 
     const rows = normalized.order === "id"
       ? await this.db.raw<ListRow>(sql`
-          select s.id, s.metadata, s.created_at, s.updated_at, count(m.seq) as message_count
+          select s.id, s.metadata, s.version, s.tenant_id, s.created_at, s.updated_at, count(m.seq) as message_count
           from ${this.tables.sessions} s
           left join ${this.tables.messages} m on m.session_id = s.id
           where (s.expires_at is null or s.expires_at > ${new Date().toISOString()})
           ${pattern === undefined ? sql`` : sql`and s.id like ${pattern}`}
-          group by s.id, s.metadata, s.created_at, s.updated_at
+          ${tenantId === undefined ? sql`` : sql`and s.tenant_id = ${tenantId}`}
+          group by s.id, s.metadata, s.version, s.tenant_id, s.created_at, s.updated_at
           order by s.id asc
           limit ${limit} offset ${offset}
         `).execute()
       : await this.db.raw<ListRow>(sql`
-          select s.id, s.metadata, s.created_at, s.updated_at, count(m.seq) as message_count
+          select s.id, s.metadata, s.version, s.tenant_id, s.created_at, s.updated_at, count(m.seq) as message_count
           from ${this.tables.sessions} s
           left join ${this.tables.messages} m on m.session_id = s.id
           where (s.expires_at is null or s.expires_at > ${new Date().toISOString()})
           ${pattern === undefined ? sql`` : sql`and s.id like ${pattern}`}
-          group by s.id, s.metadata, s.created_at, s.updated_at
+          ${tenantId === undefined ? sql`` : sql`and s.tenant_id = ${tenantId}`}
+          group by s.id, s.metadata, s.version, s.tenant_id, s.created_at, s.updated_at
           order by s.updated_at desc, s.id asc
           limit ${limit} offset ${offset}
         `).execute();
@@ -289,6 +315,8 @@ export class ForgeDataSessionStore implements SessionStore {
           createdAt: row.created_at,
           updatedAt: row.updated_at,
           messageCount: toNumber(row.message_count),
+          version: toNumber(row.version),
+          ...(row.tenant_id !== null ? { tenantId: row.tenant_id } : {}),
           ...(resume !== undefined ? { resume } : {}),
         };
       })),
@@ -296,6 +324,7 @@ export class ForgeDataSessionStore implements SessionStore {
         ? {
             cursor: encodeSessionListCursor({
               ...(normalized.prefix !== undefined ? { prefix: normalized.prefix } : {}),
+              ...(normalized.tenantId !== undefined ? { tenantId: normalized.tenantId } : {}),
               order: normalized.order,
               offset: normalized.offset + normalized.limit,
             }),
@@ -310,12 +339,20 @@ export class ForgeDataSessionStore implements SessionStore {
     const now = new Date().toISOString();
 
     await this.enqueueWrite(async () => this.db.uow(async (tx) => {
+      const existing = await tx.raw<SessionRow>(sql`
+        select version, tenant_id from ${this.tables.sessions} where id = ${state.id}
+      `).executeTakeFirst();
+      const stateVersion = state.version ?? (existing?.version == null ? 0 : toNumber(existing.version));
+      const tenantId = state.tenantId ?? existing?.tenant_id ?? null;
+
       await tx.raw(sql`
-        insert into ${this.tables.sessions} (id, metadata, next_seq, created_at, updated_at)
-        values (${state.id}, ${metadata ?? null}, ${encoded.length}, ${now}, ${now})
+        insert into ${this.tables.sessions} (id, metadata, next_seq, version, tenant_id, created_at, updated_at)
+        values (${state.id}, ${metadata ?? null}, ${encoded.length}, ${stateVersion}, ${tenantId}, ${now}, ${now})
         on conflict (id) do update set
           metadata = excluded.metadata,
           next_seq = excluded.next_seq,
+          version = excluded.version,
+          tenant_id = excluded.tenant_id,
           updated_at = excluded.updated_at
       `).execute();
 
@@ -388,6 +425,36 @@ export class ForgeDataSessionStore implements SessionStore {
     try {
       await this.db.raw(sql`
         alter table ${this.tables.sessions} add column expires_at text null
+      `).execute();
+    } catch (error) {
+      const cause = error instanceof Error ? error.cause : undefined;
+      const message = [
+        error instanceof Error ? error.message : String(error),
+        cause instanceof Error ? cause.message : "",
+      ].join(" ").toLowerCase();
+      if (!message.includes("duplicate") && !message.includes("exists")) throw error;
+    }
+  }
+
+  private async addVersionColumnIfNeeded(): Promise<void> {
+    try {
+      await this.db.raw(sql`
+        alter table ${this.tables.sessions} add column version integer not null default 0
+      `).execute();
+    } catch (error) {
+      const cause = error instanceof Error ? error.cause : undefined;
+      const message = [
+        error instanceof Error ? error.message : String(error),
+        cause instanceof Error ? cause.message : "",
+      ].join(" ").toLowerCase();
+      if (!message.includes("duplicate") && !message.includes("exists")) throw error;
+    }
+  }
+
+  private async addTenantIdColumnIfNeeded(): Promise<void> {
+    try {
+      await this.db.raw(sql`
+        alter table ${this.tables.sessions} add column tenant_id text null
       `).execute();
     } catch (error) {
       const cause = error instanceof Error ? error.cause : undefined;

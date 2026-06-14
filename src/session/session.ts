@@ -26,6 +26,8 @@ export interface CreateSessionOptions {
   readonly messages?: readonly Message[];
   /** Free-form metadata attached to the session handle. */
   readonly metadata?: Record<string, unknown>;
+  /** Optional tenant owner persisted with newly-created sessions. */
+  readonly tenantId?: string;
   /** Expected model used as the compatibility baseline when this session is resumed. */
   readonly expectedModel?: string;
   /** Expected provider used as the compatibility baseline when this session is resumed. */
@@ -45,6 +47,7 @@ export function createSession(opts: CreateSessionOptions = {}): Session {
   const store = opts.store ?? new InMemorySessionStore();
   const seed = opts.messages;
   const metadata = opts.metadata;
+  const tenantId = opts.tenantId;
 
   let seedPromise: Promise<void> | undefined;
   /**
@@ -56,13 +59,19 @@ export function createSession(opts: CreateSessionOptions = {}): Session {
     if (seedPromise !== undefined) return seedPromise;
     seedPromise = (async () => {
       const existing = await store.load(id);
+      if (tenantId !== undefined && existing?.tenantId !== undefined && existing.tenantId !== tenantId) {
+        throw new Error(`session "${id}" is owned by a different tenant`);
+      }
       const shouldSeedMessages = seed !== undefined && seed.length > 0 && (existing === undefined || existing.messages.length === 0);
       const shouldSeedMetadata = metadata !== undefined && existing === undefined;
-      if (shouldSeedMessages || shouldSeedMetadata) {
+      const shouldSeedTenant = tenantId !== undefined && existing?.tenantId === undefined;
+      if (shouldSeedMessages || shouldSeedMetadata || shouldSeedTenant) {
         await store.save({
           id,
           messages: shouldSeedMessages ? seed ?? [] : existing?.messages ?? [],
           ...(shouldSeedMetadata ? { metadata } : existing?.metadata !== undefined ? { metadata: existing.metadata } : {}),
+          ...(tenantId !== undefined ? { tenantId } : existing?.tenantId !== undefined ? { tenantId: existing.tenantId } : {}),
+          ...(existing?.version !== undefined ? { version: existing.version } : {}),
         });
       }
     })();
@@ -72,6 +81,7 @@ export function createSession(opts: CreateSessionOptions = {}): Session {
   return {
     id,
     ...(metadata !== undefined ? { metadata } : {}),
+    ...(tenantId !== undefined ? { tenantId } : {}),
     ...(opts.expectedModel !== undefined ? { expectedModel: opts.expectedModel } : {}),
     ...(opts.expectedProvider !== undefined ? { expectedProvider: opts.expectedProvider } : {}),
     async messages(): Promise<Message[]> {

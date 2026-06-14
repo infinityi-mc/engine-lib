@@ -8,6 +8,8 @@ function snapshot(state: SessionState): SessionState {
     id: state.id,
     messages: [...state.messages],
     ...(state.metadata !== undefined ? { metadata: { ...state.metadata } } : {}),
+    ...(state.version !== undefined ? { version: state.version } : {}),
+    ...(state.tenantId !== undefined ? { tenantId: state.tenantId } : {}),
   };
 }
 
@@ -37,6 +39,11 @@ export function withSessionStoreHooks<T extends SessionStore>(
     try {
       const result = await hooks.compactor.compact(snapshot(current), context);
       const replacement = isCompactionResult(result) ? result.state : result;
+      const replacementState: SessionState = {
+        ...replacement,
+        ...(replacement.version !== undefined ? { version: replacement.version } : current.version !== undefined ? { version: current.version } : {}),
+        ...(replacement.tenantId !== undefined ? { tenantId: replacement.tenantId } : current.tenantId !== undefined ? { tenantId: current.tenantId } : {}),
+      };
       const archive = isCompactionResult(result) ? result.archive : undefined;
       if (isCompactionResult(result) && result.archive !== undefined && hooks.archiver !== undefined) {
         await hooks.archiver.archive({
@@ -46,11 +53,11 @@ export function withSessionStoreHooks<T extends SessionStore>(
           ...result.archive,
         }, context);
       }
-      await store.save(snapshot(replacement));
+      await store.save(snapshot(replacementState));
       const removed = archive?.messages?.length
-        ?? Math.max(0, current.messages.length - replacement.messages.length);
+        ?? Math.max(0, current.messages.length - replacementState.messages.length);
       const hadSummary = current.messages.some(isSummaryMessage);
-      const hasSummary = replacement.messages.some(isSummaryMessage);
+      const hasSummary = replacementState.messages.some(isSummaryMessage);
       return {
         compacted: true,
         removed,

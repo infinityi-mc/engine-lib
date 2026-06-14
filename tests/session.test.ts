@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { user } from "../src/messages/index";
-import { createSession, InMemorySessionStore } from "../src/session/index";
+import { RESUME_SCHEMA_VERSION, createSession, InMemorySessionStore, readResumeInfo, withResumeInfo } from "../src/session/index";
 
 describe("InMemorySessionStore", () => {
   it("load returns undefined for an unknown id", async () => {
@@ -99,5 +99,53 @@ describe("createSession", () => {
     expect(await session.messages()).toHaveLength(2);
     await session.clear();
     expect(await session.messages()).toHaveLength(0);
+  });
+
+  it("persists a tenant id when creating a new session", async () => {
+    const store = new InMemorySessionStore();
+    const session = createSession({ id: "tenant-session", store, tenantId: "t1" });
+
+    await session.append([user("hello")]);
+
+    expect(session.tenantId).toBe("t1");
+    expect((await store.load("tenant-session"))?.tenantId).toBe("t1");
+  });
+
+  it("attaches a tenant id to an existing global session on first use", async () => {
+    const store = new InMemorySessionStore();
+    await store.save({ id: "global-session", messages: [user("existing")] });
+    const session = createSession({ id: "global-session", store, tenantId: "t1" });
+
+    await session.messages();
+
+    expect((await store.load("global-session"))?.tenantId).toBe("t1");
+  });
+
+  it("rejects an existing session owned by a different tenant", async () => {
+    const store = new InMemorySessionStore();
+    await store.save({ id: "owned-session", messages: [user("existing")], tenantId: "t1" });
+    const session = createSession({ id: "owned-session", store, tenantId: "t2" });
+
+    await expect(session.messages()).rejects.toThrow('session "owned-session" is owned by a different tenant');
+  });
+});
+
+describe("resume metadata", () => {
+  it("reads v2 agent compatibility fields", () => {
+    const metadata = withResumeInfo(undefined, {
+      schemaVersion: RESUME_SCHEMA_VERSION,
+      agentName: "agent",
+      agentVersion: "1.2.3",
+      toolNames: ["a", "b"],
+      lastActiveAt: new Date().toISOString(),
+      lastRunStatus: "completed",
+    });
+
+    expect(readResumeInfo(metadata)).toMatchObject({
+      schemaVersion: 2,
+      agentName: "agent",
+      agentVersion: "1.2.3",
+      toolNames: ["a", "b"],
+    });
   });
 });

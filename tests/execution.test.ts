@@ -85,10 +85,44 @@ describe("runAgent — buffered", () => {
     const agent = defineAgent({ name: "a", provider: scriptedProvider([textResult("hello")]) });
     const result = await runAgent(agent, { input: "hi" });
     expect(result.output).toBe("hello");
+    expect(result.runId).toMatch(/^run_/);
     expect(result.steps).toBe(1);
     expect(result.finishReason).toBe("stop");
     // history: user input + assistant answer
     expect(result.messages.map((m) => m.role)).toEqual(["user", "assistant"]);
+  });
+
+  it("uses one generated runId across events and result", async () => {
+    const events: RunEvent[] = [];
+    const agent = defineAgent({ name: "a", provider: scriptedProvider([textResult("hello")]) });
+
+    const result = await runAgent(agent, { input: "hi", onEvent: (event) => events.push(event) });
+
+    expect(result.runId).toMatch(/^run_/);
+    expect(events.length).toBeGreaterThan(0);
+    expect(new Set(events.map((event) => event.runId))).toEqual(new Set([result.runId]));
+    expect(events[0]).toMatchObject({ type: "run.start", runId: result.runId });
+    expect(events.at(-1)).toMatchObject({ type: "run.finish", runId: result.runId });
+  });
+
+  it("uses a host-supplied runId verbatim across events and result", async () => {
+    const events: RunEvent[] = [];
+    const agent = defineAgent({ name: "a", provider: scriptedProvider([textResult("hello")]) });
+
+    const result = await runAgent(agent, {
+      input: "hi",
+      runId: "req-123",
+      onEvent: (event) => events.push(event),
+    });
+
+    expect(result.runId).toBe("req-123");
+    expect(events.every((event) => event.runId === "req-123")).toBe(true);
+  });
+
+  it("rejects an empty host-supplied runId", async () => {
+    const agent = defineAgent({ name: "a", provider: scriptedProvider([textResult("hello")]) });
+
+    expect(() => runAgent(agent, { input: "hi", runId: "" })).toThrow("runId must be a non-empty string");
   });
 
   it("prepends resolved instructions as a system message", async () => {
@@ -161,6 +195,37 @@ describe("runAgent — buffered", () => {
     const result = await runAgent(agent, { input: "go" });
     const tool = result.messages.find((m) => m.role === "tool");
     expect(tool?.content[0]).toMatchObject({ type: "tool_result", isError: true });
+  });
+
+  it("stamps nested draft child events emitted through the run bridge", async () => {
+    const nested = defineTool({
+      name: "nested",
+      parameters: s.object({}),
+      execute: (_args, ctx) => {
+        ctx.run?.emit({
+          type: "agent.child",
+          agent: "child",
+          depth: 1,
+          event: { type: "custom", name: "child.custom", data: {} } as never,
+        });
+        return { ok: true, content: "nested" };
+      },
+    });
+    const agent = defineAgent({
+      name: "a",
+      tools: [nested],
+      provider: scriptedProvider([
+        toolCallResult([{ id: "c1", name: "nested", arguments: {} }]),
+        textResult("done"),
+      ]),
+    });
+    const events: RunEvent[] = [];
+
+    const result = await runAgent(agent, { input: "go", onEvent: (event) => events.push(event) });
+
+    const child = events.find((event): event is Extract<RunEvent, { type: "agent.child" }> => event.type === "agent.child");
+    expect(child?.runId).toBe(result.runId);
+    expect(child?.event.runId).toBe(result.runId);
   });
 
   it("executes parallel tool calls from one turn", async () => {
@@ -490,7 +555,12 @@ describe("runAgent — sessions & context (Phase 5)", () => {
   it("writes typed resume metadata without clobbering host metadata", async () => {
     const session = createSession({ id: "resume-info", metadata: { host: true } });
     const usage: Usage = { inputTokens: 1, outputTokens: 2, totalTokens: 3 };
-    const agent = defineAgent({ name: "resume-agent", provider: scriptedProvider([textResult("ok", usage)]) });
+    const agent = defineAgent({
+      name: "resume-agent",
+      version: "1.2.3",
+      tools: [echo],
+      provider: scriptedProvider([textResult("ok", usage)]),
+    });
 
     await runAgent(agent, { input: "hi", session });
 
@@ -498,8 +568,10 @@ describe("runAgent — sessions & context (Phase 5)", () => {
     expect(metadata?.host).toBe(true);
     const resume = readResumeInfo(metadata);
     expect(resume).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       agentName: "resume-agent",
+      agentVersion: "1.2.3",
+      toolNames: ["echo"],
       model: "mock-model",
       provider: "mock",
       lastRunStatus: "completed",
@@ -568,6 +640,24 @@ describe("runAgent — sessions & context (Phase 5)", () => {
       }),
     ).rejects.toBeInstanceOf(ExecutionError);
     expect(seen).toContain("error");
+  });
+
+  it("stamps checkpoints with the runId", async () => {
+    let checkpointRunId: string | undefined;
+    const agent = defineAgent({ name: "checkpoint-agent", provider: scriptedProvider([textResult("done")]) });
+
+    const result = await runAgent(agent, {
+      input: "go",
+      runId: "checkpoint-run",
+      checkpoint: {
+        onCheckpoint: (checkpoint) => {
+          checkpointRunId = checkpoint.runId;
+        },
+      },
+    });
+
+    expect(result.runId).toBe("checkpoint-run");
+    expect(checkpointRunId).toBe("checkpoint-run");
   });
 
   it("synthesizes an error tool result for dangling calls on resume by default", async () => {

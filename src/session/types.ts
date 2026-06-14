@@ -30,6 +30,10 @@ export interface SessionState {
   readonly id: string;
   readonly messages: readonly Message[];
   readonly metadata?: Readonly<Record<string, unknown>>;
+  /** Optimistic concurrency stamp reserved for CAS-capable stores. Absent rows read as 0. */
+  readonly version?: number;
+  /** Optional tenant owner. Absent means a global/unscoped session. */
+  readonly tenantId?: string;
 }
 
 /** Ordering supported by {@link SessionStore.list}. */
@@ -45,6 +49,8 @@ export interface SessionListOptions {
   readonly cursor?: string;
   /** Sort order. Defaults to "recent" when the store tracks timestamps, else "id". */
   readonly order?: SessionListOrder;
+  /** Return only sessions owned by this tenant. Omitted lists global and tenant-bound sessions. */
+  readonly tenantId?: string;
 }
 
 /** A lightweight listing entry for a stored session. */
@@ -54,6 +60,8 @@ export interface SessionListItem {
   readonly updatedAt?: string;
   readonly messageCount?: number;
   readonly resume?: SessionResumeInfo;
+  readonly version?: number;
+  readonly tenantId?: string;
 }
 
 /** One page of session listings. */
@@ -99,6 +107,8 @@ export interface SessionStore {
 export interface Session {
   readonly id: string;
   readonly metadata?: Readonly<Record<string, unknown>>;
+  /** Optional tenant owner. Absent means global/unscoped. */
+  readonly tenantId?: string;
   /** Expected model used as the model-compatibility baseline for resumes. */
   readonly expectedModel?: string;
   /** Expected provider used as the provider-compatibility baseline for resumes. */

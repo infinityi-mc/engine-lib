@@ -49,7 +49,9 @@ import type {
   AnyRunOptions,
   BufferedRunOptions,
   RunBridge,
+  RunBridgeEvent,
   RunEvent,
+  RunEventDraft,
   RunHandle,
   RunInput,
   RunOptions,
@@ -58,6 +60,7 @@ import type {
   StreamingRunOptions,
 } from "./types";
 import { addUsage, emptyUsage } from "./usage";
+import { generateRunId } from "./run-id";
 
 /** Default cap on provider turns when {@link RunOptions.maxSteps} is omitted. */
 export const DEFAULT_MAX_STEPS = 16;
@@ -111,7 +114,7 @@ function trailingDanglingToolCalls(messages: readonly Message[]): {
   return dangling.length === 0 ? undefined : { assistantIndex: index, calls: dangling };
 }
 
-function checkpointEvent(result: AppendResult, sessionId: string): RunEvent | undefined {
+function checkpointEvent(result: AppendResult, sessionId: string): RunEventDraft | undefined {
   return result.compacted === true
     ? {
         type: "session.compacted",
@@ -120,6 +123,42 @@ function checkpointEvent(result: AppendResult, sessionId: string): RunEvent | un
         summaryAdded: result.summaryAdded === true,
       }
     : undefined;
+}
+
+function stampRunEvent(runId: string, event: RunBridgeEvent): RunEvent {
+  if (event.type === "agent.child") {
+    const child = event.event as RunBridgeEvent;
+    return {
+      ...event,
+      runId,
+      event: hasRunId(child) ? child : stampRunEvent(runId, child),
+    } as RunEvent;
+  }
+  return { ...event, runId } as RunEvent;
+}
+
+function hasRunId(event: RunBridgeEvent): event is RunEvent {
+  return typeof (event as { readonly runId?: unknown }).runId === "string";
+}
+
+function resolveRunId(opts: RunOptions): string {
+  if (opts.runId === undefined) return generateRunId();
+  if (typeof opts.runId !== "string" || opts.runId.trim() === "") {
+    throw new ExecutionError("runId must be a non-empty string");
+  }
+  return opts.runId;
+}
+
+async function* stampRunEvents(
+  gen: AsyncGenerator<RunBridgeEvent, RunResult>,
+  runId: string,
+): AsyncGenerator<RunEvent, RunResult> {
+  let next = await gen.next();
+  while (!next.done) {
+    yield stampRunEvent(runId, next.value);
+    next = await gen.next();
+  }
+  return next.value;
 }
 
 function resolvedIdentity(agent: AgentDefinition, opts: RunOptions): SessionModelIdentity {
@@ -206,7 +245,8 @@ async function* executeAgent(
   agent: AgentDefinition,
   opts: RunOptions,
   tel: RunTelemetry,
-): AsyncGenerator<RunEvent, RunResult> {
+  runId: string,
+): AsyncGenerator<RunBridgeEvent, RunResult> {
   const maxSteps = opts.maxSteps ?? DEFAULT_MAX_STEPS;
   const maxHandoffs = opts.maxHandoffs ?? DEFAULT_MAX_HANDOFFS;
   const stream = opts.stream === true;
@@ -248,11 +288,14 @@ async function* executeAgent(
   // while the conversation continues. Starts as the agent passed to runAgent.
   let active = activate(agent);
 
+  const activeToolNames = (): readonly string[] =>
+    active.registry.list().map((tool) => tool.name).toSorted();
+
   /** The outcome of one tool call: its result plus anything it bridged to the parent run. */
   interface ToolOutcome {
     readonly result: ToolResult;
     /** Nested events the tool forwarded (e.g. a sub-agent's run events). */
-    readonly events: RunEvent[];
+    readonly events: RunBridgeEvent[];
     /** Token usage the tool reported (e.g. a sub-agent's run usage). */
     readonly usage: Usage;
   }
@@ -261,7 +304,7 @@ async function* executeAgent(
   const runOneTool = async (
     call: { id: string; name: string; arguments: unknown },
   ): Promise<ToolOutcome> => {
-    const events: RunEvent[] = [];
+    const events: RunBridgeEvent[] = [];
     let usage = emptyUsage();
     const bridge: RunBridge = {
       emit: (event) => events.push(event),
@@ -291,7 +334,11 @@ async function* executeAgent(
       agentName: active.agent.name,
       run: bridge,
     };
-    const span = tel.startSpan(SPAN_TOOL, { "tool.name": call.name, "tool.call_id": call.id });
+    const span = tel.startSpan(SPAN_TOOL, {
+      "run.id": runId,
+      "tool.name": call.name,
+      "tool.call_id": call.id,
+    });
     const startedAt = Date.now();
     try {
       const result = await tool.execute(parsed.data, toolCtx);
@@ -332,6 +379,8 @@ async function* executeAgent(
       agentName: active.agent.name,
       ...(identity.model !== undefined ? { model: identity.model } : {}),
       ...(identity.provider !== undefined ? { provider: identity.provider } : {}),
+      ...(active.agent.version !== undefined ? { agentVersion: active.agent.version } : {}),
+      toolNames: activeToolNames(),
       lastActiveAt: new Date().toISOString(),
       lastRunStatus: status,
       totalUsage: addUsage(startingTotalUsage, usageSnapshot),
@@ -346,6 +395,7 @@ async function* executeAgent(
     const callback = opts.checkpoint?.onCheckpoint;
     if (callback === undefined) return;
     const checkpoint: RunCheckpoint = {
+      runId,
       ...(opts.session !== undefined ? { sessionId: opts.session.id } : {}),
       agent: active.agent.name,
       step,
@@ -514,6 +564,7 @@ async function* executeAgent(
 
       const useStreaming = stream && provider.capabilities.streaming;
       const providerSpan = tel.startSpan(SPAN_PROVIDER, {
+        "run.id": runId,
         "provider.name": provider.name,
         "provider.model": model,
         "provider.mode": useStreaming ? "stream" : "complete",
@@ -573,6 +624,7 @@ async function* executeAgent(
         await runCheckpointCallback(steps, newMessages);
         const output = extractText(finalMessage);
         const runResult: RunResult = {
+          runId,
           output,
           finalMessage,
           messages: [...messages],
@@ -706,6 +758,7 @@ function usageOfError(err: unknown): Usage {
 /** Set the run span's outcome attributes from the final result. */
 function runResultAttrs(result: RunResult): Record<string, string | number> {
   return {
+    "run.id": result.runId,
     "agent.steps": result.steps,
     "agent.finish_reason": result.finishReason,
     "agent.usage.total_tokens": result.usage.totalTokens,
@@ -722,10 +775,11 @@ async function driveToCompletion(
   hub: EventHub,
   tel: RunTelemetry,
   agentName: string,
+  runId: string,
 ): Promise<RunResult> {
   const startedAt = Date.now();
   try {
-    const result = await tel.withSpan(SPAN_RUN, { "agent.name": agentName }, async (span) => {
+    const result = await tel.withSpan(SPAN_RUN, { "run.id": runId, "agent.name": agentName }, async (span) => {
       let next = await gen.next();
       while (!next.done) {
         await hub.emit(next.value);
@@ -735,11 +789,15 @@ async function driveToCompletion(
       span.ok();
       return next.value;
     });
-    tel.recordRun({ "agent.name": agentName, "agent.outcome": "ok" }, Date.now() - startedAt, result.usage);
+    tel.recordRun(
+      { "run.id": runId, "agent.name": agentName, "agent.outcome": "ok" },
+      Date.now() - startedAt,
+      result.usage,
+    );
     return result;
   } catch (err) {
     tel.recordRun(
-      { "agent.name": agentName, "agent.outcome": "error" },
+      { "run.id": runId, "agent.name": agentName, "agent.outcome": "error" },
       Date.now() - startedAt,
       usageOfError(err),
     );
@@ -753,6 +811,7 @@ function makeHandle(
   hub: EventHub,
   tel: RunTelemetry,
   agentName: string,
+  runId: string,
 ): RunHandle {
   let resolveCompleted!: (result: RunResult) => void;
   let rejectCompleted!: (reason: unknown) => void;
@@ -765,7 +824,7 @@ function makeHandle(
   // awaits `completed` — doesn't trip an unhandled-rejection warning/crash.
   completed.catch(() => {});
 
-  const span = tel.startSpan(SPAN_RUN, { "agent.name": agentName });
+  const span = tel.startSpan(SPAN_RUN, { "run.id": runId, "agent.name": agentName });
   const startedAt = Date.now();
 
   async function* iterate(): AsyncGenerator<RunEvent> {
@@ -784,7 +843,7 @@ function makeHandle(
       span.ok();
       settled = true;
       tel.recordRun(
-        { "agent.name": agentName, "agent.outcome": "ok" },
+        { "run.id": runId, "agent.name": agentName, "agent.outcome": "ok" },
         Date.now() - startedAt,
         next.value.usage,
       );
@@ -793,7 +852,7 @@ function makeHandle(
       span.fail(err instanceof Error ? err.message : String(err));
       settled = true;
       tel.recordRun(
-        { "agent.name": agentName, "agent.outcome": "error" },
+        { "run.id": runId, "agent.name": agentName, "agent.outcome": "error" },
         Date.now() - startedAt,
         usageOfError(err),
       );
@@ -808,7 +867,7 @@ function makeHandle(
         await gen.return(undefined as never).catch(() => {});
         span.fail(cancelled.message);
         tel.recordRun(
-          { "agent.name": agentName, "agent.outcome": "incomplete" },
+          { "run.id": runId, "agent.name": agentName, "agent.outcome": "incomplete" },
           Date.now() - startedAt,
           emptyUsage(),
         );
@@ -869,9 +928,10 @@ export function runAgent(
   agent: AgentDefinition,
   opts: RunOptions = {},
 ): Promise<RunResult> | RunHandle {
+  const runId = resolveRunId(opts);
   const tel = createRunTelemetry(opts.telemetry);
   const hub = buildEventHub(opts);
-  const gen = executeAgent(agent, opts, tel);
-  if (opts.stream === true) return makeHandle(gen, hub, tel, agent.name);
-  return driveToCompletion(gen, hub, tel, agent.name);
+  const gen = stampRunEvents(executeAgent(agent, opts, tel, runId), runId);
+  if (opts.stream === true) return makeHandle(gen, hub, tel, agent.name, runId);
+  return driveToCompletion(gen, hub, tel, agent.name, runId);
 }

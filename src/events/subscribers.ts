@@ -73,43 +73,46 @@ export function messageBusSubscriber(
 export function eventFields(event: RunEvent): Record<string, string | number | boolean> {
   switch (event.type) {
     case "run.start":
-      return { agent: event.agent };
+      return { runId: event.runId, agent: event.agent };
     case "message":
-      return { role: event.message.role, parts: event.message.content.length };
+      return { runId: event.runId, role: event.message.role, parts: event.message.content.length };
     case "token":
-      return { length: event.delta.length };
+      return { runId: event.runId, length: event.delta.length };
     case "tool.call":
-      return { id: event.id, name: event.name };
+      return { runId: event.runId, id: event.id, name: event.name };
     case "tool.result":
-      return { id: event.id, name: event.name, ok: event.result.ok };
+      return { runId: event.runId, id: event.id, name: event.name, ok: event.result.ok };
     case "run.finish":
       return {
+        runId: event.runId,
         finishReason: event.result.finishReason,
         steps: event.result.steps,
         totalTokens: event.result.usage.totalTokens,
       };
     case "error":
-      return { name: event.error.name, message: event.error.message };
+      return { runId: event.runId, name: event.error.name, message: event.error.message };
     case "agent.child":
-      return { agent: event.agent, depth: event.depth, child: event.event.type };
+      return { runId: event.runId, agent: event.agent, depth: event.depth, child: event.event.type };
     case "agent.handoff":
-      return { from: event.from, to: event.to };
+      return { runId: event.runId, from: event.from, to: event.to };
     case "session.resumed":
       return {
+        runId: event.runId,
         sessionId: event.sessionId,
         messageCount: event.messageCount,
         reconciledToolCalls: event.reconciledToolCalls,
       };
     case "session.compacted":
       return {
+        runId: event.runId,
         sessionId: event.sessionId,
         removed: event.removed,
         summaryAdded: event.summaryAdded,
       };
     case "session.expired":
-      return { sessionId: event.sessionId, reason: event.reason };
+      return { runId: event.runId, sessionId: event.sessionId, reason: event.reason };
     case "custom":
-      return { name: event.name };
+      return { runId: event.runId, name: event.name };
   }
 }
 
@@ -123,17 +126,18 @@ export function eventFields(event: RunEvent): Record<string, string | number | b
 export function eventPayload(event: RunEvent): Record<string, unknown> {
   switch (event.type) {
     case "run.start":
-      return { agent: event.agent };
+      return { runId: event.runId, agent: event.agent };
     case "message":
-      return { message: event.message };
+      return { runId: event.runId, message: event.message };
     case "token":
-      return { delta: event.delta };
+      return { runId: event.runId, delta: event.delta };
     case "tool.call":
-      return { id: event.id, name: event.name, arguments: event.arguments };
+      return { runId: event.runId, id: event.id, name: event.name, arguments: event.arguments };
     case "tool.result":
-      return { id: event.id, name: event.name, result: event.result };
+      return { runId: event.runId, id: event.id, name: event.name, result: event.result };
     case "run.finish":
       return {
+        runId: event.runId,
         output: event.result.output,
         finishReason: event.result.finishReason,
         steps: event.result.steps,
@@ -141,13 +145,14 @@ export function eventPayload(event: RunEvent): Record<string, unknown> {
         messages: event.result.messages,
       };
     case "error":
-      return { name: event.error.name, message: event.error.message };
+      return { runId: event.runId, name: event.error.name, message: event.error.message };
     case "agent.child":
-      return { agent: event.agent, depth: event.depth, event: eventPayload(event.event) };
+      return { runId: event.runId, agent: event.agent, depth: event.depth, event: eventPayload(event.event) };
     case "agent.handoff":
-      return { from: event.from, to: event.to };
+      return { runId: event.runId, from: event.from, to: event.to };
     case "session.resumed":
       return {
+        runId: event.runId,
         sessionId: event.sessionId,
         messageCount: event.messageCount,
         reconciledToolCalls: event.reconciledToolCalls,
@@ -155,13 +160,14 @@ export function eventPayload(event: RunEvent): Record<string, unknown> {
       };
     case "session.compacted":
       return {
+        runId: event.runId,
         sessionId: event.sessionId,
         removed: event.removed,
         summaryAdded: event.summaryAdded,
       };
     case "session.expired":
-      return { sessionId: event.sessionId, reason: event.reason };
+      return { runId: event.runId, sessionId: event.sessionId, reason: event.reason };
     case "custom":
-      return { name: event.name, data: event.data };
+      return { runId: event.runId, name: event.name, data: event.data };
   }
 }

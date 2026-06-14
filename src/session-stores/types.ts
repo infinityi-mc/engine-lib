@@ -1,6 +1,6 @@
 import type { Message } from "../messages/types";
 import type { SessionState, SessionStore } from "../session/types";
-import type { RunEvent } from "../execution/types";
+import type { RunEventDraft } from "../execution/types";
 
 /** Encodes persisted session payloads. Wrap this to add encryption at rest. */
 export interface SessionStoreCodec {
@@ -22,7 +22,7 @@ export interface CloseableSessionStore extends SessionStore {
 
 export interface PurgeExpiredOptions {
   readonly maxIdleMs?: number;
-  readonly onEvent?: (event: Extract<RunEvent, { type: "session.expired" }>) => void;
+  readonly onEvent?: (event: Extract<RunEventDraft, { type: "session.expired" }>) => void;
 }
 
 /** A store with opt-in expiry/idle-purge support. */

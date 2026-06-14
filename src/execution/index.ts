@@ -8,6 +8,7 @@
  */
 
 export { DEFAULT_MAX_HANDOFFS, DEFAULT_MAX_STEPS, runAgent } from "./run";
+export { generateRunId } from "./run-id";
 export { addUsage, emptyUsage } from "./usage";
 export type {
   AnyRunOptions,
@@ -15,8 +16,10 @@ export type {
   CheckpointPolicy,
   ResumeOptions,
   RunBridge,
+  RunBridgeEvent,
   RunCheckpoint,
   RunEvent,
+  RunEventDraft,
   RunHandle,
   RunInput,
   RunOptions,

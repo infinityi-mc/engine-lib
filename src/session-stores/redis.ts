@@ -50,11 +50,14 @@ function metadataState(
   id: string,
   messages: readonly Message[],
   metadata: Readonly<Record<string, unknown>> | undefined,
+  info: RedisExistsInfo | undefined,
 ): SessionState {
   return {
     id,
     messages: [...messages],
     ...(metadata !== undefined ? { metadata: { ...metadata } } : {}),
+    version: info?.version ?? 0,
+    ...(info?.tenantId !== undefined ? { tenantId: info.tenantId } : {}),
   };
 }
 
@@ -74,6 +77,8 @@ function rpushTransaction(tx: RedisSessionStoreTransaction, key: string, values:
 interface RedisExistsInfo {
   readonly createdAt: string;
   readonly updatedAt: string;
+  readonly version?: number;
+  readonly tenantId?: string;
 }
 
 function encodeExistsInfo(info: RedisExistsInfo): string {
@@ -85,7 +90,12 @@ function decodeExistsInfo(payload: string | null | undefined): RedisExistsInfo |
   try {
     const parsed = JSON.parse(payload) as Partial<RedisExistsInfo>;
     if (typeof parsed.createdAt === "string" && typeof parsed.updatedAt === "string") {
-      return { createdAt: parsed.createdAt, updatedAt: parsed.updatedAt };
+      return {
+        createdAt: parsed.createdAt,
+        updatedAt: parsed.updatedAt,
+        ...(typeof parsed.version === "number" ? { version: parsed.version } : {}),
+        ...(typeof parsed.tenantId === "string" ? { tenantId: parsed.tenantId } : {}),
+      };
     }
   } catch {
     return undefined;
@@ -126,9 +136,10 @@ export class RedisSessionStore implements SessionStore {
     const metadataPayload = await this.client.get(this.metadataKey(id));
     const exists = await this.client.get(this.existsKey(id));
     if (payloads.length === 0 && metadataPayload == null && exists == null) return undefined;
+    const existsInfo = decodeExistsInfo(exists);
     const metadata = await decodeMetadata(this.codec, metadataPayload);
     const messages = await decodeMessages(this.codec, payloads);
-    return metadataState(id, messages, metadata);
+    return metadataState(id, messages, metadata, existsInfo);
   }
 
   async append(id: string, messages: readonly Message[]): Promise<AppendResult> {
@@ -184,16 +195,21 @@ export class RedisSessionStore implements SessionStore {
       createdAt?: string;
       updatedAt?: string;
       state?: SessionState;
+      tenantId?: string;
+      version?: number;
     }> = [];
     for (const key of rawKeys) {
       const id = decodeSessionKey(this.keyPrefix, key);
       if (id === undefined) continue;
       if (normalized.prefix !== undefined && !id.startsWith(normalized.prefix)) continue;
       const exists = decodeExistsInfo(await this.client.get(this.existsKey(id)));
+      if (normalized.tenantId !== undefined && exists?.tenantId !== normalized.tenantId) continue;
       rows.push({
         id,
         ...(exists?.createdAt !== undefined ? { createdAt: exists.createdAt } : {}),
         ...(exists?.updatedAt !== undefined ? { updatedAt: exists.updatedAt } : {}),
+        version: exists?.version ?? 0,
+        ...(exists?.tenantId !== undefined ? { tenantId: exists.tenantId } : {}),
       });
     }
 
@@ -215,6 +231,8 @@ export class RedisSessionStore implements SessionStore {
         ...(row.createdAt !== undefined ? { createdAt: row.createdAt } : {}),
         ...(row.updatedAt !== undefined ? { updatedAt: row.updatedAt } : {}),
         ...(state !== undefined ? { messageCount: state.messages.length } : {}),
+        version: row.version ?? 0,
+        ...(row.tenantId !== undefined ? { tenantId: row.tenantId } : {}),
         ...(resume !== undefined ? { resume } : {}),
       });
     }
@@ -226,6 +244,7 @@ export class RedisSessionStore implements SessionStore {
         ? {
             cursor: encodeSessionListCursor({
               ...(normalized.prefix !== undefined ? { prefix: normalized.prefix } : {}),
+              ...(normalized.tenantId !== undefined ? { tenantId: normalized.tenantId } : {}),
               order: normalized.order,
               offset: normalized.offset + normalized.limit,
             }),
@@ -241,7 +260,7 @@ export class RedisSessionStore implements SessionStore {
     const existsKey = this.existsKey(state.id);
     const encoded = await encodeMessages(this.codec, state.messages);
     const metadata = await encodeMetadata(this.codec, state.metadata);
-    const exists = await this.nextExistsInfo(state.id);
+    const exists = await this.existsInfoForState(state);
 
     tx.del(messagesKey, metadataKey, existsKey);
     tx.set(existsKey, encodeExistsInfo(exists));
@@ -313,6 +332,19 @@ export class RedisSessionStore implements SessionStore {
     return {
       createdAt: current?.createdAt ?? now,
       updatedAt: now,
+      version: current?.version ?? 0,
+      ...(current?.tenantId !== undefined ? { tenantId: current.tenantId } : {}),
+    };
+  }
+
+  private async existsInfoForState(state: SessionState): Promise<RedisExistsInfo> {
+    const now = new Date().toISOString();
+    const current = decodeExistsInfo(await this.client.get(this.existsKey(state.id)));
+    return {
+      createdAt: current?.createdAt ?? now,
+      updatedAt: now,
+      version: state.version ?? current?.version ?? 0,
+      ...(state.tenantId !== undefined ? { tenantId: state.tenantId } : current?.tenantId !== undefined ? { tenantId: current.tenantId } : {}),
     };
   }
 

@@ -5,7 +5,7 @@ import type { SessionState } from "./types";
 export const RESUME_METADATA_KEY = "engine:resume" as const;
 
 /** Latest resume metadata schema version this runtime understands. */
-export const RESUME_SCHEMA_VERSION = 1 as const;
+export const RESUME_SCHEMA_VERSION = 2 as const;
 
 /** Typed metadata written by runAgent so hosts can triage and safely resume sessions. */
 export interface SessionResumeInfo {
@@ -13,6 +13,8 @@ export interface SessionResumeInfo {
   readonly agentName: string;
   readonly model?: string;
   readonly provider?: string;
+  readonly agentVersion?: string;
+  readonly toolNames?: readonly string[];
   readonly lastActiveAt: string;
   readonly lastRunStatus: "completed" | "failed" | "interrupted";
   readonly totalUsage?: Usage;
@@ -33,6 +35,10 @@ function isUsage(value: unknown): value is Usage {
 
 function isStatus(value: unknown): value is SessionResumeInfo["lastRunStatus"] {
   return value === "completed" || value === "failed" || value === "interrupted";
+}
+
+function isStringArray(value: unknown): value is readonly string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
 function metadataOf(
@@ -60,6 +66,8 @@ export function readResumeInfo(
   if (!isStatus(value.lastRunStatus)) return undefined;
   if (value.model !== undefined && typeof value.model !== "string") return undefined;
   if (value.provider !== undefined && typeof value.provider !== "string") return undefined;
+  if (value.agentVersion !== undefined && typeof value.agentVersion !== "string") return undefined;
+  if (value.toolNames !== undefined && !isStringArray(value.toolNames)) return undefined;
   if (value.totalUsage !== undefined && !isUsage(value.totalUsage)) return undefined;
 
   return {
@@ -67,6 +75,8 @@ export function readResumeInfo(
     agentName: value.agentName,
     ...(value.model !== undefined ? { model: value.model } : {}),
     ...(value.provider !== undefined ? { provider: value.provider } : {}),
+    ...(value.agentVersion !== undefined ? { agentVersion: value.agentVersion } : {}),
+    ...(value.toolNames !== undefined ? { toolNames: [...value.toolNames] } : {}),
     lastActiveAt: value.lastActiveAt,
     lastRunStatus: value.lastRunStatus,
     ...(value.totalUsage !== undefined ? { totalUsage: value.totalUsage } : {}),
