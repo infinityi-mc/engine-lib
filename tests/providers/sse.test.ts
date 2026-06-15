@@ -12,6 +12,10 @@ async function drain(
   return out;
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 describe("parseSse", () => {
   it("dispatches on a blank line and parses event/data fields", async () => {
     const messages = await drain(streamOf('event: ping\ndata: {"a":1}\n\n'));
@@ -69,6 +73,61 @@ describe("parseSse", () => {
       break;
     }
 
+    expect(cancelled).toBe(true);
+  });
+
+  it("times out when the body stalls between chunks", async () => {
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled = true;
+      },
+    });
+
+    await expect(async () => {
+      for await (const _message of parseSse(stream, { idleTimeoutMs: 5 })) {
+        // no-op
+      }
+    }).toThrow("SSE read timeout");
+    expect(cancelled).toBe(true);
+  });
+
+  it("allows slow-but-active chunks within the idle timeout", async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        controller.enqueue(encoder.encode("data: one\n\n"));
+        await delay(5);
+        controller.enqueue(encoder.encode("data: two\n\n"));
+        controller.close();
+      },
+    });
+
+    const out: SseMessage[] = [];
+    for await (const message of parseSse(stream, { idleTimeoutMs: 50 })) {
+      out.push(message);
+    }
+    expect(out).toEqual([{ data: "one" }, { data: "two" }]);
+  });
+
+  it("cancels the stream when aborted while waiting for a chunk", async () => {
+    let cancelled = false;
+    const controller = new AbortController();
+    const stream = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled = true;
+      },
+    });
+    setTimeout(() => controller.abort(), 5);
+
+    await expect(async () => {
+      for await (const _message of parseSse(stream, {
+        signal: controller.signal,
+        idleTimeoutMs: 50,
+      })) {
+        // no-op
+      }
+    }).toThrow("aborted");
     expect(cancelled).toBe(true);
   });
 });

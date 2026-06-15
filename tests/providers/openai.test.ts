@@ -216,4 +216,91 @@ describe("translateOpenAIStream", () => {
       { type: "finish", finishReason: "stop" },
     ]);
   });
+
+  it("closes open tool calls before a terminal response event", async () => {
+    const events = await collect(
+      translateOpenAIStream(
+        sseMessages(
+          { data: JSON.stringify({ type: "response.created" }) },
+          {
+            data: JSON.stringify({
+              type: "response.output_item.added",
+              item: {
+                type: "function_call",
+                id: "fc_1",
+                call_id: "call_1",
+                name: "f",
+              },
+            }),
+          },
+          {
+            data: JSON.stringify({
+              type: "response.function_call_arguments.delta",
+              item_id: "fc_1",
+              delta: '{"a":',
+            }),
+          },
+          {
+            data: JSON.stringify({
+              type: "response.completed",
+              response: { status: "completed", output: [] },
+            }),
+          },
+        ),
+        "gpt-5",
+      ),
+    );
+
+    expect(events).toEqual([
+      { type: "message_start", model: "gpt-5" },
+      { type: "tool_call_start", index: 0, id: "call_1", name: "f" },
+      { type: "tool_call_delta", index: 0, argumentsTextDelta: '{"a":' },
+      { type: "tool_call_end", index: 0 },
+      { type: "finish", finishReason: "stop" },
+    ]);
+  });
+
+  it("routes function-call deltas by call_id when item.id is absent", async () => {
+    const events = await collect(
+      translateOpenAIStream(
+        sseMessages(
+          { data: JSON.stringify({ type: "response.created" }) },
+          {
+            data: JSON.stringify({
+              type: "response.output_item.added",
+              item: { type: "function_call", call_id: "call_1", name: "f" },
+            }),
+          },
+          {
+            data: JSON.stringify({
+              type: "response.function_call_arguments.delta",
+              item_id: "call_1",
+              delta: '{"a":1}',
+            }),
+          },
+          {
+            data: JSON.stringify({
+              type: "response.function_call_arguments.done",
+              item_id: "call_1",
+            }),
+          },
+          {
+            data: JSON.stringify({
+              type: "response.completed",
+              response: { status: "completed", output: [] },
+            }),
+          },
+        ),
+        "gpt-5",
+      ),
+    );
+
+    expect(events).toEqual([
+      { type: "message_start", model: "gpt-5" },
+      { type: "tool_call_start", index: 0, id: "call_1", name: "f" },
+      { type: "tool_call_delta", index: 0, argumentsTextDelta: '{"a":1}' },
+      { type: "tool_call_end", index: 0 },
+      { type: "finish", finishReason: "stop" },
+    ]);
+  });
 });

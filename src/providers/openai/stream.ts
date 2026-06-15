@@ -13,6 +13,7 @@ interface OpenAIStreamEvent {
   type?: string;
   delta?: string;
   item_id?: string;
+  call_id?: string;
   output_index?: number;
   item?: { type?: string; id?: string; call_id?: string; name?: string };
   response?: unknown;
@@ -25,12 +26,23 @@ export async function* translateOpenAIStream(
 ): AsyncIterable<StreamEvent> {
   let nextIndex = 0;
   const indexByItem = new Map<string, number>();
+  const openToolIndexes = new Set<number>();
   let started = false;
   let hadToolCalls = false;
   let finished = false;
 
   const fallbackFinishReason = (): FinishReason =>
     hadToolCalls ? "tool_calls" : "stop";
+
+  const indexForEvent = (event: OpenAIStreamEvent): number | undefined => {
+    const key = event.item_id ?? event.call_id;
+    return key !== undefined ? indexByItem.get(key) : undefined;
+  };
+
+  function* closeOpenToolCalls(): Generator<StreamEvent> {
+    for (const index of openToolIndexes) yield { type: "tool_call_end", index };
+    openToolIndexes.clear();
+  }
 
   for await (const message of messages) {
     if (message.data === "" || message.data === "[DONE]") continue;
@@ -52,8 +64,10 @@ export async function* translateOpenAIStream(
         if (event.item?.type === "function_call") {
           const index = nextIndex++;
           hadToolCalls = true;
-          if (event.item.id !== undefined)
-            indexByItem.set(event.item.id, index);
+          if (event.item.id !== undefined) indexByItem.set(event.item.id, index);
+          if (event.item.call_id !== undefined)
+            indexByItem.set(event.item.call_id, index);
+          openToolIndexes.add(index);
           yield {
             type: "tool_call_start",
             index,
@@ -67,10 +81,7 @@ export async function* translateOpenAIStream(
           yield { type: "text_delta", text: event.delta };
         break;
       case "response.function_call_arguments.delta": {
-        const index =
-          event.item_id !== undefined
-            ? indexByItem.get(event.item_id)
-            : undefined;
+        const index = indexForEvent(event);
         if (index !== undefined && event.delta !== undefined) {
           yield {
             type: "tool_call_delta",
@@ -81,17 +92,18 @@ export async function* translateOpenAIStream(
         break;
       }
       case "response.function_call_arguments.done": {
-        const index =
-          event.item_id !== undefined
-            ? indexByItem.get(event.item_id)
-            : undefined;
-        if (index !== undefined) yield { type: "tool_call_end", index };
+        const index = indexForEvent(event);
+        if (index !== undefined && openToolIndexes.has(index)) {
+          openToolIndexes.delete(index);
+          yield { type: "tool_call_end", index };
+        }
         break;
       }
       case "response.completed":
       case "response.incomplete":
       case "response.failed": {
         finished = true;
+        yield* closeOpenToolCalls();
         const result = parseOpenAIResponse(event.response, model);
         yield {
           type: "finish",
@@ -106,6 +118,7 @@ export async function* translateOpenAIStream(
   }
 
   if (!finished) {
+    yield* closeOpenToolCalls();
     yield { type: "finish", finishReason: fallbackFinishReason() };
   }
 }

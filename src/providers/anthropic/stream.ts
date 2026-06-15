@@ -4,6 +4,7 @@
  * @module
  */
 
+import { ProviderError } from "../../errors";
 import type { SseMessage } from "../sse";
 import type { StreamEvent } from "../stream";
 import type { Usage } from "../types";
@@ -29,6 +30,7 @@ export async function* translateAnthropicStream(
   model: string,
 ): AsyncIterable<StreamEvent> {
   const toolIndexes = new Set<number>();
+  let lastToolIndex: number | undefined;
   let inputTokens = 0;
   let outputTokens = 0;
   let stopReason: string | null | undefined;
@@ -74,6 +76,7 @@ export async function* translateAnthropicStream(
           event.index !== undefined
         ) {
           toolIndexes.add(event.index);
+          lastToolIndex = event.index;
           hadToolCalls = true;
           yield {
             type: "tool_call_start",
@@ -91,19 +94,31 @@ export async function* translateAnthropicStream(
           yield { type: "text_delta", text: event.delta.text };
         } else if (
           event.delta?.type === "input_json_delta" &&
-          event.index !== undefined &&
           event.delta.partial_json !== undefined
         ) {
-          yield {
-            type: "tool_call_delta",
-            index: event.index,
-            argumentsTextDelta: event.delta.partial_json,
-          };
+          const index = event.index ?? lastToolIndex;
+          if (index !== undefined) {
+            yield {
+              type: "tool_call_delta",
+              index,
+              argumentsTextDelta: event.delta.partial_json,
+            };
+          } else {
+            yield {
+              type: "error",
+              error: new ProviderError(
+                "Anthropic stream input_json_delta missing index",
+                { provider: "anthropic" },
+              ),
+            };
+          }
         }
         break;
       case "content_block_stop":
         if (event.index !== undefined && toolIndexes.has(event.index)) {
           yield { type: "tool_call_end", index: event.index };
+          toolIndexes.delete(event.index);
+          if (lastToolIndex === event.index) lastToolIndex = undefined;
         }
         break;
       case "message_delta":
