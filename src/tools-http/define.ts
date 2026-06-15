@@ -104,6 +104,7 @@ export function httpTools(config: HttpToolsConfig): HttpTools {
     name: "http_get",
     description:
       "Fetch one HTTP(S) URL under the host network policy and return compact parsed response metadata.",
+    policy: { operation: "network", target: (args) => args.url },
     parameters: GET_PARAMS,
     async execute(args, ctx: ToolContext) {
       try {
@@ -128,6 +129,7 @@ export function httpTools(config: HttpToolsConfig): HttpTools {
     name: "http_post",
     description:
       "POST to one HTTP(S) URL under the host network policy and return compact parsed response metadata.",
+    policy: { operation: "network", target: (args) => args.url },
     parameters: POST_PARAMS,
     async execute(args, ctx: ToolContext) {
       try {

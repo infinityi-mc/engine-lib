@@ -454,6 +454,7 @@ describe("production readiness Phase 1", () => {
     let metadata: Record<string, unknown> = {};
     const session = {
       id: "trust-session",
+      store: {} as any,
       messages: async () => [],
       append: async () => ({}),
       clear: async () => {},

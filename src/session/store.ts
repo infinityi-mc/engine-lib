@@ -12,6 +12,7 @@
 import type { Message } from "../messages/types";
 import { readResumeInfo } from "./resume";
 import { encodeSessionListCursor, normalizeSessionListOptions } from "./list";
+import { type VersionMismatch } from "../session-stores/concurrency";
 import type {
   AppendResult,
   SessionListOptions,
@@ -64,6 +65,37 @@ export class InMemorySessionStore implements SessionStore {
       });
     } else {
       entry.messages.push(...messages);
+      entry.updatedAt = now;
+    }
+    return Promise.resolve({});
+  }
+
+  appendIfVersion(
+    id: string,
+    messages: readonly Message[],
+    expectedVersion: number,
+  ): Promise<AppendResult | VersionMismatch> {
+    if (messages.length === 0) return Promise.resolve({});
+    const now = new Date().toISOString();
+    let entry = this.entries.get(id);
+    if (entry !== undefined && isExpired(entry)) {
+      this.entries.delete(id);
+      entry = undefined;
+    }
+    const currentVersion = entry?.version ?? 0;
+    if (currentVersion !== expectedVersion) {
+      return Promise.resolve({ conflict: true, currentVersion });
+    }
+    if (entry === undefined) {
+      this.entries.set(id, {
+        messages: [...messages],
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+    } else {
+      entry.messages.push(...messages);
+      entry.version += 1;
       entry.updatedAt = now;
     }
     return Promise.resolve({});

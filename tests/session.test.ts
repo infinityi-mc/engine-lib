@@ -44,6 +44,23 @@ describe("InMemorySessionStore", () => {
     await store.append("s1", [user("b")]);
     expect(first?.messages).toHaveLength(1); // earlier snapshot unchanged
   });
+
+  it("treats expired entries as absent before CAS append", async () => {
+    const store = new InMemorySessionStore();
+    await store.appendIfVersion("s1", [user("old")], 0);
+    await store.setExpiry("s1", 0);
+
+    expect(await store.load("s1")).toBeUndefined();
+    await expect(
+      store.appendIfVersion("s1", [user("new")], 0),
+    ).resolves.toEqual({});
+
+    const state = await store.load("s1");
+    expect(state?.messages.map((message) => message.content[0])).toEqual([
+      { type: "text", text: "new" },
+    ]);
+    expect(state?.version).toBe(1);
+  });
 });
 
 describe("createSession", () => {

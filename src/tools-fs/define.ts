@@ -293,6 +293,7 @@ export function filesystemTools(
     name: "repo_map",
     description:
       "Compact repository overview with directory tree, important files, languages, frameworks, and optional symbols.",
+    policy: { operation: "read", target: (args) => args.root },
     parameters: SCHEMAS.repoMap,
     async execute(args) {
       try {
@@ -353,6 +354,7 @@ export function filesystemTools(
     name: "find_files",
     description:
       "Find files by exact path, glob, fuzzy name, extension, or regex path pattern.",
+    policy: { operation: "read", target: (args) => args.root },
     parameters: SCHEMAS.findFiles,
     async execute(args) {
       try {
@@ -457,6 +459,7 @@ export function filesystemTools(
     name: "search_text",
     description:
       "Search file contents using literal text or regex and return compact previews.",
+    policy: { operation: "read", target: (args) => args.root },
     parameters: SCHEMAS.searchText,
     async execute(args) {
       try {
@@ -487,6 +490,7 @@ export function filesystemTools(
     name: "search_semantic",
     description:
       "Find relevant files, chunks, or symbols from a natural-language code query.",
+    policy: { operation: "read", target: (args) => args.root },
     parameters: SCHEMAS.searchSemantic,
     async execute(args) {
       try {
@@ -518,6 +522,7 @@ export function filesystemTools(
     name: "symbols",
     description:
       "Return compact symbols, imports, exports, and line ranges for a file or directory.",
+    policy: { operation: "read", target: (args) => args.path },
     parameters: SCHEMAS.symbols,
     async execute(args) {
       try {
@@ -537,6 +542,7 @@ export function filesystemTools(
     name: "read",
     description:
       "Read exact line ranges or symbol ranges with line numbers and token-aware limits.",
+    policy: { operation: "read", target: (args) => args.path },
     parameters: SCHEMAS.read,
     async execute(args) {
       try {
@@ -598,6 +604,7 @@ export function filesystemTools(
   const openWindow = defineTool<OpenWindowArgs>({
     name: "open_window",
     description: "Open or scroll a token-limited viewing window over a file.",
+    policy: { operation: "read", target: (args) => args.path },
     parameters: SCHEMAS.openWindow,
     async execute(args) {
       try {
@@ -667,6 +674,7 @@ export function filesystemTools(
     name: "edit_replace",
     description:
       "Replace exact text in a file with concurrency checks and mismatch diagnostics.",
+    policy: { operation: "write", target: (args) => args.path },
     parameters: SCHEMAS.editReplace,
     async execute(args, ctx) {
       try {
@@ -722,6 +730,7 @@ export function filesystemTools(
   const editRange = defineTool<EditRangeArgs>({
     name: "edit_range",
     description: "Replace a precise line range in a file.",
+    policy: { operation: "write", target: (args) => args.path },
     parameters: SCHEMAS.editRange,
     async execute(args, ctx) {
       try {
@@ -777,6 +786,7 @@ export function filesystemTools(
     name: "apply_patch",
     description:
       "Apply a unified diff patch across one or more files with dry-run and validation support.",
+    policy: { operation: "write", target: (args) => args.root },
     parameters: SCHEMAS.applyPatch,
     async execute(args, ctx) {
       try {
@@ -850,6 +860,7 @@ export function filesystemTools(
     name: "write_file",
     description:
       "Create, append, or overwrite a file. Prefer patch/range/replace edits for existing files.",
+    policy: { operation: "write", target: (args) => args.path },
     parameters: SCHEMAS.writeFile,
     async execute(args) {
       try {
@@ -909,6 +920,7 @@ export function filesystemTools(
   const diffStatus = defineTool<DiffStatusArgs>({
     name: "diff_status",
     description: "Return compact Git-style status and diffs for changed files.",
+    policy: { operation: "read", target: (args) => args.paths?.join(",") },
     parameters: SCHEMAS.diffStatus,
     async execute(args) {
       try {

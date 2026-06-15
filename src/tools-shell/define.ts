@@ -17,6 +17,7 @@
 import { defineTool } from "../tools/define";
 import type { ToolContext, ToolResult } from "../tools/types";
 import { s } from "../schema/builder";
+import type { PolicyDecision } from "../governance/policy";
 
 import {
   emitApproval,
@@ -77,6 +78,15 @@ function toDecision(value: boolean | ApprovalDecision): ApprovalDecision {
   return typeof value === "boolean" ? { approved: value } : value;
 }
 
+function policyVerdict(decision: PolicyDecision): {
+  readonly ok: boolean;
+  readonly reason?: string;
+} {
+  return decision.allowed
+    ? { ok: true }
+    : { ok: false, reason: decision.reason };
+}
+
 /**
  * Build a `run_command` / `spawn_command` pair bound to `config`.
  *
@@ -99,6 +109,7 @@ export function shellTools(config: ShellToolsConfig): ShellTools {
     return defineTool({
       name,
       description,
+      policy: { operation: "exec", target: (args) => args.command },
       parameters: PARAMS,
       async execute(rawArgs, ctx: ToolContext): Promise<ToolResult> {
         const args = rawArgs as ShellArgs;
@@ -150,6 +161,38 @@ export function shellTools(config: ShellToolsConfig): ShellTools {
           timeoutMs,
           mode,
         };
+
+        if (config.enginePolicy !== undefined) {
+          const decision = await config.enginePolicy.evaluate(
+            {
+              tool: name,
+              operation: "exec",
+              target: args.command,
+              arguments: req,
+            },
+            {
+              agentName: ctx.agentName ?? "unknown",
+              ...(ctx.tenantId !== undefined ? { tenantId: ctx.tenantId } : {}),
+              ...(ctx.principal !== undefined
+                ? { principal: ctx.principal }
+                : {}),
+              messages: [],
+            },
+          );
+          const verdict = policyVerdict(decision);
+          if (!verdict.ok) {
+            emitPolicy(
+              ctx,
+              "deny",
+              { command: args.command, args: cmdArgs, mode },
+              verdict.reason,
+            );
+            return {
+              ok: false,
+              error: verdict.reason ?? "command denied by policy",
+            };
+          }
+        }
 
         // Gate 3: approval for destructive commands.
         if (config.requiresApproval?.(req) === true) {

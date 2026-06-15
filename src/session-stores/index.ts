@@ -18,6 +18,12 @@ export {
 } from "./forge-data";
 export { withSessionStoreHooks } from "./hooks";
 export { FilesystemJsonlSessionStore } from "./jsonl";
+export {
+  isCasSessionStore,
+  isVersionMismatch,
+  tenantScopedStore,
+  withVersionRetry,
+} from "./concurrency";
 export { RedisSessionStore } from "./redis";
 export {
   SESSION_STORE_SCHEMA_VERSION,
@@ -39,6 +45,10 @@ export type {
   RedisSessionStoreOptions,
   RedisSessionStoreTransaction,
 } from "./redis";
+export type {
+  CasSessionStore,
+  VersionMismatch,
+} from "./concurrency";
 export type {
   CloseableSessionStore,
   ExpiringSessionStore,

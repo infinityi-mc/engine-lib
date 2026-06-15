@@ -1,4 +1,12 @@
 export {
+  approvalDecisionFromPolicy,
+  approvalRequestFromPolicy,
+  composePolicies,
+  filesystemPolicySource,
+  httpPolicySource,
+  shellPolicySource,
+} from "./policy";
+export {
   applyFilters,
   defaultRedactionPatterns,
   filterMessageText,
@@ -15,3 +23,10 @@ export type {
   FilterStage,
   RedactionPattern,
 } from "./filters";
+export type {
+  PolicyAction,
+  PolicyContext,
+  PolicyDecision,
+  PolicyDecisionEvent,
+  PolicyEngine,
+} from "./policy";

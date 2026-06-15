@@ -10,6 +10,7 @@
  */
 
 import type { ToolDefinition } from "../tools/types";
+import type { PolicyEngine } from "../governance/policy";
 
 /** A hostname policy entry. Strings support exact hosts, `host:port`, `*`, and `*.example.com`. */
 export type HostPattern = string | RegExp;
@@ -78,6 +79,8 @@ export interface HttpToolsConfig extends HttpPolicy {
   readonly maxRedirects?: number;
   /** Retry configuration. GET retries are enabled by default. */
   readonly retry?: HttpRetryOptions;
+  /** Optional unified policy engine evaluated after native HTTP policy. */
+  readonly policy?: PolicyEngine;
   /** Inject a fetch implementation for tests or custom transports. */
   readonly fetch?: typeof fetch;
 }

@@ -23,12 +23,19 @@
  */
 
 import type { Schema } from "../schema/types";
-import type { ToolContext, ToolDefinition, ToolResult } from "./types";
+import type {
+  ToolContext,
+  ToolDefinition,
+  ToolPolicyMetadata,
+  ToolPolicySpec,
+  ToolResult,
+} from "./types";
 
 /** The shape passed to {@link defineTool}, with `execute` typed against the schema. */
 export interface ToolSpec<TArgs> {
   readonly name: string;
   readonly description?: string;
+  readonly policy?: ToolPolicySpec<TArgs>;
   readonly parameters: Schema<TArgs>;
   execute(args: TArgs, ctx: ToolContext): ToolResult | Promise<ToolResult>;
 }
@@ -52,6 +59,9 @@ export function defineTool<TArgs>(
     name: spec.name,
     ...(spec.description !== undefined
       ? { description: spec.description }
+      : {}),
+    ...(spec.policy !== undefined
+      ? { policy: spec.policy as ToolPolicyMetadata }
       : {}),
     parameters: spec.parameters,
     execute: spec.execute,

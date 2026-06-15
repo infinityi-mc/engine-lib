@@ -32,6 +32,7 @@ export {
   MaxStepsExceededError,
   ProviderError,
   SchemaValidationError,
+  SessionAgentMismatchError,
   SessionModelMismatchError,
   ToolError,
   ToolValidationError,
@@ -147,6 +148,9 @@ export type {
 export {
   RESUME_METADATA_KEY,
   RESUME_SCHEMA_VERSION,
+  activeToolNames,
+  assertAgentResumeCompatible,
+  compareAgentResume,
   createSession,
   InMemorySessionStore,
   readResumeInfo,
@@ -223,6 +227,14 @@ export type {
   TrustLevel,
   TrustState,
 } from "./approval/index";
+
+// Authorization
+export { roleToolAuthorizer } from "./authorization/index";
+export type {
+  ToolAuthorization,
+  ToolAuthorizationContext,
+  ToolAuthorizer,
+} from "./authorization/index";
 
 // Resilience
 export {

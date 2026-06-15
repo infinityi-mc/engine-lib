@@ -28,7 +28,9 @@ import type { RunSubscriber } from "../events/types";
 import type { ToolCallPart } from "../messages/types";
 import type { ApprovalPolicy, HumanInputGateway } from "../approval/types";
 import type { ContentFilterConfig } from "../governance/filters";
+import type { PolicyEngine } from "../governance/policy";
 import type { RateLimiter, RetryPolicy, RunBudget } from "../resilience/index";
+import type { ToolAuthorizer } from "../authorization/authorizer";
 
 /** New input for a run: raw text (→ a user message), a single message, or several. */
 export type RunInput = string | Message | Message[];
@@ -42,8 +44,10 @@ export type RunInput = string | Message | Message[];
  * - Provider assistant turns are emitted as `message` events.
  * - Streaming text is emitted as `token` before the assistant `message` that
  *   contains the accumulated text.
- * - Tool calls emit `tool.call`, then `tool.result`, then the corresponding
- *   tool-result `message`.
+ * - Tool calls emit `tool.call`, any governance events for that call
+ *   (`policy.decision`, `tool.authorization_decided`,
+ *   `tool.approval_requested`, `tool.approval_decided`), then `tool.result`,
+ *   then the corresponding tool-result `message`.
  * - Successful runs end with `run.finish`; failed runs emit `error` and then
  *   reject/throw the same `AgentError`.
  * - `agent.child` wraps events forwarded from sub-agent tools, and
@@ -69,6 +73,24 @@ export type RunEventDraft =
       readonly type: "tool.approval_requested";
       readonly id: string;
       readonly name: string;
+      readonly argumentsDigest: string;
+    }
+  | {
+      readonly type: "tool.authorization_decided";
+      readonly id: string;
+      readonly name: string;
+      readonly allowed: boolean;
+      readonly reason?: string;
+      readonly argumentsDigest: string;
+    }
+  | {
+      readonly type: "policy.decision";
+      readonly id: string;
+      readonly name: string;
+      readonly allowed: boolean;
+      readonly reason?: string;
+      readonly requiresApproval?: boolean;
+      readonly transformed?: boolean;
       readonly argumentsDigest: string;
     }
   | {
@@ -223,8 +245,18 @@ export interface RunOptions {
   readonly resume?: ResumeOptions | boolean;
   /** Model/provider compatibility policy for resumed sessions. Defaults to "warn". */
   readonly modelCompatibility?: "warn" | "error" | "ignore";
+  /** Agent version/tool-set compatibility policy for resumed sessions. Defaults to "warn". */
+  readonly agentCompatibility?: "warn" | "error" | "ignore";
   /** Context providers injected into the system layer at run time (after instructions, before history). */
   readonly context?: readonly ContextProvider[];
+  /** Optional run-loop tool authorizer applied after schema validation. */
+  readonly authorizer?: ToolAuthorizer;
+  /** Optional unified tool policy engine applied after authorization. */
+  readonly policy?: PolicyEngine;
+  /** Optional host principal id threaded to authorization/policy/tool context. */
+  readonly principal?: string;
+  /** Optional host role set threaded to authorization. */
+  readonly roles?: readonly string[];
   /** Optional run-loop approval gate applied to every regular tool call. */
   readonly approval?: ApprovalPolicy;
   /** Optional channel used by `ask_human` tools to wait for host-provided input. */

@@ -286,6 +286,46 @@ describe("http_get/http_post behavior", () => {
     expect(deniedRedirectCancelled).toBe(true);
   });
 
+  it("evaluates unified policy for redirect targets", async () => {
+    const policyTargets: string[] = [];
+    const policyArgumentUrls: string[] = [];
+    let fetches = 0;
+    const { httpGet } = httpTools({
+      allowedHosts: ["example.com", "other.example"],
+      policy: {
+        evaluate: (action) => {
+          policyTargets.push(action.target);
+          policyArgumentUrls.push((action.arguments as { url: string }).url);
+          if (action.target === "https://other.example/final") {
+            return { allowed: false, reason: "redirect denied" };
+          }
+          return { allowed: true };
+        },
+      },
+      fetch: asFetch(async () => {
+        fetches += 1;
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://other.example/final" },
+        });
+      }),
+    });
+
+    const res = await run(httpGet, { url: "https://example.com/start" });
+
+    expect(res.ok).toBe(false);
+    expect((res as { error: string }).error).toContain("redirect denied");
+    expect(fetches).toBe(1);
+    expect(policyTargets).toEqual([
+      "https://example.com/start",
+      "https://other.example/final",
+    ]);
+    expect(policyArgumentUrls).toEqual([
+      "https://example.com/start",
+      "https://other.example/final",
+    ]);
+  });
+
   it("strips configured and model-supplied headers on cross-origin redirects", async () => {
     let initialHeaders = new Headers();
     let redirectedHeaders = new Headers();

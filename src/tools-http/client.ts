@@ -288,6 +288,32 @@ export function createHttpToolClient(config: HttpToolsConfig): HttpToolClient {
     let url = validateUrl(req.url);
     checkUrl(url, normalized, ctx);
 
+    async function evaluateEnginePolicy(
+      evaluatedMethod: "GET" | "POST",
+      target: URL,
+    ): Promise<void> {
+      if (config.policy === undefined) return;
+      const decision = await config.policy.evaluate(
+        {
+          tool: evaluatedMethod === "GET" ? "http_get" : "http_post",
+          operation: "network",
+          target: target.href,
+          arguments: { ...req, method: evaluatedMethod, url: target.href },
+        },
+        {
+          agentName: ctx?.agentName ?? "unknown",
+          ...(ctx?.tenantId !== undefined ? { tenantId: ctx.tenantId } : {}),
+          ...(ctx?.principal !== undefined ? { principal: ctx.principal } : {}),
+          messages: [],
+        },
+      );
+      if (!decision.allowed) {
+        throw new HttpPolicyError(decision.reason);
+      }
+    }
+
+    await evaluateEnginePolicy(method, url);
+
     const timeoutMs = timeoutFor(normalized, req.timeoutMs);
     const maxBytes = bytesFor(normalized, req.maxBytes);
     const maxBodyChars = charsFor(normalized, req.maxBodyChars);
@@ -365,8 +391,10 @@ export function createHttpToolClient(config: HttpToolsConfig): HttpToolClient {
           const next = new URL(location, currentUrl);
           await cancelBody(response);
           checkUrl(next, normalized, ctx);
+          const nextMethod = redirectedMethod(method, response.status);
+          await evaluateEnginePolicy(nextMethod, next);
           redirects.push(next.href);
-          method = redirectedMethod(method, response.status);
+          method = nextMethod;
           url = next;
           continue;
         }

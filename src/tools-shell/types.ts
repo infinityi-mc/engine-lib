@@ -11,6 +11,7 @@
  */
 
 import type { ApprovalDecision as CoreApprovalDecision } from "../approval/types";
+import type { PolicyEngine } from "../governance/policy";
 
 export type ApprovalDecision = CoreApprovalDecision;
 
@@ -98,6 +99,8 @@ export interface ShellToolsConfig {
   readonly env?: EnvPolicy;
   /** Command allow/deny rules. Omitted → all commands allowed. */
   readonly policy?: ShellPolicy;
+  /** Optional unified policy engine evaluated after native shell gates. */
+  readonly enginePolicy?: PolicyEngine;
   /**
    * Flag a command as destructive / requiring approval before it runs. When it
    * returns `true`, {@link ShellToolsConfig.approve} is consulted; if `approve`
