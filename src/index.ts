@@ -152,13 +152,16 @@ export {
   assertAgentResumeCompatible,
   compareAgentResume,
   createSession,
+  forkSession,
   InMemorySessionStore,
   readResumeInfo,
+  snapForkIndex,
   withResumeInfo,
 } from "./session/index";
 export type {
   AppendResult,
   CreateSessionOptions,
+  ForkOptions,
   Session,
   SessionListItem,
   SessionListOptions,
@@ -261,18 +264,26 @@ export type {
 // Governance / DLP
 export {
   applyFilters,
+  auditSubscriber,
   defaultRedactionPatterns,
   filterMessageText,
   filterMessagesText,
+  forgeDataAuditLog,
+  jsonlAuditLog,
   redactTextForPersistence,
   redactingCodec,
   regexRedactor,
   schemaSensitiveRedactor,
 } from "./governance/index";
 export type {
+  AuditAction,
+  AuditEntry,
+  AuditLog,
+  AuditSubscriberOptions,
   ContentFilter,
   ContentFilterConfig,
   FilterContext,
   FilterStage,
+  ForgeDataAuditLogOptions,
   RedactionPattern,
 } from "./governance/index";

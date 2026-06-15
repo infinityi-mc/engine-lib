@@ -13,8 +13,9 @@
  */
 
 import type { Message } from "../messages/types";
+import { forkSession } from "./fork";
 import { InMemorySessionStore } from "./store";
-import type { AppendResult, Session, SessionStore } from "./types";
+import type { AppendResult, ForkOptions, Session, SessionStore } from "./types";
 
 /** Options for {@link createSession}. */
 export interface CreateSessionOptions {
@@ -48,6 +49,9 @@ export function createSession(opts: CreateSessionOptions = {}): Session {
   const seed = opts.messages;
   const metadata = opts.metadata;
   const tenantId = opts.tenantId;
+
+  // Forward declaration so the handle's `fork` can reference the live handle.
+  let handle: Session;
 
   let seedPromise: Promise<void> | undefined;
   /**
@@ -94,7 +98,7 @@ export function createSession(opts: CreateSessionOptions = {}): Session {
     return seedPromise;
   };
 
-  return {
+  handle = {
     id,
     store,
     ...(metadata !== undefined ? { metadata } : {}),
@@ -124,6 +128,10 @@ export function createSession(opts: CreateSessionOptions = {}): Session {
       const state = await store.load(id);
       return state?.metadata === undefined ? undefined : { ...state.metadata };
     },
+    async fork(options?: ForkOptions): Promise<Session> {
+      await ensureSeeded();
+      return forkSession(handle, options);
+    },
     async clear(): Promise<void> {
       // Let an in-flight seed write finish first so it can't `append` *after* we
       // delete (leaving stale seed data), then mark seeding done so it never
@@ -136,4 +144,5 @@ export function createSession(opts: CreateSessionOptions = {}): Session {
       await store.delete(id);
     },
   };
+  return handle;
 }

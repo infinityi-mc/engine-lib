@@ -81,3 +81,43 @@ Pass a `KeywordRetriever` hook to `createVectorRetriever` when a host wants to
 combine lexical and vector search. `mergeHybridResults` normalizes the vector and
 keyword score channels independently, de-duplicates by id, applies weights, and
 returns ranked `RetrievalResult`s.
+
+## Cross-session memory
+
+`vectorMemoryStore` accumulates knowledge across sessions on top of the same
+`EmbeddingProvider` + `VectorStore` contracts — no new vector engine. Three
+pieces compose:
+
+```ts
+import {
+  memoryContextProvider,
+  memoryExtractor,
+  vectorMemoryStore,
+} from "@infinityi/engine-lib/retrieval";
+
+const memory = vectorMemoryStore({ embeddings, store });
+
+await runAgent(agent, {
+  input: "what's my preferred editor?",
+  // Recall relevant memories and inject them as system context (never persisted).
+  context: [memoryContextProvider({ memory })],
+  hooks: {
+    // Derive and store salient facts when the run finishes.
+    onFinish: memoryExtractor({
+      memory,
+      sessionId: session.id,
+      runId: "run-123",
+      extract: ({ output }) => [output],
+    }),
+  },
+});
+```
+
+- `memoryContextProvider` recalls top-K memories for the query (defaulting to the
+  latest user input) and injects them as system context. A recall failure
+  degrades to injecting nothing — the run proceeds.
+- `memoryExtractor` runs in `onFinish`; it stamps each memory's
+  `source.runId`/`sessionId`, redacts via `filters` before storage when supplied,
+  and never fails the run on a store error.
+- Pass a `filter` (e.g. `tenantMemoryFilter(tenantId)`) to `recall`/the provider
+  to keep memory tenant-scoped.

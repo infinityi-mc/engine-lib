@@ -15,6 +15,7 @@ export {
   schemaSensitiveRedactor,
 } from "./filters";
 export { redactingCodec, redactTextForPersistence } from "./redacting-codec";
+export { auditSubscriber, forgeDataAuditLog, jsonlAuditLog } from "./audit";
 
 export type {
   ContentFilter,
@@ -23,6 +24,13 @@ export type {
   FilterStage,
   RedactionPattern,
 } from "./filters";
+export type {
+  AuditAction,
+  AuditEntry,
+  AuditLog,
+  AuditSubscriberOptions,
+  ForgeDataAuditLogOptions,
+} from "./audit";
 export type {
   PolicyAction,
   PolicyContext,

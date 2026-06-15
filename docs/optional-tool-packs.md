@@ -22,6 +22,39 @@ Safety controls:
 
 Runnable version: [`../examples/11-shell-tools.ts`](../examples/11-shell-tools.ts).
 
+### Sandboxed execution
+
+By default a permitted command runs in-process. To bound its blast radius
+(network, filesystem, memory/CPU), pass a `sandbox` to `shellTools`. The sandbox
+runs **after** the cwd/command/approval gates pass, so it composes with — it does
+not replace — the native policy.
+
+```ts
+import { shellTools } from "@infinityi/engine-lib/tools-shell";
+import { dockerSandbox } from "@infinityi/engine-lib/tools-sandbox";
+
+const { runCommand } = shellTools({
+  allowedCwds: [process.cwd()],
+  networkAccess: false, // threaded to the sandbox
+  filesystemPaths: ["/work"], // bind-mounted into the container
+  memoryLimitMb: 512,
+  sandbox: dockerSandbox({ image: "alpine:3" }), // or runtime: "podman"
+});
+```
+
+- Without `sandbox`, `shellTools` uses the in-process executor directly.
+  `localSandbox()` provides that same execution style, but it **fails closed**
+  when asked for `networkAccess: false` (unless
+  `localSandbox({ allowNetworkDowngrade: true })` is set).
+- `dockerSandbox({ image, runtime? })` runs the command in a container with
+  `--network none` when `networkAccess` is false, bind mounts for
+  `filesystemPaths`, `--memory`/`--cpus` limits, and the same timeout/abort-kill
+  behaviour. Requires a working `docker`/`podman` CLI on the host.
+- A `SandboxResult` is shape-compatible with `CommandResult`, so the tool's
+  result mapping and `shell.exec.*` events are unchanged. A sandbox that cannot
+  enforce a requested isolation surfaces as a `ToolFailure`, never an unisolated
+  run.
+
 ## Filesystem tools
 
 Import:
@@ -90,4 +123,3 @@ is bundled.
 
 Runnable HTTP and web example:
 [`../examples/10-tools-http-web.ts`](../examples/10-tools-http-web.ts).
-

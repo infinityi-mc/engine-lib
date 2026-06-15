@@ -457,6 +457,9 @@ describe("production readiness Phase 1", () => {
       store: {} as any,
       messages: async () => [],
       append: async () => ({}),
+      fork: async () => {
+        throw new Error("session.fork should not be used");
+      },
       clear: async () => {},
       getMetadata: async () => metadata,
       setMetadata: async (next: Record<string, unknown>) => {

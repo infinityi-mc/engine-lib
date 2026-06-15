@@ -787,6 +787,9 @@ describe("runAgent — sessions & context (Phase 5)", () => {
       },
       setMetadata: async () => {},
       getMetadata: async () => undefined,
+      fork: async () => {
+        throw new Error("session.fork should not be used");
+      },
       clear: async () => {},
     };
     const agent = defineAgent({

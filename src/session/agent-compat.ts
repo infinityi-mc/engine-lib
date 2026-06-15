@@ -1,5 +1,8 @@
 import type { AgentDefinition } from "../agent/types";
-import { SessionAgentMismatchError, type SessionAgentIdentity } from "../errors";
+import {
+  SessionAgentMismatchError,
+  type SessionAgentIdentity,
+} from "../errors";
 import type { SessionResumeInfo } from "./resume";
 
 export function activeToolNames(agent: AgentDefinition): readonly string[] {
@@ -34,7 +37,9 @@ export function compareAgentResume(
   const sameTools =
     resume.toolNames === undefined ||
     (expected.toolNames.length === actual.toolNames.length &&
-      expected.toolNames.every((name, index) => name === actual.toolNames[index]));
+      expected.toolNames.every(
+        (name, index) => name === actual.toolNames[index],
+      ));
   if (sameVersion && sameTools) return undefined;
   return { expected, actual };
 }

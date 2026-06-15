@@ -45,10 +45,7 @@ export type {
   RedisSessionStoreOptions,
   RedisSessionStoreTransaction,
 } from "./redis";
-export type {
-  CasSessionStore,
-  VersionMismatch,
-} from "./concurrency";
+export type { CasSessionStore, VersionMismatch } from "./concurrency";
 export type {
   CloseableSessionStore,
   ExpiringSessionStore,
