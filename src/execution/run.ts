@@ -47,7 +47,11 @@ import {
   readResumeInfo,
   withResumeInfo,
 } from "../session/resume";
-import type { AppendResult, Session, SessionModelIdentity } from "../session/types";
+import type {
+  AppendResult,
+  Session,
+  SessionModelIdentity,
+} from "../session/types";
 import { StreamAccumulator } from "../providers/stream";
 import type { EngineContext } from "../runtime/types";
 import { resolveContext } from "../context/providers";
@@ -84,9 +88,13 @@ import { evaluateBudget } from "../resilience/budget";
 import { isTokenRateLimiter } from "../resilience/rate-limit";
 import { withProviderRetry } from "../resilience/retry";
 import { filterMessagesText } from "../governance/filters";
-import type { PolicyDecision } from "../governance/policy";
+import type { PolicyAction, PolicyDecision } from "../governance/policy";
 import { activeToolNames, compareAgentResume } from "../session/agent-compat";
-import { isCasSessionStore, isVersionMismatch, withVersionRetry } from "../session-stores/index";
+import {
+  isCasSessionStore,
+  isVersionMismatch,
+  withVersionRetry,
+} from "../session-stores/index";
 
 /** Default cap on provider turns when {@link RunOptions.maxSteps} is omitted. */
 export const DEFAULT_MAX_STEPS = 16;
@@ -220,13 +228,60 @@ function argumentsDigest(value: unknown): string {
 
 function applyDecisionArguments(
   original: unknown,
-  decision: PolicyDecision | { readonly allowed: true; readonly argumentsOverride?: unknown },
+  decision:
+    | PolicyDecision
+    | { readonly allowed: true; readonly argumentsOverride?: unknown },
 ): unknown {
-  if ("transformArguments" in decision && decision.transformArguments !== undefined)
+  if (
+    "transformArguments" in decision &&
+    decision.transformArguments !== undefined
+  )
     return decision.transformArguments;
   if ("argumentsOverride" in decision)
     return decision.argumentsOverride ?? original;
   return original;
+}
+
+function policyTargetFromArguments(args: unknown, fallback: string): string {
+  if (typeof args === "object" && args !== null) {
+    const record = args as {
+      readonly url?: unknown;
+      readonly command?: unknown;
+      readonly path?: unknown;
+      readonly root?: unknown;
+    };
+    if (typeof record.url === "string") return record.url;
+    if (typeof record.command === "string") return record.command;
+    if (typeof record.path === "string") return record.path;
+    if (typeof record.root === "string") return record.root;
+  }
+  return fallback;
+}
+
+function policyActionForTool(
+  tool: ToolDefinition,
+  args: unknown,
+): PolicyAction {
+  const metadata = tool.policy as ToolDefinition<unknown>["policy"] | undefined;
+  const operation =
+    metadata === undefined
+      ? "tool"
+      : typeof metadata.operation === "function"
+        ? metadata.operation(args)
+        : metadata.operation;
+  const target =
+    metadata?.target === undefined
+      ? policyTargetFromArguments(args, tool.name)
+      : typeof metadata.target === "function"
+        ? (metadata.target(args) ?? policyTargetFromArguments(args, tool.name))
+        : metadata.target;
+
+  return {
+    tool: tool.name,
+    operation,
+    target,
+    arguments: args,
+  };
 }
 
 function resolvedIdentity(
@@ -319,9 +374,7 @@ async function appendToSession(
   const store = session.store;
   if (isCasSessionStore(store)) {
     const result = await withVersionRetry(async (attempt) => {
-      const version = await store
-        .load(session.id)
-        .then((s) => s?.version ?? 0);
+      const version = await store.load(session.id).then((s) => s?.version ?? 0);
       return store.appendIfVersion(session.id, messages, version);
     });
     if (isVersionMismatch(result)) {
@@ -335,7 +388,6 @@ async function appendToSession(
 }
 
 function textLengthOfMessages(messages: readonly Message[]): number {
-
   let length = 0;
   for (const message of messages) {
     for (const part of message.content) {
@@ -753,52 +805,28 @@ async function* executeAgent(
       if (!parsed.success) continue;
       const inbound = inboundOverrides.get(call.id) ?? parsed.data;
       const validatedInbound = tool.parameters.safeParse(inbound);
-      const evaluatedArgs = validatedInbound.success ? validatedInbound.data : inbound;
+      const evaluatedArgs = validatedInbound.success
+        ? validatedInbound.data
+        : inbound;
       try {
-        const decision = await Promise.resolve(
-          policy.evaluate(
-            {
-              tool: call.name,
-              operation: call.name.startsWith("http_")
-                ? "network"
-                : call.name.includes("command")
-                  ? "exec"
-                  : call.name.startsWith("write") || call.name.startsWith("edit")
-                    ? "write"
-                    : call.name.startsWith("delete")
-                      ? "delete"
-                      : "read",
-              target:
-                typeof evaluatedArgs === "object" &&
-                evaluatedArgs !== null &&
-                "url" in evaluatedArgs &&
-                typeof (evaluatedArgs as { readonly url?: unknown }).url === "string"
-                  ? ((evaluatedArgs as { readonly url: string }).url)
-                  : typeof evaluatedArgs === "object" &&
-                      evaluatedArgs !== null &&
-                      "command" in evaluatedArgs &&
-                      typeof (evaluatedArgs as { readonly command?: unknown }).command ===
-                        "string"
-                    ? ((evaluatedArgs as { readonly command: string }).command)
-                    : typeof evaluatedArgs === "object" &&
-                        evaluatedArgs !== null &&
-                        "path" in evaluatedArgs &&
-                        typeof (evaluatedArgs as { readonly path?: unknown }).path ===
-                          "string"
-                      ? ((evaluatedArgs as { readonly path: string }).path)
-                      : call.name,
-              arguments: evaluatedArgs,
-            },
-            {
+        throwIfAborted(opts.signal);
+        const decision = await waitWithAbort(
+          Promise.resolve(
+            policy.evaluate(policyActionForTool(tool, evaluatedArgs), {
               agentName: active.agent.name,
-              ...(opts.session !== undefined ? { sessionId: opts.session.id } : {}),
+              ...(opts.session !== undefined
+                ? { sessionId: opts.session.id }
+                : {}),
               ...(opts.session?.tenantId !== undefined
                 ? { tenantId: opts.session.tenantId }
                 : {}),
-              ...(opts.principal !== undefined ? { principal: opts.principal } : {}),
+              ...(opts.principal !== undefined
+                ? { principal: opts.principal }
+                : {}),
               messages: messageSnapshot,
-            },
+            }),
           ),
+          opts.signal,
         );
         events.push({
           type: "policy.decision",
@@ -809,7 +837,10 @@ async function* executeAgent(
           ...("requiresApproval" in decision && decision.requiresApproval
             ? { requiresApproval: true }
             : {}),
-          ...("transformArguments" in decision ? { transformed: true } : {}),
+          ...("transformArguments" in decision &&
+          decision.transformArguments !== undefined
+            ? { transformed: true }
+            : {}),
           argumentsDigest: argumentsDigest(evaluatedArgs),
         });
         if (!decision.allowed) {
@@ -822,6 +853,8 @@ async function* executeAgent(
           approvalRequired.add(call.id);
         }
       } catch (error) {
+        if (error instanceof CancelledError && opts.signal?.aborted)
+          throw error;
         const reason = error instanceof Error ? error.message : String(error);
         events.push({
           type: "policy.decision",
@@ -863,22 +896,30 @@ async function* executeAgent(
       const parsed = tool.parameters.safeParse(call.arguments);
       if (!parsed.success) continue;
       try {
-        const decision = await Promise.resolve(
-          authorizer.authorize(
-            { name: call.name, arguments: parsed.data },
-            {
-              name: call.name,
-              arguments: parsed.data,
-              agentName: active.agent.name,
-              ...(opts.session !== undefined ? { sessionId: opts.session.id } : {}),
-              ...(opts.session?.tenantId !== undefined
-                ? { tenantId: opts.session.tenantId }
-                : {}),
-              ...(opts.principal !== undefined ? { principal: opts.principal } : {}),
-              ...(opts.roles !== undefined ? { roles: opts.roles } : {}),
-              messages: messageSnapshot,
-            },
+        throwIfAborted(opts.signal);
+        const decision = await waitWithAbort(
+          Promise.resolve(
+            authorizer.authorize(
+              { name: call.name, arguments: parsed.data },
+              {
+                name: call.name,
+                arguments: parsed.data,
+                agentName: active.agent.name,
+                ...(opts.session !== undefined
+                  ? { sessionId: opts.session.id }
+                  : {}),
+                ...(opts.session?.tenantId !== undefined
+                  ? { tenantId: opts.session.tenantId }
+                  : {}),
+                ...(opts.principal !== undefined
+                  ? { principal: opts.principal }
+                  : {}),
+                ...(opts.roles !== undefined ? { roles: opts.roles } : {}),
+                messages: messageSnapshot,
+              },
+            ),
           ),
+          opts.signal,
         );
         events.push({
           type: "tool.authorization_decided",
@@ -892,8 +933,13 @@ async function* executeAgent(
           failures.set(call.id, { ok: false, error: decision.reason });
           continue;
         }
-        transformedArgs.set(call.id, applyDecisionArguments(parsed.data, decision));
+        transformedArgs.set(
+          call.id,
+          applyDecisionArguments(parsed.data, decision),
+        );
       } catch (error) {
+        if (error instanceof CancelledError && opts.signal?.aborted)
+          throw error;
         const reason = error instanceof Error ? error.message : String(error);
         events.push({
           type: "tool.authorization_decided",
@@ -1341,7 +1387,9 @@ async function* executeAgent(
       await active.agent.hooks?.onStep?.({ step: steps, result }, engineCtx);
 
       if (checkpointMode && opts.session !== undefined) {
-        const appendResult = await appendToSession(opts.session, [result.message]);
+        const appendResult = await appendToSession(opts.session, [
+          result.message,
+        ]);
         const event = checkpointEvent(appendResult, opts.session.id);
         if (event !== undefined) yield event;
         if (!interruptedMarked) {
@@ -1399,9 +1447,16 @@ async function* executeAgent(
           await active.agent.hooks?.onToolCall?.({ call, tool }, engineCtx);
       }
 
-      const authorization = await evaluateAuthorizations(regularCalls, messages);
+      const authorization = await evaluateAuthorizations(
+        regularCalls,
+        messages,
+      );
       for (const event of authorization.events) yield event;
-      const policy = await evaluatePolicies(regularCalls, messages, authorization.transformedArgs);
+      const policy = await evaluatePolicies(
+        regularCalls,
+        messages,
+        authorization.transformedArgs,
+      );
       for (const event of policy.events) yield event;
       const approvalInput = regularCalls.map((call) => ({
         ...call,
@@ -1410,7 +1465,11 @@ async function* executeAgent(
           authorization.transformedArgs.get(call.id) ??
           call.arguments,
       }));
-      const approval = await evaluateApprovals(approvalInput, messages, policy.approvalRequired);
+      const approval = await evaluateApprovals(
+        approvalInput,
+        messages,
+        policy.approvalRequired,
+      );
       for (const event of approval.events) yield event;
 
       const settled = await Promise.all(
@@ -1555,7 +1614,10 @@ async function* executeAgent(
         opts.session !== undefined &&
         stepToolMessages.length > 0
       ) {
-        const appendResult = await appendToSession(opts.session, stepToolMessages);
+        const appendResult = await appendToSession(
+          opts.session,
+          stepToolMessages,
+        );
         const event = checkpointEvent(appendResult, opts.session.id);
         if (event !== undefined) yield event;
       }

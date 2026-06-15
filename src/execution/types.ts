@@ -44,8 +44,10 @@ export type RunInput = string | Message | Message[];
  * - Provider assistant turns are emitted as `message` events.
  * - Streaming text is emitted as `token` before the assistant `message` that
  *   contains the accumulated text.
- * - Tool calls emit `tool.call`, then `tool.result`, then the corresponding
- *   tool-result `message`.
+ * - Tool calls emit `tool.call`, any governance events for that call
+ *   (`policy.decision`, `tool.authorization_decided`,
+ *   `tool.approval_requested`, `tool.approval_decided`), then `tool.result`,
+ *   then the corresponding tool-result `message`.
  * - Successful runs end with `run.finish`; failed runs emit `error` and then
  *   reject/throw the same `AgentError`.
  * - `agent.child` wraps events forwarded from sub-agent tools, and

@@ -419,6 +419,7 @@ export function webTools(config: WebToolsConfig): WebTools {
     name: "web_search",
     description:
       "Search the web through the host's injected search provider and return normalized citations.",
+    policy: { operation: "network", target: (args) => args.query },
     parameters: WEB_SEARCH_PARAMS,
     async execute(args, ctx) {
       try {
@@ -457,6 +458,7 @@ export function webTools(config: WebToolsConfig): WebTools {
     name: "fetch_page",
     description:
       "Fetch one static HTML/text page and return compact text with source metadata and a citation.",
+    policy: { operation: "network", target: (args) => args.url },
     parameters: URL_PARAMS,
     async execute(args, ctx) {
       try {
@@ -486,6 +488,7 @@ export function webTools(config: WebToolsConfig): WebTools {
     name: "extract_readable_text",
     description:
       "Fetch one static page and extract readable article text, falling back to page text.",
+    policy: { operation: "network", target: (args) => args.url },
     parameters: URL_PARAMS,
     async execute(args, ctx) {
       try {
@@ -556,6 +559,7 @@ export function webTools(config: WebToolsConfig): WebTools {
     name: "crawl_links",
     description:
       "Fetch a bounded set of static pages and return same-host links by default.",
+    policy: { operation: "network", target: (args) => args.url },
     parameters: CRAWL_PARAMS,
     async execute(args, ctx) {
       try {

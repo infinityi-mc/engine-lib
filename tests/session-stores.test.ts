@@ -23,6 +23,8 @@ import {
   createSqliteSessionStore,
   migrateSessionStore,
   summarizingCompactor,
+  tenantScopedStore,
+  withVersionRetry,
   withSessionStoreHooks,
 } from "../src/session-stores/index";
 import type {
@@ -306,6 +308,48 @@ function escapeRegExp(value: string): string {
 runSessionStoreConformance("InMemorySessionStore", {
   testApi: { describe, expect, it },
   makeStore: () => new InMemorySessionStore(),
+});
+
+describe("tenantScopedStore", () => {
+  it("marks cross-tenant CAS denials as non-retryable", async () => {
+    const store = new InMemorySessionStore();
+    const events: unknown[] = [];
+    await store.save({
+      id: "owned",
+      messages: [user("existing")],
+      tenantId: "t1",
+    });
+    const scoped = tenantScopedStore(store, "t2", {
+      onEvent: (event) => events.push(event),
+    }) as {
+      appendIfVersion(
+        id: string,
+        messages: readonly ReturnType<typeof user>[],
+        expectedVersion: number,
+      ): Promise<{
+        conflict: true;
+        currentVersion: number;
+        retryable?: boolean;
+      }>;
+    };
+    let attempts = 0;
+
+    const result = await withVersionRetry(
+      async () => {
+        attempts += 1;
+        return scoped.appendIfVersion("owned", [user("new")], 0);
+      },
+      { maxAttempts: 5 },
+    );
+
+    expect(result).toEqual({
+      conflict: true,
+      currentVersion: 0,
+      retryable: false,
+    });
+    expect(attempts).toBe(1);
+    expect(events).toHaveLength(1);
+  });
 });
 
 runSessionStoreConformance("ForgeDataSessionStore over injected SQLite", {

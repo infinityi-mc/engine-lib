@@ -20,6 +20,8 @@ export type {
   ToolContext,
   ToolDefinition,
   ToolFailure,
+  ToolPolicyMetadata,
+  ToolPolicySpec,
   ToolResult,
   ToolSuccess,
 } from "./types";

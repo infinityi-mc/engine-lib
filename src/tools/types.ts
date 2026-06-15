@@ -18,7 +18,7 @@ import type { EngineContext } from "../runtime/types";
 import type { Schema } from "../schema/types";
 import type { RunBridge } from "../execution/types";
 import type { HumanInputGateway } from "../approval/types";
-import type { PolicyEngine } from "../governance/policy";
+import type { PolicyAction, PolicyEngine } from "../governance/policy";
 
 /**
  * Per-invocation context handed to a tool's {@link ToolDefinition.execute}.
@@ -78,6 +78,26 @@ export interface ToolFailure {
 /** The structured result of a tool invocation, discriminated on `ok`. */
 export type ToolResult = ToolSuccess | ToolFailure;
 
+/** Governance metadata used when a run-level {@link PolicyEngine} evaluates a tool call. */
+export interface ToolPolicyMetadata {
+  /** Explicit operation category for policy checks. */
+  readonly operation:
+    | PolicyAction["operation"]
+    | ((args: unknown) => PolicyAction["operation"]);
+  /** Effective target for policy checks. Defaults to common argument fields or the tool name. */
+  readonly target?: string | ((args: unknown) => string | undefined);
+}
+
+/** Typed authoring shape for {@link ToolPolicyMetadata}. */
+export interface ToolPolicySpec<TArgs = unknown> {
+  /** Explicit operation category for policy checks. */
+  readonly operation:
+    | PolicyAction["operation"]
+    | ((args: TArgs) => PolicyAction["operation"]);
+  /** Effective target for policy checks. Defaults to common argument fields or the tool name. */
+  readonly target?: string | ((args: TArgs) => string | undefined);
+}
+
 /**
  * A named capability the model can invoke.
  *
@@ -87,6 +107,7 @@ export type ToolResult = ToolSuccess | ToolFailure;
 export interface ToolDefinition<TArgs = unknown> {
   readonly name: string;
   readonly description?: string;
+  readonly policy?: ToolPolicyMetadata;
   /** Parameter schema: `.jsonSchema` is advertised to the provider, `.parse` validates args. */
   readonly parameters: Schema<TArgs>;
   /**

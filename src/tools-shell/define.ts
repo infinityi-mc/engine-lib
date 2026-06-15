@@ -109,6 +109,7 @@ export function shellTools(config: ShellToolsConfig): ShellTools {
     return defineTool({
       name,
       description,
+      policy: { operation: "exec", target: (args) => args.command },
       parameters: PARAMS,
       async execute(rawArgs, ctx: ToolContext): Promise<ToolResult> {
         const args = rawArgs as ShellArgs;
@@ -147,13 +148,27 @@ export function shellTools(config: ShellToolsConfig): ShellTools {
           mode,
         });
 
+        const timeoutMs = Math.min(
+          args.timeoutMs !== undefined && args.timeoutMs > 0
+            ? args.timeoutMs
+            : defaultTimeout,
+          maxTimeout,
+        );
+        const req: CommandRequest = {
+          command: args.command,
+          args: cmdArgs,
+          cwd,
+          timeoutMs,
+          mode,
+        };
+
         if (config.enginePolicy !== undefined) {
           const decision = await config.enginePolicy.evaluate(
             {
               tool: name,
               operation: "exec",
               target: args.command,
-              arguments: args,
+              arguments: req,
             },
             {
               agentName: ctx.agentName ?? "unknown",
@@ -178,20 +193,6 @@ export function shellTools(config: ShellToolsConfig): ShellTools {
             };
           }
         }
-
-        const timeoutMs = Math.min(
-          args.timeoutMs !== undefined && args.timeoutMs > 0
-            ? args.timeoutMs
-            : defaultTimeout,
-          maxTimeout,
-        );
-        const req: CommandRequest = {
-          command: args.command,
-          args: cmdArgs,
-          cwd,
-          timeoutMs,
-          mode,
-        };
 
         // Gate 3: approval for destructive commands.
         if (config.requiresApproval?.(req) === true) {

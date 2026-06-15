@@ -14,7 +14,7 @@ import {
   resolveCwd,
 } from "../src/tools-shell/policy";
 import { shellTools } from "../src/tools-shell/index";
-import type { CommandResult } from "../src/tools-shell/types";
+import type { CommandRequest, CommandResult } from "../src/tools-shell/types";
 
 // --- helpers ---------------------------------------------------------------
 
@@ -185,6 +185,41 @@ describe("run_command", () => {
       ctx,
     );
     expect(res.ok).toBe(false);
+  });
+
+  it("evaluates engine policy with the normalized command request", async () => {
+    let seen: CommandRequest | undefined;
+    const { runCommand } = shellTools({
+      allowedCwds: [ROOT],
+      defaultTimeoutMs: 100,
+      maxTimeoutMs: 200,
+      enginePolicy: {
+        evaluate: (action) => {
+          seen = action.arguments as CommandRequest;
+          return { allowed: false, reason: "blocked by engine policy" };
+        },
+      },
+    });
+    const { ctx } = captureCtx();
+    const res = await run(
+      runCommand,
+      {
+        command: JS,
+        args: ["-e", "console.log('nope')"],
+        cwd: "src",
+        timeoutMs: 999,
+      },
+      ctx,
+    );
+
+    expect(res.ok).toBe(false);
+    expect(seen).toEqual({
+      command: JS,
+      args: ["-e", "console.log('nope')"],
+      cwd: join(ROOT, "src"),
+      timeoutMs: 200,
+      mode: "run",
+    });
   });
 
   it("times out a long-running command", async () => {

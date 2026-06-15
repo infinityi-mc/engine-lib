@@ -13,13 +13,7 @@ import {
 
 export interface PolicyAction {
   readonly tool: string;
-  readonly operation:
-    | "read"
-    | "write"
-    | "delete"
-    | "network"
-    | "exec"
-    | string;
+  readonly operation: "read" | "write" | "delete" | "network" | "exec" | string;
   readonly target: string;
   readonly arguments: unknown;
 }
@@ -70,7 +64,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function hasString(value: unknown, key: string): value is Record<string, string> {
+function hasString(
+  value: unknown,
+  key: string,
+): value is Record<string, string> {
   return isRecord(value) && typeof value[key] === "string";
 }
 
@@ -85,6 +82,10 @@ function inferTarget(args: unknown, fallback: string): string {
     if (typeof url === "string") return url;
     const command = (args as { readonly command?: unknown }).command;
     if (typeof command === "string") return command;
+    const path = (args as { readonly path?: unknown }).path;
+    if (typeof path === "string") return path;
+    const root = (args as { readonly root?: unknown }).root;
+    if (typeof root === "string") return root;
   }
   return fallback;
 }
@@ -99,13 +100,15 @@ export function composePolicies(
       let target = action.target;
       let changed = false;
       for (const engine of engines) {
-        const nextAction =
-          changed && transformed !== action.arguments
-            ? { ...action, arguments: transformed, target }
-            : action;
+        const nextAction = changed
+          ? { ...action, arguments: transformed, target }
+          : action;
         const decision = await engine.evaluate(nextAction, ctx);
         if (!decision.allowed) return decision;
-        if ("transformArguments" in decision && decision.transformArguments !== undefined) {
+        if (
+          "transformArguments" in decision &&
+          decision.transformArguments !== undefined
+        ) {
           transformed = decision.transformArguments;
           target = inferTarget(transformed, target);
           changed = true;
@@ -131,7 +134,9 @@ export function shellPolicySource(config?: ShellPolicyLike): PolicyEngine {
     evaluate(action): PolicyDecision {
       if (action.operation !== "exec") return { allowed: true };
       const args = isRecord(action.arguments) ? action.arguments : {};
-      const command = (hasString(args, "command") ? args.command : action.target) as string;
+      const command = (
+        hasString(args, "command") ? args.command : action.target
+      ) as string;
       const argv = stringArray(args.args);
       const verdict = classifyCommand(command, argv, config as ShellPolicy);
       return verdict.allowed
@@ -180,15 +185,11 @@ export function filesystemPolicySource(
   };
 }
 
-export function approvalDecisionFromPolicy(
-  decision: PolicyDecision,
-): boolean {
+export function approvalDecisionFromPolicy(decision: PolicyDecision): boolean {
   return "requiresApproval" in decision && decision.requiresApproval === true;
 }
 
-export function approvalRequestFromPolicy(
-  req: ApprovalRequest,
-): PolicyContext {
+export function approvalRequestFromPolicy(req: ApprovalRequest): PolicyContext {
   return {
     agentName: req.agentName,
     ...(req.sessionId !== undefined ? { sessionId: req.sessionId } : {}),

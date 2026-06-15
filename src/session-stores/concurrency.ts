@@ -18,17 +18,23 @@ export interface CasSessionStore extends SessionStore {
 export interface VersionMismatch {
   readonly conflict: true;
   readonly currentVersion: number;
+  readonly retryable?: boolean;
 }
 
 export function isVersionMismatch(value: unknown): value is VersionMismatch {
   if (typeof value !== "object" || value === null) return false;
-  const v = value as { readonly conflict?: unknown; readonly currentVersion?: unknown };
+  const v = value as {
+    readonly conflict?: unknown;
+    readonly currentVersion?: unknown;
+    readonly retryable?: unknown;
+  };
   if (v.conflict !== true) return false;
-  return (
+  const validVersion =
     typeof v.currentVersion === "number" &&
     Number.isInteger(v.currentVersion) &&
-    v.currentVersion >= 0
-  );
+    v.currentVersion >= 0;
+  if (!validVersion) return false;
+  return v.retryable === undefined || typeof v.retryable === "boolean";
 }
 
 export function isCasSessionStore(
@@ -49,6 +55,7 @@ export async function withVersionRetry<T>(
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const result = await fn(attempt);
     if (!isVersionMismatch(result)) return result;
+    if (result.retryable === false) return result;
     last = result;
   }
   return last ?? { conflict: true, currentVersion: 0 };
@@ -87,13 +94,13 @@ function filterClaim(
  * Bind every read on `store` to `tenantId` and surface cross-tenant access as
  * a no-op plus a `tenant.access_denied` event (without leaking existence).
  *
- * **Writes** are not pre-checked: this decorator only enforces read isolation.
+ * **Writes** are best-effort pre-checked by loading current state before
+ * mutation, but these checks are non-atomic and MUST NOT be treated as the
+ * authoritative authorization boundary.
  * Underlying stores MUST enforce tenant ownership on the write path
- * (e.g. via a `tenantId` column / `WHERE tenantId = ?` predicate); otherwise
- * a tenant-scoped store will not block cross-tenant appends. The returned
- * store is still a valid {@link SessionStore}, so callers that already wire
- * tenant enforcement into the durable backend can use this decorator as a
- * belt-and-braces read-side guard.
+ * (e.g. via a `tenantId` column / `WHERE tenantId = ?` predicate).
+ * This wrapper is an additional guard and eventing layer, not a substitute
+ * for durable backend enforcement.
  */
 export function tenantScopedStore(
   store: SessionStore,
@@ -152,7 +159,10 @@ export function tenantScopedStore(
     },
     async save(state: SessionState): Promise<void> {
       const existing = await store.load(state.id);
-      if (existing !== undefined && !tenantMatches(existing.tenantId, tenantId)) {
+      if (
+        existing !== undefined &&
+        !tenantMatches(existing.tenantId, tenantId)
+      ) {
         denied(state.id, "save", existing.tenantId);
         return;
       }
@@ -177,11 +187,18 @@ export function tenantScopedStore(
             expectedVersion: number,
           ): Promise<AppendResult | VersionMismatch> => {
             const state = await store.load(id);
-            if (state !== undefined && !tenantMatches(state.tenantId, tenantId)) {
+            if (
+              state !== undefined &&
+              !tenantMatches(state.tenantId, tenantId)
+            ) {
               denied(id, "appendIfVersion", state.tenantId);
-              return { conflict: true, currentVersion: 0 };
+              return { conflict: true, currentVersion: 0, retryable: false };
             }
-            return (store as CasSessionStore).appendIfVersion(id, messages, expectedVersion);
+            return (store as CasSessionStore).appendIfVersion(
+              id,
+              messages,
+              expectedVersion,
+            );
           },
         }
       : {}),

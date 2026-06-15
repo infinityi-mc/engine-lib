@@ -401,6 +401,129 @@ describe("runAgent — buffered", () => {
     ).rejects.toBeInstanceOf(CancelledError);
   });
 
+  it("throws CancelledError when aborted while waiting for policy evaluation", async () => {
+    const controller = new AbortController();
+    const agent = defineAgent({
+      name: "a",
+      tools: [echo],
+      provider: scriptedProvider([
+        toolCallResult([{ id: "c1", name: "echo", arguments: { value: "x" } }]),
+        textResult("never"),
+      ]),
+    });
+
+    await expect(
+      runAgent(agent, {
+        input: "go",
+        signal: controller.signal,
+        policy: {
+          evaluate: () => {
+            controller.abort();
+            return new Promise<never>(() => {});
+          },
+        },
+      }),
+    ).rejects.toBeInstanceOf(CancelledError);
+  });
+
+  it("throws CancelledError when aborted while waiting for authorization", async () => {
+    const controller = new AbortController();
+    const agent = defineAgent({
+      name: "a",
+      tools: [echo],
+      provider: scriptedProvider([
+        toolCallResult([{ id: "c1", name: "echo", arguments: { value: "x" } }]),
+        textResult("never"),
+      ]),
+    });
+
+    await expect(
+      runAgent(agent, {
+        input: "go",
+        signal: controller.signal,
+        authorizer: {
+          authorize: () => {
+            controller.abort();
+            return new Promise<never>(() => {});
+          },
+        },
+      }),
+    ).rejects.toBeInstanceOf(CancelledError);
+  });
+
+  it("uses explicit tool policy metadata and a neutral fallback operation", async () => {
+    const actions: Array<{
+      readonly tool: string;
+      readonly operation: string;
+      readonly target: string;
+    }> = [];
+    const managedSave = defineTool({
+      name: "managed_save",
+      policy: { operation: "write", target: (args) => args.path },
+      parameters: s.object({ path: s.string() }),
+      execute: () => ({ ok: true, content: "saved" }),
+    });
+    const unclassifiedSave = defineTool({
+      name: "save_file",
+      parameters: s.object({ path: s.string() }),
+      execute: () => ({ ok: true, content: "saved" }),
+    });
+    const agent = defineAgent({
+      name: "a",
+      tools: [managedSave, unclassifiedSave],
+      provider: scriptedProvider([
+        toolCallResult([
+          { id: "c1", name: "managed_save", arguments: { path: "a.txt" } },
+          { id: "c2", name: "save_file", arguments: { path: "b.txt" } },
+        ]),
+        textResult("done"),
+      ]),
+    });
+
+    await runAgent(agent, {
+      input: "go",
+      policy: {
+        evaluate: (action) => {
+          actions.push({
+            tool: action.tool,
+            operation: action.operation,
+            target: action.target,
+          });
+          return { allowed: true };
+        },
+      },
+    });
+
+    expect(actions).toEqual([
+      { tool: "managed_save", operation: "write", target: "a.txt" },
+      { tool: "save_file", operation: "tool", target: "b.txt" },
+    ]);
+  });
+
+  it("does not mark undefined policy transforms as transformed", async () => {
+    const events: RunEvent[] = [];
+    const agent = defineAgent({
+      name: "a",
+      tools: [echo],
+      provider: scriptedProvider([
+        toolCallResult([{ id: "c1", name: "echo", arguments: { value: "x" } }]),
+        textResult("done"),
+      ]),
+    });
+
+    await runAgent(agent, {
+      input: "go",
+      onEvent: (event) => events.push(event),
+      policy: {
+        evaluate: () => ({ allowed: true, transformArguments: undefined }),
+      },
+    });
+
+    const decision = events.find((event) => event.type === "policy.decision");
+    expect(decision).toBeDefined();
+    expect(decision).not.toHaveProperty("transformed");
+  });
+
   it("invokes lifecycle hooks in order", async () => {
     const order: string[] = [];
     const agent = defineAgent({
