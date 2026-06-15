@@ -87,7 +87,7 @@ export function validateJsonSchema(
       const properties = node.properties ?? {};
       const required = node.required ?? [];
       for (const key of required) {
-        if (input[key] === undefined) {
+        if (!Object.hasOwn(input, key) || input[key] === undefined) {
           issues.push(issue([...path, key], "required"));
         }
       }
@@ -100,7 +100,7 @@ export function validateJsonSchema(
       }
       if (node.additionalProperties === false) {
         for (const key of Object.keys(input)) {
-          if (!(key in properties)) {
+          if (!Object.hasOwn(properties, key)) {
             issues.push(issue([...path, key], "unexpected property"));
           }
         }

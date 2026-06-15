@@ -64,6 +64,26 @@ describe("s — validation", () => {
     expect(result.success).toBe(false);
   });
 
+  it("rejects prototype-named additional properties", () => {
+    const empty = s.object({});
+    expect(empty.safeParse({ toString: "evil" }).success).toBe(false);
+    expect(empty.safeParse({ constructor: "evil" }).success).toBe(false);
+  });
+
+  it("does not satisfy required fields from inherited properties", () => {
+    const raw = fromJsonSchema<{ toString: string }>({
+      type: "object",
+      properties: { toString: { type: "string" as const } },
+      required: ["toString"],
+      additionalProperties: false,
+    });
+
+    const missing = raw.safeParse({});
+    expect(missing.success).toBe(false);
+    if (!missing.success) expect(missing.error.issues[0]?.message).toBe("required");
+    expect(raw.safeParse({ toString: "ok" }).success).toBe(true);
+  });
+
   it("throws SchemaValidationError from parse", () => {
     expect(() => schema.parse({})).toThrow(SchemaValidationError);
   });

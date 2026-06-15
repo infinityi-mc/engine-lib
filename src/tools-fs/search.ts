@@ -38,6 +38,28 @@ function truncate(text: string, maxChars: number): string {
     : text;
 }
 
+const MAX_REGEX_PATTERN_LENGTH = 256;
+const UNSAFE_REGEX_PATTERNS: readonly RegExp[] = [
+  /\((?:[^()\\]|\\.)*[+*](?:[^()\\]|\\.)*\)[+*{]/,
+  /\.\*(?:[^\\]|\\.)*\.\*/,
+];
+
+export function assertSafeRegexPattern(pattern: string): void {
+  if (pattern.length > MAX_REGEX_PATTERN_LENGTH) {
+    throw new Error(
+      `regex pattern exceeds maximum length of ${MAX_REGEX_PATTERN_LENGTH} characters`,
+    );
+  }
+  for (const unsafe of UNSAFE_REGEX_PATTERNS) {
+    if (unsafe.test(pattern)) {
+      throw new Error(
+        "regex pattern contains potentially catastrophic backtracking",
+      );
+    }
+  }
+  new RegExp(pattern);
+}
+
 function buildRegex(
   pattern: string,
   mode: "literal" | "regex",
@@ -47,6 +69,7 @@ function buildRegex(
     mode === "literal"
       ? pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
       : pattern;
+  if (mode === "regex") assertSafeRegexPattern(pattern);
   return new RegExp(source, caseSensitive ? "g" : "gi");
 }
 
@@ -191,6 +214,7 @@ export async function searchText(
   readonly backend: "ripgrep" | "node";
   readonly truncated: boolean;
 }> {
+  if (options.mode === "regex") assertSafeRegexPattern(options.pattern);
   const rg = await tryRipgrepSearch({ root, ...options });
   if (rg !== null) {
     return {
