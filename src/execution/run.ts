@@ -373,9 +373,17 @@ async function appendToSession(
 ): Promise<AppendResult> {
   const store = session.store;
   if (isCasSessionStore(store)) {
-    const result = await withVersionRetry(async (attempt) => {
-      const version = await store.load(session.id).then((s) => s?.version ?? 0);
-      return store.appendIfVersion(session.id, messages, version);
+    let expectedVersion = (await store.load(session.id))?.version ?? 0;
+    const result = await withVersionRetry(async () => {
+      const attemptResult = await store.appendIfVersion(
+        session.id,
+        messages,
+        expectedVersion,
+      );
+      if (isVersionMismatch(attemptResult)) {
+        expectedVersion = attemptResult.currentVersion;
+      }
+      return attemptResult;
     });
     if (isVersionMismatch(result)) {
       throw new ExecutionError(

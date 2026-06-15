@@ -17,10 +17,16 @@ import type { Message } from "../src/messages/types";
 import type { CompletionResult, ToolCall, Usage } from "../src/providers/types";
 import { s } from "../src/schema/index";
 import {
+  type AppendResult,
   createSession,
   InMemorySessionStore,
   readResumeInfo,
   withResumeInfo,
+} from "../src/session/index";
+import type {
+  Session,
+  SessionListPage,
+  SessionStore,
 } from "../src/session/index";
 import { withSessionStoreHooks } from "../src/session-stores/index";
 import { mockProvider } from "../src/testing/index";
@@ -735,6 +741,67 @@ describe("runAgent — sessions & context (Phase 5)", () => {
       "assistant:answer",
     ]);
     expect(result.output).toBe("answer");
+  });
+
+  it("uses returned CAS conflict versions without reloading full history per retry", async () => {
+    let loadCount = 0;
+    const expectedVersions: number[] = [];
+    const appended: Message[] = [];
+    const emptyPage: SessionListPage = { sessions: [] };
+    const store: SessionStore = {
+      async load(id) {
+        loadCount += 1;
+        return { id, messages: [user("existing")], version: 0 };
+      },
+      async append() {
+        throw new Error("non-CAS append should not be used");
+      },
+      async appendIfVersion(
+        _id,
+        messages,
+        expectedVersion,
+      ): Promise<AppendResult | { conflict: true; currentVersion: number }> {
+        expectedVersions.push(expectedVersion);
+        if (expectedVersions.length === 1) {
+          return { conflict: true, currentVersion: 1 };
+        }
+        appended.push(...messages);
+        return {};
+      },
+      async setMetadata() {},
+      async list() {
+        return emptyPage;
+      },
+      async save() {},
+      async claimTenant() {
+        return false;
+      },
+      async delete() {},
+    };
+    const session: Session = {
+      id: "cas-session",
+      store,
+      messages: async () => [],
+      append: async () => {
+        throw new Error("session.append should not be used");
+      },
+      setMetadata: async () => {},
+      getMetadata: async () => undefined,
+      clear: async () => {},
+    };
+    const agent = defineAgent({
+      name: "a",
+      provider: mockProvider({ result: () => textResult("answer") }),
+    });
+
+    const result = await runAgent(agent, { input: "question", session });
+
+    expect(result.output).toBe("answer");
+    expect(loadCount).toBe(1);
+    expect(expectedVersions).toEqual([0, 1]);
+    expect(
+      appended.map((message) => `${message.role}:${textOf(message)}`),
+    ).toEqual(["user:question", "assistant:answer"]);
   });
 
   it("does not persist system or injected-context messages to the session", async () => {
