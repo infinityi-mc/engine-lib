@@ -183,13 +183,14 @@ describe("defaultProviderResilience", () => {
 });
 
 describe("toProviderError", () => {
-  it("wraps an unknown error, preserving status and cause", () => {
+  it("wraps an unknown error, preserving status but not leaking cause", () => {
     const cause = Object.assign(new Error("boom"), { status: 502 });
     const error = toProviderError("openai", cause);
     expect(error).toBeInstanceOf(ProviderError);
     expect(error.provider).toBe("openai");
     expect(error.message).toContain("HTTP 502");
-    expect(error.cause).toBe(cause);
+    // N9: cause is not forwarded to avoid leaking raw HTTP errors with credentials
+    expect(error.cause).toBeUndefined();
   });
 
   it("passes an existing ProviderError through unchanged", () => {

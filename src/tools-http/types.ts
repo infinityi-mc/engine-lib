@@ -71,6 +71,8 @@ export interface HttpToolsConfig extends HttpPolicy {
   readonly minTimeoutMs?: number;
   /** Maximum accepted timeout after clamping. Defaults to 60_000ms. */
   readonly maxTimeoutMs?: number;
+  /** Maximum bytes accepted for a request body. Defaults to 1_000_000. */
+  readonly maxRequestBytes?: number;
   /** Maximum bytes read from a response body. Defaults to 1_000_000. */
   readonly maxResponseBytes?: number;
   /** Maximum characters returned for parsed text bodies. Defaults to 20_000. */

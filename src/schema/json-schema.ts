@@ -48,6 +48,11 @@ export function asSchema<T>(
 /**
  * Wrap a raw {@link JsonSchema} as a {@link Schema}. Validation uses the
  * built-in validator; the output type is supplied by the caller (`T`).
+ *
+ * **Contract:** `parse`/`safeParse` validate the input against the JSON Schema
+ * and return the *same object reference* on success — it does **not** clone,
+ * strip extra properties, or transform the input. Callers that need a clean
+ * projected object must shallow-clone or pick declared properties themselves.
  */
 export function fromJsonSchema<T = unknown>(jsonSchema: JsonSchema): Schema<T> {
   return {

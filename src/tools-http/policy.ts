@@ -44,6 +44,7 @@ export interface NormalizedHttpConfig {
   readonly defaultTimeoutMs: number;
   readonly minTimeoutMs: number;
   readonly maxTimeoutMs: number;
+  readonly maxRequestBytes: number;
   readonly maxResponseBytes: number;
   readonly maxBodyChars: number;
   readonly maxRedirects: number;
@@ -131,6 +132,7 @@ export function normalizeHttpConfig(
   const minTimeoutMs = config.minTimeoutMs ?? 100;
   const defaultTimeoutMs = config.defaultTimeoutMs ?? 10_000;
   const maxTimeoutMs = config.maxTimeoutMs ?? 60_000;
+  const maxRequestBytes = config.maxRequestBytes ?? 1_000_000;
   const maxResponseBytes = config.maxResponseBytes ?? 1_000_000;
   const maxBodyChars = config.maxBodyChars ?? 20_000;
   const maxRedirects = config.maxRedirects ?? 5;
@@ -144,6 +146,7 @@ export function normalizeHttpConfig(
   if (minTimeoutMs > maxTimeoutMs) {
     throw new HttpPolicyError("minTimeoutMs must be <= maxTimeoutMs");
   }
+  assertPositiveInteger("maxRequestBytes", maxRequestBytes);
   assertPositiveInteger("maxResponseBytes", maxResponseBytes);
   assertPositiveInteger("maxBodyChars", maxBodyChars);
   assertNonNegativeInteger("maxRedirects", maxRedirects);
@@ -170,6 +173,7 @@ export function normalizeHttpConfig(
     defaultTimeoutMs: clamp(defaultTimeoutMs, minTimeoutMs, maxTimeoutMs),
     minTimeoutMs,
     maxTimeoutMs,
+    maxRequestBytes,
     maxResponseBytes,
     maxBodyChars,
     maxRedirects,

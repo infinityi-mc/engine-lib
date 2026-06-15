@@ -355,6 +355,14 @@ export function createHttpToolClient(config: HttpToolsConfig): HttpToolClient {
         const currentMethod = method;
         const currentUrl = url;
         const { body, contentType } = bodyFor(req, currentMethod);
+        if (
+          body !== undefined &&
+          Buffer.byteLength(body, "utf8") > normalized.maxRequestBytes
+        ) {
+          throw new HttpPolicyError(
+            `request body exceeds maxRequestBytes (${normalized.maxRequestBytes})`,
+          );
+        }
         const requestHeaders = buildRequestHeaders(
           normalized,
           req.headers,

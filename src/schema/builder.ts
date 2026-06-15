@@ -107,9 +107,16 @@ export const s = {
   },
 
   /** An array of `item`. */
-  array<T>(item: Schema<T>, opts?: { description?: string }): Schema<T[]> {
+  array<T>(
+    item: Schema<T>,
+    opts?: { description?: string; maxItems?: number },
+  ): Schema<T[]> {
+    if (optionalSchemas.has(item)) {
+      throw new TypeError("s.optional() cannot be used as an array item schema");
+    }
     const node: JsonSchema = { type: "array", items: item.jsonSchema };
     if (opts?.description !== undefined) node.description = opts.description;
+    if (opts?.maxItems !== undefined) node.maxItems = opts.maxItems;
     return makeSchema<T[]>(node);
   },
 

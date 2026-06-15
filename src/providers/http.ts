@@ -55,14 +55,27 @@ function statusOf(error: unknown): number | undefined {
   return undefined;
 }
 
+const MAX_ERROR_DETAIL_CHARS = 512;
+
+function scrubErrorDetail(value: string): string {
+  return value
+    .replace(/(authorization|proxy-authorization|x-api-key|api-key)(\s*[:=]\s*)\S+/gi, "$1$2[redacted]")
+    .replace(/(https?:\/\/)[^\/@\s]+@/gi, "$1[redacted]@");
+}
+
+function truncateErrorDetail(value: string): string {
+  if (value.length <= MAX_ERROR_DETAIL_CHARS) return value;
+  return `${value.slice(0, MAX_ERROR_DETAIL_CHARS)}…[truncated]`;
+}
+
 /** Best-effort human-readable detail from a thrown value. */
 function messageOf(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "object" && error !== null && "message" in error) {
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === "string") return message;
-  }
-  return String(error);
+  const message = error instanceof Error
+    ? error.message
+    : typeof error === "object" && error !== null && "message" in error && typeof (error as { message?: unknown }).message === "string"
+      ? (error as { message: string }).message
+      : String(error);
+  return truncateErrorDetail(scrubErrorDetail(message));
 }
 
 /** Retry transient failures: 429, any 5xx, and network errors (no status). */
@@ -246,6 +259,5 @@ export function toProviderError(
   return new ProviderError(message, {
     provider,
     status,
-    cause: error,
   });
 }

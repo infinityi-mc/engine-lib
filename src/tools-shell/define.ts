@@ -51,7 +51,7 @@ const PARAMS = s.object({
     description: "Program to run (argv[0]). Not interpreted by a shell.",
   }),
   args: s.optional(
-    s.array(s.string(), { description: "Arguments passed to the program." }),
+    s.array(s.string(), { description: "Arguments passed to the program.", maxItems: 1024 }),
   ),
   cwd: s.optional(
     s.string({

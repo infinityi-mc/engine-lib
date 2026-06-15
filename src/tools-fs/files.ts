@@ -4,6 +4,7 @@ import {
   lstat,
   mkdir,
   readFile,
+  stat,
   rename,
   rm,
   writeFile,
@@ -223,9 +224,12 @@ export async function readTextFile(
   readonly version: string;
   readonly truncated: boolean;
 }> {
+  const info = await stat(path);
+  if (info.size > maxBytes) {
+    throw new Error(`file exceeds max_bytes (${maxBytes})`);
+  }
   const bytes = await readFile(path);
-  const sliced =
-    bytes.byteLength > maxBytes ? bytes.subarray(0, maxBytes) : bytes;
+  const sliced = bytes;
   return {
     text: sliced.toString("utf8"),
     version: fileVersion(bytes),

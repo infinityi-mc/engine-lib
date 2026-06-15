@@ -13,7 +13,10 @@ import { mapStopReason } from "./map";
 interface AnthropicStreamEvent {
   type?: string;
   index?: number;
-  message?: { model?: string; usage?: { input_tokens?: number } };
+  message?: {
+    model?: string;
+    usage?: { input_tokens?: number; cache_read_input_tokens?: number };
+  };
   content_block?: { type?: string; id?: string; name?: string };
   delta?: {
     type?: string;
@@ -33,6 +36,7 @@ export async function* translateAnthropicStream(
   let lastToolIndex: number | undefined;
   let inputTokens = 0;
   let outputTokens = 0;
+  let cachedInputTokens: number | undefined;
   let stopReason: string | null | undefined;
   let hadToolCalls = false;
   let sawUsage = false;
@@ -44,6 +48,7 @@ export async function* translateAnthropicStream(
           inputTokens,
           outputTokens,
           totalTokens: inputTokens + outputTokens,
+          ...(cachedInputTokens !== undefined ? { cachedInputTokens } : {}),
         }
       : undefined;
     return {
@@ -66,6 +71,10 @@ export async function* translateAnthropicStream(
       case "message_start":
         if (event.message?.usage?.input_tokens !== undefined) {
           inputTokens = event.message.usage.input_tokens;
+          sawUsage = true;
+        }
+        if (event.message?.usage?.cache_read_input_tokens !== undefined) {
+          cachedInputTokens = event.message.usage.cache_read_input_tokens;
           sawUsage = true;
         }
         yield { type: "message_start", model: event.message?.model ?? model };

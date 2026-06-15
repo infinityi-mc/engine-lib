@@ -79,7 +79,7 @@ export async function* parseSse(
   const { signal, idleTimeoutMs = DEFAULT_SSE_IDLE_TIMEOUT_MS } =
     normalizeOptions(options);
   const reader = stream.getReader();
-  const decoder = new TextDecoder();
+  const decoder = new TextDecoder("utf-8", { ignoreBOM: true });
   let buffer = "";
   let event: string | undefined;
   let data: string[] = [];

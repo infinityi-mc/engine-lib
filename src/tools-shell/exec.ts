@@ -39,6 +39,7 @@ async function collectStream(
   which: "stdout" | "stderr",
   maxBytes: number,
   onChunk: ((chunk: ExecChunk) => void) | undefined,
+  onChunkError?: () => void,
 ): Promise<{ text: string; truncated: boolean }> {
   if (stream === undefined) return { text: "", truncated: false };
   const reader = stream.getReader();
@@ -54,11 +55,16 @@ async function collectStream(
       const { done, value } = await reader.read();
       if (done) break;
       if (value === undefined || value.length === 0) continue;
-      if (onChunk !== undefined) {
-        onChunk({
-          stream: which,
-          text: chunkDecoder.decode(value, { stream: true }),
-        });
+      if (onChunk !== undefined && !truncated) {
+        try {
+          onChunk({
+            stream: which,
+            text: chunkDecoder.decode(value, { stream: true }),
+          });
+        } catch {
+          onChunkError?.();
+          throw new Error("onChunk callback failed");
+        }
       }
       if (keptBytes < maxBytes) {
         const remaining = maxBytes - keptBytes;
@@ -76,9 +82,16 @@ async function collectStream(
     }
     // Flush any bytes the streaming decoder buffered for an incomplete trailing
     // multi-byte sequence, so the onChunk consumer sees the final character.
-    if (onChunk !== undefined) {
+    if (onChunk !== undefined && !truncated) {
       const tail = chunkDecoder.decode();
-      if (tail.length > 0) onChunk({ stream: which, text: tail });
+      if (tail.length > 0) {
+        try {
+          onChunk({ stream: which, text: tail });
+        } catch {
+          onChunkError?.();
+          throw new Error("onChunk callback failed");
+        }
+      }
     }
   } finally {
     reader.releaseLock();
@@ -124,6 +137,18 @@ export async function execCommand(opts: ExecOptions): Promise<CommandResult> {
     else opts.signal.addEventListener("abort", onAbort, { once: true });
   }
 
+  const killProc = () => proc.kill("SIGKILL");
+
+  // N15: re-kill watchdog — re-issue SIGKILL every 100ms until proc exits.
+  // Guards against processes that ignore or survive the first signal.
+  const rekillTimer = setInterval(() => {
+    if (timedOut || abortKill) killProc();
+  }, 100);
+  // Allow the re-kill interval to not keep the event loop alive.
+  if (typeof rekillTimer === "object" && "unref" in rekillTimer) {
+    rekillTimer.unref();
+  }
+
   try {
     const [out, err] = await Promise.all([
       collectStream(
@@ -131,12 +156,14 @@ export async function execCommand(opts: ExecOptions): Promise<CommandResult> {
         "stdout",
         opts.maxOutputBytes,
         opts.onChunk,
+        killProc,
       ),
       collectStream(
         proc.stderr as ReadableStream<Uint8Array> | undefined,
         "stderr",
         opts.maxOutputBytes,
         opts.onChunk,
+        killProc,
       ),
       proc.exited,
     ]);
@@ -154,8 +181,8 @@ export async function execCommand(opts: ExecOptions): Promise<CommandResult> {
       stderrTruncated: err.truncated,
     };
   } finally {
+    clearInterval(rekillTimer);
     clearTimeout(timer);
     opts.signal?.removeEventListener("abort", onAbort);
-    void abortKill; // kill already issued; flag retained for clarity of intent
   }
 }

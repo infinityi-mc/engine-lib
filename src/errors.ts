@@ -113,7 +113,7 @@ export class SchemaValidationError extends AgentError {
   ) {
     super(message, options);
     this.name = "SchemaValidationError";
-    this.issues = options.issues;
+    this.issues = Object.freeze([...options.issues]);
   }
 }
 

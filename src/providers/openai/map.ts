@@ -42,8 +42,10 @@ interface OpenAIResponse {
 
 interface OpenAIOutputItem {
   type: string;
-  // message
+  // message / reasoning
   content?: Array<{ type: string; text?: string; refusal?: string }>;
+  summary?: Array<{ type?: string; text?: string }>;
+  text?: string;
   // function_call
   call_id?: string;
   id?: string;
@@ -193,8 +195,16 @@ export function parseOpenAIResponse(
       for (const part of item.content ?? []) {
         if (part.type === "output_text" && part.text !== undefined)
           text += part.text;
-        else if (part.type === "refusal") hadRefusal = true;
+        else if (part.type === "refusal") {
+          hadRefusal = true;
+          if (part.refusal !== undefined) text += part.refusal;
+        }
       }
+    } else if (item.type === "reasoning") {
+      for (const part of item.summary ?? []) {
+        if (part.text !== undefined) text += part.text;
+      }
+      if (item.text !== undefined) text += item.text;
     } else if (item.type === "function_call") {
       const argumentsText = item.arguments ?? "";
       toolCalls.push({
