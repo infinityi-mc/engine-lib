@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -522,6 +522,22 @@ describe("FilesystemJsonlSessionStore", () => {
     expect(files).toHaveLength(1);
     const compacted = await readFile(join(directory, files[0]!), "utf8");
     expect(compacted.trim().split(/\r?\n/)).toHaveLength(1);
+  });
+
+  it("skips corrupt trailing JSONL records during replay", async () => {
+    const directory = await tempDirectory();
+    const store = new FilesystemJsonlSessionStore({ directory });
+    await store.migrate();
+    await store.append("s1", [user("valid")]);
+    const files = (await readdir(directory)).filter((entry) =>
+      entry.endsWith(".jsonl"),
+    );
+    await writeFile(join(directory, files[0]!), "{not-json", { flag: "a" });
+
+    expect(messageTexts(await store.load("s1"))).toEqual(["valid"]);
+    expect((await store.list()).sessions.map((session) => session.id)).toContain(
+      "s1",
+    );
   });
 
   it("round-trips through a custom codec without plaintext at rest", async () => {

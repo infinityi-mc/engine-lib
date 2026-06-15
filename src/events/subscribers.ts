@@ -11,6 +11,8 @@
  * @module
  */
 
+import { createHash } from "node:crypto";
+
 import type { MessageBus } from "@infinityi/forge/messaging";
 
 import type { RunEvent } from "../execution/types";
@@ -45,6 +47,8 @@ export function loggingSubscriber(
 export interface MessageBusSubscriberOptions {
   /** Prefix prepended to each message `type`. Defaults to `"agent."`. */
   readonly typePrefix?: string;
+  /** Payload redaction mode. Defaults to `"digest"`. */
+  readonly redaction?: "digest" | "full";
 }
 
 /**
@@ -59,12 +63,76 @@ export function messageBusSubscriber(
   opts: MessageBusSubscriberOptions = {},
 ): RunSubscriber {
   const prefix = opts.typePrefix ?? "agent.";
+  const redaction = opts.redaction ?? "digest";
   return async (event) => {
     await bus.publish({
       type: `${prefix}${event.type}`,
-      payload: eventPayload(event),
+      payload: eventBusPayload(event, redaction),
     });
   };
+}
+
+function digest(value: unknown): string {
+  return createHash("sha256")
+    .update(JSON.stringify(value) ?? "undefined")
+    .digest("hex");
+}
+
+function eventBusPayload(
+  event: RunEvent,
+  redaction: "digest" | "full",
+): Record<string, unknown> {
+  if (redaction === "full") return eventPayload(event);
+  switch (event.type) {
+    case "message":
+      return {
+        runId: event.runId,
+        role: event.message.role,
+        parts: event.message.content.length,
+        contentDigest: digest(event.message.content),
+      };
+    case "token":
+      return { runId: event.runId, length: event.delta.length };
+    case "tool.call":
+      return {
+        runId: event.runId,
+        id: event.id,
+        name: event.name,
+        argumentsDigest: digest(event.arguments),
+      };
+    case "tool.result":
+      return {
+        runId: event.runId,
+        id: event.id,
+        name: event.name,
+        ok: event.result.ok,
+        resultDigest: digest(event.result),
+      };
+    case "run.finish":
+      return {
+        runId: event.runId,
+        finishReason: event.result.finishReason,
+        steps: event.result.steps,
+        usage: event.result.usage,
+        outputDigest: digest(event.result.output),
+        messagesDigest: digest(event.result.messages),
+      };
+    case "error":
+      return {
+        runId: event.runId,
+        name: event.error.name,
+        messageDigest: digest(event.error.message),
+      };
+    case "agent.child":
+      return {
+        runId: event.runId,
+        agent: event.agent,
+        depth: event.depth,
+        event: eventBusPayload(event.event, redaction),
+      };
+    default:
+      return eventPayload(event);
+  }
 }
 
 /**

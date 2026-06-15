@@ -30,6 +30,7 @@ export type PolicyDecision =
   | {
       readonly allowed: true;
       readonly transformArguments?: unknown;
+      readonly transformTarget?: string;
       readonly requiresApproval?: boolean;
     }
   | { readonly allowed: false; readonly reason: string };
@@ -99,6 +100,7 @@ export function composePolicies(
       let transformed: unknown = action.arguments;
       let target = action.target;
       let changed = false;
+      let targetChanged = false;
       for (const engine of engines) {
         const nextAction = changed
           ? { ...action, arguments: transformed, target }
@@ -110,7 +112,20 @@ export function composePolicies(
           decision.transformArguments !== undefined
         ) {
           transformed = decision.transformArguments;
-          target = inferTarget(transformed, target);
+          const nextTarget =
+            "transformTarget" in decision &&
+            decision.transformTarget !== undefined
+              ? decision.transformTarget
+              : inferTarget(transformed, target);
+          targetChanged ||= nextTarget !== target;
+          target = nextTarget;
+          changed = true;
+        } else if (
+          "transformTarget" in decision &&
+          decision.transformTarget !== undefined
+        ) {
+          targetChanged ||= decision.transformTarget !== target;
+          target = decision.transformTarget;
           changed = true;
         }
         if ("requiresApproval" in decision && decision.requiresApproval) {
@@ -121,6 +136,7 @@ export function composePolicies(
         return {
           allowed: true,
           ...(changed ? { transformArguments: transformed } : {}),
+          ...(targetChanged ? { transformTarget: target } : {}),
           ...(sawApproval ? { requiresApproval: true } : {}),
         };
       }

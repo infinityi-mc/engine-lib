@@ -216,6 +216,55 @@ describe("createSession", () => {
 });
 
 describe("resume metadata", () => {
+  it("preserves internal engine metadata when callers set user metadata", async () => {
+    const store = new InMemorySessionStore();
+    const resume = {
+      schemaVersion: 2,
+      agentName: "agent",
+      lastActiveAt: new Date().toISOString(),
+      lastRunStatus: "completed" as const,
+    };
+    await store.save({
+      id: "meta",
+      messages: [],
+      metadata: withResumeInfo({ keep: true }, resume),
+    });
+    const session = createSession({ id: "meta", store });
+
+    await session.setMetadata({ user: "value", "engine:resume": { bad: true } });
+
+    expect(await session.getMetadata()).toMatchObject({
+      keep: true,
+      user: "value",
+      "engine:resume": resume,
+    });
+  });
+
+  it("does not lose appends from concurrent handles with the same seed", async () => {
+    const store = new InMemorySessionStore();
+    const first = createSession({
+      id: "same-seed",
+      store,
+      messages: [user("seed")],
+    });
+    const second = createSession({
+      id: "same-seed",
+      store,
+      messages: [user("seed")],
+    });
+
+    await Promise.all([
+      first.append([user("first")]),
+      second.append([user("second")]),
+    ]);
+
+    expect((await first.messages()).map((m) => m.content[0])).toEqual([
+      { type: "text", text: "seed" },
+      { type: "text", text: "first" },
+      { type: "text", text: "second" },
+    ]);
+  });
+
   it("reads v2 agent compatibility fields", () => {
     const metadata = withResumeInfo(undefined, {
       schemaVersion: 2,

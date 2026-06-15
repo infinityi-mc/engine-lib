@@ -33,4 +33,39 @@ describe("composePolicies", () => {
 
     expect(seenTargets).toEqual(["https://new.example/"]);
   });
+
+  it("uses explicit transformTarget when transformed arguments rename target key", async () => {
+    const seenTargets: string[] = [];
+    const policy = composePolicies(
+      {
+        evaluate: () => ({
+          allowed: true,
+          transformArguments: { endpoint: "https://new.example/" },
+          transformTarget: "https://new.example/",
+        }),
+      },
+      {
+        evaluate: (action) => {
+          seenTargets.push(action.target);
+          return { allowed: true };
+        },
+      },
+    );
+
+    const decision = await policy.evaluate(
+      {
+        tool: "http_get",
+        operation: "network",
+        target: "https://old.example/",
+        arguments: { url: "https://old.example/" },
+      },
+      { agentName: "a", messages: [] },
+    );
+
+    expect(seenTargets).toEqual(["https://new.example/"]);
+    expect(decision).toMatchObject({
+      allowed: true,
+      transformTarget: "https://new.example/",
+    });
+  });
 });

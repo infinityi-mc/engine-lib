@@ -16,8 +16,29 @@
  * @module
  */
 
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { execCommand } from "../tools-shell/exec";
 import type { SandboxOptions, SandboxResult, ToolSandbox } from "./types";
+
+/** Options for {@link dockerSandbox}. */
+export interface DockerSandboxHardeningOptions {
+  readonly readOnlyRootfs?: boolean;
+  readonly tmpfs?: boolean;
+  readonly dropCapabilities?: boolean;
+  readonly noNewPrivileges?: boolean;
+  readonly seccompProfile?: string | false;
+  readonly pidsLimit?: number | false;
+  readonly user?: string | false;
+}
+
+export interface DockerRunArgsOptions {
+  readonly extraArgs?: readonly string[];
+  readonly envFile?: string;
+  readonly hardening?: DockerSandboxHardeningOptions;
+}
 
 /** Options for {@link dockerSandbox}. */
 export interface DockerSandboxOptions {
@@ -27,6 +48,39 @@ export interface DockerSandboxOptions {
   readonly runtime?: "docker" | "podman";
   /** Extra args inserted before the image (e.g. `--user`, `--read-only`). */
   readonly extraArgs?: readonly string[];
+  /** Secure container defaults. Enabled by default. */
+  readonly hardening?: DockerSandboxHardeningOptions;
+}
+
+function pathOf(
+  path: string | { readonly path: string; readonly writable?: boolean },
+): string {
+  return typeof path === "string" ? path : path.path;
+}
+
+function mountSpec(
+  path: string | { readonly path: string; readonly writable?: boolean },
+): string {
+  const hostPath = pathOf(path);
+  const mode = typeof path === "string" || path.writable !== true ? "ro" : "rw";
+  return `${hostPath}:${hostPath}:${mode}`;
+}
+
+function applyHardening(
+  args: string[],
+  hardening: DockerSandboxHardeningOptions | undefined,
+): void {
+  if (hardening?.readOnlyRootfs ?? true) args.push("--read-only");
+  if (hardening?.tmpfs ?? true) args.push("--tmpfs", "/tmp:size=64m");
+  if (hardening?.dropCapabilities ?? true) args.push("--cap-drop=ALL");
+  if (hardening?.noNewPrivileges ?? true)
+    args.push("--security-opt", "no-new-privileges:true");
+  const seccomp = hardening?.seccompProfile ?? "runtime/default";
+  if (seccomp !== false) args.push("--security-opt", `seccomp=${seccomp}`);
+  const pidsLimit = hardening?.pidsLimit ?? 256;
+  if (pidsLimit !== false) args.push("--pids-limit", String(pidsLimit));
+  const user = hardening?.user ?? "1000:1000";
+  if (user !== false) args.push("--user", user);
 }
 
 /** @internal */
@@ -35,21 +89,34 @@ export function buildRunArgs(
   command: string,
   commandArgs: readonly string[],
   options: SandboxOptions,
-  extraArgs: readonly string[],
+  runOptions: readonly string[] | DockerRunArgsOptions = [],
 ): string[] {
+  let extraArgs: readonly string[];
+  let envFile: string | undefined;
+  let hardening: DockerSandboxHardeningOptions | undefined;
+  if (Array.isArray(runOptions)) {
+    extraArgs = runOptions as readonly string[];
+  } else {
+    const opts = runOptions as DockerRunArgsOptions;
+    extraArgs = opts.extraArgs ?? [];
+    envFile = opts.envFile;
+    hardening = opts.hardening;
+  }
   const args: string[] = ["run", "--rm", "-i"];
   if (!options.networkAccess) args.push("--network", "none");
   if (options.memoryLimitMb !== undefined)
     args.push("--memory", `${options.memoryLimitMb}m`);
   if (options.cpuLimit !== undefined)
     args.push("--cpus", String(options.cpuLimit));
-  for (const path of options.filesystemPaths)
-    args.push("-v", `${path}:${path}`);
+  applyHardening(args, hardening);
+  for (const path of options.filesystemPaths) args.push("-v", mountSpec(path));
   // Run inside the first mounted path when present, else the requested cwd.
-  const workdir = options.filesystemPaths[0] ?? options.cwd;
+  const workdir =
+    options.filesystemPaths[0] !== undefined
+      ? pathOf(options.filesystemPaths[0])
+      : options.cwd;
   args.push("-w", workdir);
-  for (const [key, value] of Object.entries(options.env))
-    args.push("-e", `${key}=${value}`);
+  if (envFile !== undefined) args.push("--env-file", envFile);
   args.push(...extraArgs);
   args.push(image, command, ...commandArgs);
   return args;
@@ -68,35 +135,45 @@ export function dockerSandbox(options: DockerSandboxOptions): ToolSandbox {
       commandArgs: readonly string[],
       sandboxOptions: SandboxOptions,
     ): Promise<SandboxResult> {
-      const runArgs = buildRunArgs(
-        options.image,
-        command,
-        commandArgs,
-        sandboxOptions,
-        extraArgs,
-      );
-      const result = await execCommand({
-        command: runtime,
-        args: runArgs,
-        cwd: sandboxOptions.cwd,
-        env: sandboxOptions.env,
-        timeoutMs: sandboxOptions.timeoutMs,
-        maxOutputBytes: sandboxOptions.maxOutputBytes,
-        ...(sandboxOptions.onChunk !== undefined
-          ? { onChunk: sandboxOptions.onChunk }
-          : {}),
-        ...(sandboxOptions.signal !== undefined
-          ? { signal: sandboxOptions.signal }
-          : {}),
-      });
-      // Re-key the result to the inner command so the shell tool's mapping and
-      // events describe what the model ran, not the container invocation.
-      return {
-        ...result,
-        command,
-        args: commandArgs,
-        cwd: sandboxOptions.cwd,
-      };
+      const envDir = await mkdtemp(join(tmpdir(), "engine-sandbox-"));
+      const envFile = join(envDir, "env");
+      try {
+        const envContent = Object.entries(sandboxOptions.env)
+          .map(([key, value]) => `${key}=${value.replace(/\n/g, "\\n")}`)
+          .join("\n");
+        await writeFile(envFile, envContent, { encoding: "utf8", mode: 0o600 });
+        const runArgs = buildRunArgs(
+          options.image,
+          command,
+          commandArgs,
+          sandboxOptions,
+          { extraArgs, envFile, hardening: options.hardening },
+        );
+        const result = await execCommand({
+          command: runtime,
+          args: runArgs,
+          cwd: sandboxOptions.cwd,
+          env: {},
+          timeoutMs: sandboxOptions.timeoutMs,
+          maxOutputBytes: sandboxOptions.maxOutputBytes,
+          ...(sandboxOptions.onChunk !== undefined
+            ? { onChunk: sandboxOptions.onChunk }
+            : {}),
+          ...(sandboxOptions.signal !== undefined
+            ? { signal: sandboxOptions.signal }
+            : {}),
+        });
+        // Re-key the result to the inner command so the shell tool's mapping and
+        // events describe what the model ran, not the container invocation.
+        return {
+          ...result,
+          command,
+          args: commandArgs,
+          cwd: sandboxOptions.cwd,
+        };
+      } finally {
+        await rm(envDir, { recursive: true, force: true });
+      }
     },
   };
 }
