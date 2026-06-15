@@ -12,6 +12,7 @@
 export { createTextChunker, recursiveTextChunker } from "./chunking";
 export { retrieverContext } from "./context";
 export {
+  createTenantScopedMemory,
   memoryContextProvider,
   memoryExtractor,
   tenantMemoryFilter,

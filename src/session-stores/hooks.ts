@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 import type { Message } from "../messages/types";
 import type {
   AppendResult,
@@ -43,26 +45,52 @@ export function withSessionStoreHooks<T extends SessionStore>(
   Partial<
     VersionedSessionStore & CloseableSessionStore & ExpiringSessionStore
   > {
-  let runningHooks = false;
+  const queues = new Map<string, Promise<void>>();
+  const activeHooks = new AsyncLocalStorage<ReadonlySet<string>>();
+
+  function hookActive(id: string): boolean {
+    return activeHooks.getStore()?.has(id) === true;
+  }
+
+  async function enqueue<T>(id: string, run: () => Promise<T>): Promise<T> {
+    if (hookActive(id)) return run();
+    const previous = queues.get(id) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const tail = previous.then(() => current, () => current);
+    queues.set(id, tail);
+    await previous;
+    try {
+      return await run();
+    } finally {
+      release();
+      if (queues.get(id) === tail) queues.delete(id);
+    }
+  }
 
   async function runHooks(
     operation: "append" | "save",
     id: string,
   ): Promise<AppendResult> {
-    if (runningHooks || hooks.compactor === undefined) return {};
+    const compactor = hooks.compactor;
+    if (hookActive(id) || compactor === undefined) return {};
     const current = await store.load(id);
     if (current === undefined) return {};
 
     const context: SessionStoreHookContext = { operation, store: wrapped };
     const shouldCompact =
-      hooks.compactor.shouldCompact === undefined
+      compactor.shouldCompact === undefined
         ? true
-        : await hooks.compactor.shouldCompact(snapshot(current), context);
+        : await compactor.shouldCompact(snapshot(current), context);
     if (!shouldCompact) return {};
 
-    runningHooks = true;
-    try {
-      const result = await hooks.compactor.compact(snapshot(current), context);
+    const parentHooks = activeHooks.getStore() ?? new Set<string>();
+    const nextHooks = new Set(parentHooks);
+    nextHooks.add(id);
+    return activeHooks.run(nextHooks, async () => {
+      const result = await compactor.compact(snapshot(current), context);
       const replacement = isCompactionResult(result) ? result.state : result;
       const replacementState: SessionState = {
         ...replacement,
@@ -104,9 +132,7 @@ export function withSessionStoreHooks<T extends SessionStore>(
         removed,
         summaryAdded: hasSummary && !hadSummary,
       };
-    } finally {
-      runningHooks = false;
-    }
+    });
   }
 
   const wrapped: SessionStore &
@@ -121,10 +147,12 @@ export function withSessionStoreHooks<T extends SessionStore>(
       id: string,
       messages: readonly Message[],
     ): Promise<AppendResult> {
-      const base = await store.append(id, messages);
-      if (messages.length === 0) return base;
-      const hooksResult = await runHooks("append", id);
-      return mergeAppendResults(base, hooksResult);
+      return enqueue(id, async () => {
+        const base = await store.append(id, messages);
+        if (messages.length === 0) return base;
+        const hooksResult = await runHooks("append", id);
+        return mergeAppendResults(base, hooksResult);
+      });
     },
 
     setMetadata(id: string, metadata: Record<string, unknown>) {
@@ -136,14 +164,18 @@ export function withSessionStoreHooks<T extends SessionStore>(
     },
 
     async save(state: SessionState): Promise<void> {
-      await store.save(state);
-      await runHooks("save", state.id);
+      await enqueue(state.id, async () => {
+        await store.save(state);
+        await runHooks("save", state.id);
+      });
     },
 
     async claimTenant(claim: SessionTenantClaim): Promise<boolean> {
-      const changed = await store.claimTenant(claim);
-      if (changed) await runHooks("save", claim.id);
-      return changed;
+      return enqueue(claim.id, async () => {
+        const changed = await store.claimTenant(claim);
+        if (changed) await runHooks("save", claim.id);
+        return changed;
+      });
     },
 
     delete(id: string) {
