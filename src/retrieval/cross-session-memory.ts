@@ -21,6 +21,8 @@
  * @module
  */
 
+import { createHash } from "node:crypto";
+
 import type { ContextProvider, ContextResolveContext } from "../context/types";
 import { redactTextForPersistence } from "../governance/redacting-codec";
 import type { ContentFilter } from "../governance/filters";
@@ -98,12 +100,7 @@ async function embedOne(
 /** A stable id for a memory, derived from its provenance + content. */
 function memoryId(entry: MemoryEntry): string {
   const basis = `${entry.source.sessionId}|${entry.source.runId ?? ""}|${entry.source.timestamp}|${entry.content}`;
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < basis.length; index += 1) {
-    hash ^= basis.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `mem_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `mem_${createHash("sha256").update(basis).digest("hex").slice(0, 32)}`;
 }
 
 function recordToEntry(record: {
@@ -267,7 +264,13 @@ export function memoryContextProvider(
         });
         return [];
       }
-      await options.onRecalled?.(entries, ctx, run);
+      try {
+        await options.onRecalled?.(entries, ctx, run);
+      } catch (error) {
+        ctx.logger?.warn?.("memory onRecalled callback failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       if (entries.length === 0) return [];
       const content = entries.map((entry) => `- ${entry.content}`).join("\n");
       return [{ title: options.title ?? "Relevant Memory", content }];

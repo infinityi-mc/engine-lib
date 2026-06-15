@@ -387,3 +387,41 @@ describe("tool invoked outside a run", () => {
     expect(res.ok).toBe(true);
   });
 });
+
+describe("sandbox routing", () => {
+  it("passes the requested cwd as the first sandbox filesystem path", async () => {
+    const seen: string[][] = [];
+    const { runCommand } = shellTools({
+      allowedCwds: [ROOT],
+      filesystemPaths: [ROOT, join(ROOT, "src")],
+      sandbox: {
+        execute: async (_command, _args, options) => {
+          seen.push([...options.filesystemPaths]);
+          return {
+            command: _command,
+            args: _args,
+            cwd: options.cwd,
+            stdout: "",
+            stderr: "",
+            exitCode: 0,
+            signal: null,
+            timedOut: false,
+            durationMs: 0,
+            stdoutTruncated: false,
+            stderrTruncated: false,
+          };
+        },
+      },
+    });
+    const { ctx } = captureCtx();
+
+    const res = await run(
+      runCommand,
+      { command: JS, args: ["-e", ""], cwd: "src" },
+      ctx,
+    );
+
+    expect(res.ok).toBe(true);
+    expect(seen).toEqual([[join(ROOT, "src"), ROOT]]);
+  });
+});

@@ -5,8 +5,9 @@
  * A {@link ToolSandbox} runs a command with bounded blast radius (network,
  * filesystem, memory/CPU limits). The shell tool delegates to it *after* its
  * existing cwd/command/approval gates pass, so the sandbox composes with — it
- * does not replace — the per-pack policy. The default {@link localSandbox} is a
- * thin pass-through to the in-process executor, preserving today's behaviour.
+ * does not replace — the per-pack policy. When no sandbox is configured, the
+ * shell tool uses the in-process executor directly; {@link localSandbox}
+ * provides the same execution style as an explicit sandbox adapter.
  *
  * @module
  */

@@ -42,11 +42,10 @@ const { runCommand } = shellTools({
 });
 ```
 
-- `localSandbox()` (the default when no `sandbox` is set) is a thin pass-through
-  to the in-process executor — byte-identical streaming, timeout, byte caps, and
-  abort-kill. It **fails closed** if asked for `networkAccess: false` (an
-  in-process spawn cannot enforce it) unless you pass
-  `localSandbox({ allowNetworkDowngrade: true })`.
+- Without `sandbox`, `shellTools` uses the in-process executor directly.
+  `localSandbox()` provides that same execution style, but it **fails closed**
+  when asked for `networkAccess: false` (unless
+  `localSandbox({ allowNetworkDowngrade: true })` is set).
 - `dockerSandbox({ image, runtime? })` runs the command in a container with
   `--network none` when `networkAccess` is false, bind mounts for
   `filesystemPaths`, `--memory`/`--cpus` limits, and the same timeout/abort-kill
@@ -124,4 +123,3 @@ is bundled.
 
 Runnable HTTP and web example:
 [`../examples/10-tools-http-web.ts`](../examples/10-tools-http-web.ts).
-

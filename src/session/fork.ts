@@ -66,6 +66,13 @@ export async function forkSession(
   options: ForkOptions = {},
 ): Promise<Session> {
   const store: SessionStore = session.store;
+  const targetId = options.id;
+  if (targetId !== undefined) {
+    const existingTarget = await store.load(targetId);
+    if (existingTarget !== undefined) {
+      throw new Error(`fork target session already exists: ${targetId}`);
+    }
+  }
   const source = await store.load(session.id);
   const sourceMessages = source?.messages ?? [];
   const cut = snapForkIndex(
@@ -77,7 +84,7 @@ export async function forkSession(
   const tenantId = source?.tenantId ?? session.tenantId;
 
   const fork = createSession({
-    ...(options.id !== undefined ? { id: options.id } : {}),
+    ...(targetId !== undefined ? { id: targetId } : {}),
     store,
     ...(messages.length > 0 ? { messages } : {}),
     ...(metadata !== undefined ? { metadata } : {}),

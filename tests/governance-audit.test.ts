@@ -14,6 +14,7 @@ import {
   auditSubscriber,
   forgeDataAuditLog,
   jsonlAuditLog,
+  regexRedactor,
 } from "../src/governance/index";
 import type { AuditEntry, AuditLog } from "../src/governance/index";
 import { createEventHub } from "../src/events/index";
@@ -143,6 +144,34 @@ describe("AUDIT-T1 jsonlAuditLog + auditSubscriber", () => {
       "authorization.deny",
       "approval.granted",
     ]);
+  });
+
+  it("redacts tenant access-denied custom event detail recursively", async () => {
+    const entries: AuditEntry[] = [];
+    const log: AuditLog = { record: async (e) => void entries.push(e) };
+    const sub = auditSubscriber(log, { redactDetail: regexRedactor() });
+
+    await sub(withRunId({ type: "run.start", agent: "a" }));
+    await sub(
+      withRunId({
+        type: "custom",
+        name: "tenant.access_denied",
+        data: {
+          operation: "session.load",
+          reason: "alice@example.com",
+          nested: { values: ["secret: hunter2"] },
+        },
+      }),
+    );
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.target).toBe("session.load");
+    const detail = entries[0]?.detail as {
+      reason?: string;
+      nested?: { values?: string[] };
+    };
+    expect(detail.reason).toBe("[REDACTED]");
+    expect(detail.nested?.values?.[0]).toBe("[REDACTED]");
   });
 });
 

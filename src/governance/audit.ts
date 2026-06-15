@@ -83,6 +83,26 @@ async function redact(
   return applyFilters(value, [filter], { stage: "tool-output" }, "redact");
 }
 
+async function redactUnknown(
+  value: unknown,
+  filter: ContentFilter | undefined,
+): Promise<unknown> {
+  if (typeof value === "string") return redact(value, filter);
+  if (Array.isArray(value)) {
+    return Promise.all(value.map((item) => redactUnknown(item, filter)));
+  }
+  if (value !== null && typeof value === "object") {
+    const pairs = await Promise.all(
+      Object.entries(value as Record<string, unknown>).map(
+        async ([key, child]) =>
+          [key, await redactUnknown(child, filter)] as const,
+      ),
+    );
+    return Object.fromEntries(pairs);
+  }
+  return value;
+}
+
 /**
  * Build a {@link RunSubscriber} that maps relevant run events to append-only
  * {@link AuditEntry} records on `log`.
@@ -193,6 +213,10 @@ export function auditSubscriber(
       case "custom": {
         if (event.name === "tenant.access_denied") {
           const operation = event.data.operation;
+          const redactedDetail = await redactUnknown(
+            event.data,
+            opts.redactDetail,
+          );
           await log.record({
             ...base(event),
             action: "tenant.access_denied",
@@ -200,7 +224,7 @@ export function auditSubscriber(
               typeof operation === "string"
                 ? operation
                 : "tenant.access_denied",
-            detail: { ...event.data },
+            detail: redactedDetail as Record<string, unknown>,
           });
         }
         return;

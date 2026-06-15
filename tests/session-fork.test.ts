@@ -120,4 +120,17 @@ describe("FORK-T1 session forking", () => {
     const original = await store.load("free");
     expect(original?.messages).toHaveLength(2);
   });
+
+  it("rejects an explicit fork target id that already exists", async () => {
+    const store = new InMemorySessionStore();
+    const source = createSession({ id: "source", store });
+    const target = createSession({ id: "target", store });
+    await source.append([user("source")]);
+    await target.append([user("existing")]);
+
+    await expect(source.fork({ id: "target" })).rejects.toThrow(
+      "fork target session already exists: target",
+    );
+    expect(await target.messages()).toEqual([user("existing")]);
+  });
 });

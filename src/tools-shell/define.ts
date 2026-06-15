@@ -217,12 +217,18 @@ export function shellTools(config: ShellToolsConfig): ShellTools {
         let result;
         try {
           if (config.sandbox !== undefined) {
+            const sandboxFilesystemPaths = [
+              req.cwd,
+              ...(config.filesystemPaths ?? allowedRoots).filter(
+                (path) => path !== req.cwd,
+              ),
+            ];
             result = await config.sandbox.execute(req.command, req.args, {
               cwd: req.cwd,
               env,
               timeoutMs,
               networkAccess: config.networkAccess ?? true,
-              filesystemPaths: config.filesystemPaths ?? allowedRoots,
+              filesystemPaths: sandboxFilesystemPaths,
               maxOutputBytes,
               ...(config.memoryLimitMb !== undefined
                 ? { memoryLimitMb: config.memoryLimitMb }

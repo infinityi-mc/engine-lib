@@ -127,7 +127,10 @@ export interface ShellToolsConfig {
    * executor. Absent → in-process execution, byte-identical to today.
    */
   readonly sandbox?: ToolSandbox;
-  /** Whether the model may reach the network. Threaded to the sandbox. Defaults to true. */
+  /**
+   * Whether the model may reach the network. Enforced only by a configured
+   * sandbox. Defaults to true.
+   */
   readonly networkAccess?: boolean;
   /** Filesystem paths the sandbox may mount. Defaults to the allowed cwds. */
   readonly filesystemPaths?: readonly string[];

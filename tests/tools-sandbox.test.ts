@@ -165,9 +165,13 @@ describe("SANDBOX-T1 dockerSandbox", () => {
     // A network call fails (no reachability) — wget/ping should be unable to resolve.
     const blocked = await sandbox.execute(
       "sh",
-      ["-c", "wget -T 2 -q -O- http://example.com || echo NETFAIL"],
+      [
+        "-c",
+        "command -v wget >/dev/null || echo NOWGET; wget -T 2 -q -O- http://example.com || echo NETFAIL",
+      ],
       baseOptions({ networkAccess: false }),
     );
+    expect(blocked.stdout).not.toContain("NOWGET");
     expect(blocked.stdout).toContain("NETFAIL");
   }, 60_000);
 });

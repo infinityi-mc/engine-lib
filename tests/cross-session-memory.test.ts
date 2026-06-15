@@ -12,6 +12,7 @@ import type {
   ContextProvider,
   ContextResolveContext,
 } from "../src/context/index";
+import type { Logger } from "../src/runtime/index";
 import { user } from "../src/messages/index";
 import { regexRedactor } from "../src/governance/index";
 
@@ -116,6 +117,47 @@ describe("MEM-T1 memoryContextProvider", () => {
     const provider = memoryContextProvider({ memory: failing });
     const items = await resolveContext(provider, "anything");
     expect(items).toEqual([]);
+  });
+
+  it("keeps recalled context when onRecalled throws", async () => {
+    const memory = makeStore();
+    await memory.store({
+      content: "The user writes TypeScript daily",
+      source: { sessionId: "s1", timestamp: "2026-06-15T00:00:00Z" },
+    });
+    const warnings: unknown[] = [];
+    const provider = memoryContextProvider({
+      memory,
+      onRecalled: () => {
+        throw new Error("callback down");
+      },
+    });
+    let logger: Logger;
+    logger = {
+      trace: () => {},
+      debug: () => {},
+      info: () => {},
+      warn: (_message, meta) => void warnings.push(meta),
+      error: () => {},
+      fatal: () => {},
+      child: () => logger,
+    };
+
+    const items = await provider.resolve(
+      {
+        logger,
+      },
+      {
+        agentName: "a",
+        input: [user("typescript")],
+        prior: [],
+        messages: [user("typescript")],
+      },
+    );
+
+    expect(items).toHaveLength(1);
+    expect(String(items[0]?.content)).toContain("TypeScript");
+    expect(warnings).toHaveLength(1);
   });
 });
 

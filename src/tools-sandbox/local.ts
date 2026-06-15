@@ -1,7 +1,8 @@
 /**
- * {@link localSandbox} — the default {@link ToolSandbox}, a thin pass-through to
- * the in-process executor (`execCommand`). It reproduces today's shell
- * behaviour exactly: streamed `onChunk`, timeout, byte caps, and abort-kill.
+ * {@link localSandbox} — an explicit {@link ToolSandbox} adapter that is a thin
+ * pass-through to the in-process executor (`execCommand`). It reproduces
+ * today's shell behaviour exactly: streamed `onChunk`, timeout, byte caps, and
+ * abort-kill.
  *
  * An in-process spawn cannot enforce network or filesystem isolation, so a
  * request for `networkAccess: false` fails closed (a {@link SandboxError}) unless
@@ -25,7 +26,7 @@ export interface LocalSandboxOptions {
 }
 
 /**
- * The default in-process sandbox. Delegates to `execCommand`, preserving exact
+ * An in-process sandbox adapter. Delegates to `execCommand`, preserving exact
  * current shell behaviour. Fails closed on un-enforceable isolation requests.
  */
 export function localSandbox(opts: LocalSandboxOptions = {}): ToolSandbox {
