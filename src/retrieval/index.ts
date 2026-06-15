@@ -12,6 +12,12 @@
 export { createTextChunker, recursiveTextChunker } from "./chunking";
 export { retrieverContext } from "./context";
 export {
+  memoryContextProvider,
+  memoryExtractor,
+  tenantMemoryFilter,
+  vectorMemoryStore,
+} from "./cross-session-memory";
+export {
   createDocumentLoader,
   loadDocuments,
   staticDocumentLoader,
@@ -31,6 +37,17 @@ export {
   scoreVectors,
 } from "./vector-store";
 export type { VectorSimilarity } from "./vector-store";
+
+export type {
+  MemoryContextProviderOptions,
+  MemoryEntry,
+  MemoryExtractInput,
+  MemoryExtractOptions,
+  MemorySource,
+  MemoryStore,
+  RecallOptions,
+  VectorMemoryStoreOptions,
+} from "./cross-session-memory";
 
 export type {
   Chunker,

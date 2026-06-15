@@ -146,6 +146,25 @@ await runAgent(agent, {
 `truncateToolAware()` drops whole turns and never separates a `tool_call` from
 its matching `tool_result`. `summarizeOldest()` also splits at turn boundaries.
 
+## Forking a session
+
+`session.fork(options?)` (or the free function `forkSession(session, options?)`)
+copies a prefix of one session's history into a new, independent session — the
+substrate for "try again" / A-B exploration. The original is untouched.
+
+```ts
+const branch = await session.fork({ atIndex: 6 });
+```
+
+- The default fork point is all messages. `atIndex` is clamped and **snapped
+  down to a turn boundary**, so a fork never splits an assistant `tool_call` from
+  its `tool_result` messages.
+- The fork copies the source `metadata` by default (pass `metadata: false` to
+  drop it, or an object to override) and inherits the source `tenantId` — a fork
+  cannot cross tenants.
+- Forking works for every store via the `load`/`save` contract; both sessions
+  are fully independent afterwards.
+
 ## Migration to 2.0.0
 
 Custom `SessionStore` implementations must add `list()` and `setMetadata()`,

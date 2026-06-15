@@ -229,3 +229,16 @@ export class FilesystemPolicyError extends AgentError {
     this.name = "FilesystemPolicyError";
   }
 }
+
+/**
+ * A {@link ToolSandbox} could not provide a requested isolation guarantee (for
+ * example, `localSandbox` asked for `networkAccess: false` without an explicit
+ * downgrade). Surfaced as a tool failure so the model can recover; the command
+ * is never run unisolated.
+ */
+export class SandboxError extends AgentError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "SandboxError";
+  }
+}

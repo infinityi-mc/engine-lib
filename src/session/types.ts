@@ -16,6 +16,23 @@ import type { Usage } from "../providers/types";
 import type { SessionResumeInfo } from "./resume";
 import type { VersionMismatch } from "../session-stores/concurrency";
 
+/** Options for {@link Session.fork}. */
+export interface ForkOptions {
+  /**
+   * Cut point: the fork copies `messages[0..atIndex)`. Defaults to all messages.
+   * Clamped to `[0, length]`, then snapped **down** to the nearest turn boundary
+   * so a tool-call/tool-result turn is never split.
+   */
+  readonly atIndex?: number;
+  /** Id for the new session. Defaults to a generated id. */
+  readonly id?: string;
+  /**
+   * Metadata for the fork. Defaults to copying the source's metadata; pass
+   * `false` to drop it, or an object to override it.
+   */
+  readonly metadata?: Record<string, unknown> | false;
+}
+
 /** Outcome returned by {@link SessionStore.append}. */
 export interface AppendResult {
   /** True when the append triggered persisted session compaction. */
@@ -148,6 +165,12 @@ export interface Session {
   setMetadata(metadata: Record<string, unknown>): Promise<void>;
   /** Read the stored metadata object for this session, if any. */
   getMetadata(): Promise<Record<string, unknown> | undefined>;
+  /**
+   * Branch this session: copy a prefix of its history into a new, independent
+   * session (snapping the cut point to a turn boundary, inheriting tenant and —
+   * by default — metadata). The original session is unchanged.
+   */
+  fork(options?: ForkOptions): Promise<Session>;
   /** Drop all history for this session. */
   clear(): Promise<void>;
 }

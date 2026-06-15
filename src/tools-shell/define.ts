@@ -216,18 +216,39 @@ export function shellTools(config: ShellToolsConfig): ShellTools {
         emitExecStart(ctx, req);
         let result;
         try {
-          result = await execCommand({
-            command: req.command,
-            args: req.args,
-            cwd: req.cwd,
-            env,
-            timeoutMs,
-            maxOutputBytes,
-            ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
-            ...(mode === "spawn"
-              ? { onChunk: (c) => emitExecChunk(ctx, c.stream, c.text) }
-              : {}),
-          });
+          if (config.sandbox !== undefined) {
+            result = await config.sandbox.execute(req.command, req.args, {
+              cwd: req.cwd,
+              env,
+              timeoutMs,
+              networkAccess: config.networkAccess ?? true,
+              filesystemPaths: config.filesystemPaths ?? allowedRoots,
+              maxOutputBytes,
+              ...(config.memoryLimitMb !== undefined
+                ? { memoryLimitMb: config.memoryLimitMb }
+                : {}),
+              ...(config.cpuLimit !== undefined
+                ? { cpuLimit: config.cpuLimit }
+                : {}),
+              ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
+              ...(mode === "spawn"
+                ? { onChunk: (c) => emitExecChunk(ctx, c.stream, c.text) }
+                : {}),
+            });
+          } else {
+            result = await execCommand({
+              command: req.command,
+              args: req.args,
+              cwd: req.cwd,
+              env,
+              timeoutMs,
+              maxOutputBytes,
+              ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
+              ...(mode === "spawn"
+                ? { onChunk: (c) => emitExecChunk(ctx, c.stream, c.text) }
+                : {}),
+            });
+          }
         } catch (err) {
           // The process could not be spawned at all (e.g. unknown program).
           const message = err instanceof Error ? err.message : String(err);

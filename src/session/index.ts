@@ -9,6 +9,8 @@
 export { createSession } from "./session";
 export type { CreateSessionOptions } from "./session";
 
+export { forkSession, snapForkIndex } from "./fork";
+
 export {
   RESUME_METADATA_KEY,
   RESUME_SCHEMA_VERSION,
@@ -24,6 +26,7 @@ export { InMemorySessionStore } from "./store";
 
 export type {
   AppendResult,
+  ForkOptions,
   Session,
   SessionListItem,
   SessionListOptions,

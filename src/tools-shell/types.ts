@@ -12,6 +12,7 @@
 
 import type { ApprovalDecision as CoreApprovalDecision } from "../approval/types";
 import type { PolicyEngine } from "../governance/policy";
+import type { ToolSandbox } from "../tools-sandbox/types";
 
 export type ApprovalDecision = CoreApprovalDecision;
 
@@ -120,6 +121,20 @@ export interface ShellToolsConfig {
   readonly maxTimeoutMs?: number;
   /** Byte cap per stream (stdout / stderr) before truncation. Defaults to 100_000. */
   readonly maxOutputBytes?: number;
+  /**
+   * Optional execution sandbox. When present, a command runs through
+   * `sandbox.execute` (after all native gates pass) instead of the in-process
+   * executor. Absent → in-process execution, byte-identical to today.
+   */
+  readonly sandbox?: ToolSandbox;
+  /** Whether the model may reach the network. Threaded to the sandbox. Defaults to true. */
+  readonly networkAccess?: boolean;
+  /** Filesystem paths the sandbox may mount. Defaults to the allowed cwds. */
+  readonly filesystemPaths?: readonly string[];
+  /** Optional memory ceiling (MB) passed to the sandbox. */
+  readonly memoryLimitMb?: number;
+  /** Optional CPU limit (cores) passed to the sandbox. */
+  readonly cpuLimit?: number;
 }
 
 /** The pair of tool definitions returned by {@link shellTools}. */
