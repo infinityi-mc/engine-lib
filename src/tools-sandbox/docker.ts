@@ -73,6 +73,14 @@ function mountSpec(
   return `${hostPath}:${containerPath(hostPath, index)}:${mode}`;
 }
 
+function defaultContainerUser(): string {
+  const uid =
+    typeof process.getuid === "function" ? process.getuid() : undefined;
+  const gid =
+    typeof process.getgid === "function" ? process.getgid() : undefined;
+  return uid !== undefined && gid !== undefined ? `${uid}:${gid}` : "1000:1000";
+}
+
 function applyHardening(
   args: string[],
   hardening: DockerSandboxHardeningOptions | undefined,
@@ -86,7 +94,7 @@ function applyHardening(
   if (seccomp !== false) args.push("--security-opt", `seccomp=${seccomp}`);
   const pidsLimit = hardening?.pidsLimit ?? 256;
   if (pidsLimit !== false) args.push("--pids-limit", String(pidsLimit));
-  const user = hardening?.user ?? "1000:1000";
+  const user = hardening?.user ?? defaultContainerUser();
   if (user !== false) args.push("--user", user);
 }
 
