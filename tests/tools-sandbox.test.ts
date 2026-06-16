@@ -13,6 +13,12 @@ import type { SandboxOptions } from "../src/tools-sandbox/index";
 const ROOT = process.cwd();
 const JS = process.execPath;
 
+function containerPath(hostPath: string, index = 0): string {
+  return /^[A-Za-z]:[\\/]/.test(hostPath) || hostPath.includes("\\")
+    ? `/workspace/mount-${index}`
+    : hostPath;
+}
+
 function ctx(): ToolContext {
   return { toolCallId: "c1", agentName: "test" };
 }
@@ -133,7 +139,7 @@ describe("SANDBOX-T1 dockerSandbox", () => {
 
     const workdirFlag = args.indexOf("-w");
     expect(workdirFlag).toBeGreaterThanOrEqual(0);
-    expect(args[workdirFlag + 1]).toBe(ROOT);
+    expect(args[workdirFlag + 1]).toBe(containerPath(ROOT));
   });
 
   it("falls back to the requested cwd when there are no mounted paths", () => {
@@ -147,7 +153,7 @@ describe("SANDBOX-T1 dockerSandbox", () => {
 
     const workdirFlag = args.indexOf("-w");
     expect(workdirFlag).toBeGreaterThanOrEqual(0);
-    expect(args[workdirFlag + 1]).toBe(ROOT);
+    expect(args[workdirFlag + 1]).toBe(containerPath(ROOT));
   });
 
   it("uses read-only mounts, env-file, and secure defaults", () => {
@@ -168,8 +174,10 @@ describe("SANDBOX-T1 dockerSandbox", () => {
     expect(args).toContain("seccomp=runtime/default");
     expect(args).toContain("--pids-limit");
     expect(args).toContain("--user");
-    expect(args).toContain(`${ROOT}:${ROOT}:ro`);
-    expect(args).toContain(`${join(ROOT, "tmp")}:${join(ROOT, "tmp")}:rw`);
+    expect(args).toContain(`${ROOT}:${containerPath(ROOT, 0)}:ro`);
+    expect(args).toContain(
+      `${join(ROOT, "tmp")}:${containerPath(join(ROOT, "tmp"), 1)}:rw`,
+    );
     expect(args).toContain("--env-file");
     expect(args).toContain("/tmp/env-file");
     expect(args.join(" ")).not.toContain("SECRET=hidden");

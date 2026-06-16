@@ -58,12 +58,19 @@ function pathOf(
   return typeof path === "string" ? path : path.path;
 }
 
+function containerPath(hostPath: string, index: number): string {
+  return /^[A-Za-z]:[\\/]/.test(hostPath) || hostPath.includes("\\")
+    ? `/workspace/mount-${index}`
+    : hostPath;
+}
+
 function mountSpec(
   path: string | { readonly path: string; readonly writable?: boolean },
+  index: number,
 ): string {
   const hostPath = pathOf(path);
   const mode = typeof path === "string" || path.writable !== true ? "ro" : "rw";
-  return `${hostPath}:${hostPath}:${mode}`;
+  return `${hostPath}:${containerPath(hostPath, index)}:${mode}`;
 }
 
 function applyHardening(
@@ -109,12 +116,14 @@ export function buildRunArgs(
   if (options.cpuLimit !== undefined)
     args.push("--cpus", String(options.cpuLimit));
   applyHardening(args, hardening);
-  for (const path of options.filesystemPaths) args.push("-v", mountSpec(path));
+  for (const [index, path] of options.filesystemPaths.entries()) {
+    args.push("-v", mountSpec(path, index));
+  }
   // Run inside the first mounted path when present, else the requested cwd.
   const workdir =
     options.filesystemPaths[0] !== undefined
-      ? pathOf(options.filesystemPaths[0])
-      : options.cwd;
+      ? containerPath(pathOf(options.filesystemPaths[0]), 0)
+      : containerPath(options.cwd, 0);
   args.push("-w", workdir);
   if (envFile !== undefined) args.push("--env-file", envFile);
   args.push(...extraArgs);

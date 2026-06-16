@@ -69,9 +69,11 @@ export async function loadDocuments(
 ): Promise<LoadDocumentsResult> {
   if (
     options?.maxDocumentChars !== undefined &&
-    options.maxDocumentChars <= 0
+    (!Number.isFinite(options.maxDocumentChars) ||
+      !Number.isInteger(options.maxDocumentChars) ||
+      options.maxDocumentChars <= 0)
   ) {
-    throw new Error("maxDocumentChars must be positive");
+    throw new Error("maxDocumentChars must be a finite positive integer");
   }
   const documents: LoadedDocument[] = [];
   for (const loader of loaders) {
