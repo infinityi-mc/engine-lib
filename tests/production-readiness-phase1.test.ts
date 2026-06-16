@@ -389,6 +389,9 @@ describe("production readiness Phase 1", () => {
 
   it("keeps a circuit open when a stale half-open success follows a failure", async () => {
     let calls = 0;
+    let now = 0;
+    const originalNow = Date.now;
+    Date.now = () => now;
     const failingProbe = deferred<ReturnType<typeof textResult>>();
     const succeedingProbe = deferred<ReturnType<typeof textResult>>();
     const provider: Provider = {
@@ -406,33 +409,37 @@ describe("production readiness Phase 1", () => {
         return textResult("unexpected");
       },
     };
-    const protectedProvider = circuitBreaker(provider, {
-      failureThreshold: 1,
-      cooldownMs: 1,
-      halfOpenMax: 2,
-    });
+    try {
+      const protectedProvider = circuitBreaker(provider, {
+        failureThreshold: 1,
+        cooldownMs: 10,
+        halfOpenMax: 2,
+      });
 
-    await expect(protectedProvider.complete({ messages: [] })).rejects.toThrow(
-      "initial failure",
-    );
-    await new Promise((resolve) => setTimeout(resolve, 5));
+      await expect(protectedProvider.complete({ messages: [] })).rejects.toThrow(
+        "initial failure",
+      );
+      now = 10;
 
-    const failing = protectedProvider.complete({ messages: [] });
-    const succeeding = protectedProvider.complete({ messages: [] });
-    failingProbe.reject(
-      new ProviderError("probe failure", {
-        provider: "mock",
-        status: 503,
-      }),
-    );
-    await expect(failing).rejects.toThrow("probe failure");
-    succeedingProbe.resolve(textResult("recovered"));
-    await expect(succeeding).resolves.toMatchObject({ model: "mock-model" });
+      const failing = protectedProvider.complete({ messages: [] });
+      const succeeding = protectedProvider.complete({ messages: [] });
+      failingProbe.reject(
+        new ProviderError("probe failure", {
+          provider: "mock",
+          status: 503,
+        }),
+      );
+      await expect(failing).rejects.toThrow("probe failure");
+      succeedingProbe.resolve(textResult("recovered"));
+      await expect(succeeding).resolves.toMatchObject({ model: "mock-model" });
 
-    await expect(protectedProvider.complete({ messages: [] })).rejects.toThrow(
-      "provider circuit breaker is open",
-    );
-    expect(calls).toBe(3);
+      await expect(protectedProvider.complete({ messages: [] })).rejects.toThrow(
+        "provider circuit breaker is open",
+      );
+      expect(calls).toBe(3);
+    } finally {
+      Date.now = originalNow;
+    }
   });
 
   it("uses the same retryability fallback for HTTP-wrapped and manual provider errors", async () => {
