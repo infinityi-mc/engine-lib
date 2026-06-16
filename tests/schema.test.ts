@@ -34,6 +34,13 @@ describe("s — JSON Schema generation", () => {
       required: ["service", "tags"],
     });
   });
+
+  it("rejects s.optional() as an array item schema", () => {
+    expect(() => s.array(s.optional(s.string()))).toThrow(TypeError);
+    expect(() => s.array(s.optional(s.string()))).toThrow(
+      /cannot be used as an array item schema/,
+    );
+  });
 });
 
 describe("s — validation", () => {
@@ -82,6 +89,24 @@ describe("s — validation", () => {
     expect(missing.success).toBe(false);
     if (!missing.success) expect(missing.error.issues[0]?.message).toBe("required");
     expect(raw.safeParse({ toString: "ok" }).success).toBe(true);
+  });
+
+  it("rejects Infinity and -Infinity for number types", () => {
+    const numberSchema = s.number();
+    expect(numberSchema.safeParse(Infinity).success).toBe(false);
+    expect(numberSchema.safeParse(-Infinity).success).toBe(false);
+    expect(numberSchema.safeParse(NaN).success).toBe(false);
+  });
+
+  it("enforces maxItems constraint on arrays", () => {
+    const limited = s.array(s.string(), { maxItems: 2 });
+    expect(limited.safeParse(["a", "b"]).success).toBe(true);
+
+    const result = limited.safeParse(["a", "b", "c"]);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toMatch(/at most 2 items/);
+    }
   });
 
   it("throws SchemaValidationError from parse", () => {

@@ -67,6 +67,12 @@ export async function loadDocuments(
   ctx?: EngineContext,
   options?: { readonly maxDocumentChars?: number },
 ): Promise<LoadDocumentsResult> {
+  if (
+    options?.maxDocumentChars !== undefined &&
+    options.maxDocumentChars <= 0
+  ) {
+    throw new Error("maxDocumentChars must be positive");
+  }
   const documents: LoadedDocument[] = [];
   for (const loader of loaders) {
     throwIfAborted(ctx);

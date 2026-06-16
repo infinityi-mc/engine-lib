@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { relative, resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -92,7 +92,7 @@ export async function diffStatus(
       const rel = relative(resolvedRoot, abs);
       // A path is inside root iff `relative` doesn't start with `..` and isn't
       // an absolute path (which indicates a different drive on Windows).
-      return !rel.startsWith("..") && !rel.startsWith("/") && !rel.startsWith("\\") && rel !== "";
+      return !rel.startsWith("..") && !isAbsolute(rel) && rel !== "";
     });
 
   if (!options.includeDiff || files.length === 0) {

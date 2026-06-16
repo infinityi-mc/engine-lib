@@ -139,7 +139,14 @@ export function dockerSandbox(options: DockerSandboxOptions): ToolSandbox {
       const envFile = join(envDir, "env");
       try {
         const envContent = Object.entries(sandboxOptions.env)
-          .map(([key, value]) => `${key}=${value.replace(/\n/g, "\\n")}`)
+          .map(([key, value]) => {
+            if (value.includes("\n")) {
+              throw new Error(
+                `Environment variable "${key}" contains a newline, which is not supported in --env-file format`,
+              );
+            }
+            return `${key}=${value}`;
+          })
           .join("\n");
         await writeFile(envFile, envContent, { encoding: "utf8", mode: 0o600 });
         const runArgs = buildRunArgs(

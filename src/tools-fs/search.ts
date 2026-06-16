@@ -57,7 +57,13 @@ export function assertSafeRegexPattern(pattern: string): void {
       );
     }
   }
-  new RegExp(pattern);
+  try {
+    new RegExp(pattern);
+  } catch (err) {
+    throw new Error(
+      `invalid regex pattern: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 }
 
 function buildRegex(
