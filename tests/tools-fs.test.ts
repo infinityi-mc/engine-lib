@@ -198,6 +198,22 @@ describe("filesystemTools read/search/discovery", () => {
     );
   });
 
+  it("rejects NTFS alternate data stream paths on Windows", async () => {
+    const root = await workspace();
+    const tools = filesystemTools({ allowedRoots: [root] });
+    const res = await run(tools.read, { path: "note.txt:secret" });
+
+    if (process.platform === "win32") {
+      expect(res.ok).toBe(false);
+      expect((res as { error: string }).error).toContain(
+        "alternate data stream",
+      );
+    } else {
+      expect(res.ok).toBe(false);
+      expect((res as { error: string }).error).toContain("does not exist");
+    }
+  });
+
   it("rejects symlinks that resolve outside the configured root when the platform allows creating them", async () => {
     const root = await workspace();
     const outside = await workspace();

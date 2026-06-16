@@ -91,6 +91,54 @@ describe("tools-http config validation", () => {
 });
 
 describe("tools-http policy", () => {
+  it("matches wildcard host patterns against apex hosts and subdomains", async () => {
+    const requested: string[] = [];
+    const { httpGet } = httpTools({
+      allowedHosts: ["*.example.com"],
+      fetch: asFetch(async (input) => {
+        requested.push(String(input));
+        return new Response("ok");
+      }),
+    });
+
+    const apex = await run(httpGet, { url: "https://example.com/" });
+    const subdomain = await run(httpGet, { url: "https://api.example.com/" });
+
+    expect(apex.ok).toBe(true);
+    expect(subdomain.ok).toBe(true);
+    expect(requested).toEqual([
+      "https://example.com/",
+      "https://api.example.com/",
+    ]);
+  });
+
+  it("normalizes IDN hosts before applying allow and deny policies", async () => {
+    let calls = 0;
+    const denied = httpTools({
+      allowPublicInternet: true,
+      deniedHosts: ["xn--e1awd7f.com"],
+      fetch: asFetch(async () => {
+        calls += 1;
+        return new Response("blocked");
+      }),
+    });
+
+    const deniedResult = await run(denied.httpGet, {
+      url: "https://еріс.com/",
+    });
+    expect(deniedResult.ok).toBe(false);
+    expect(calls).toBe(0);
+
+    const allowed = httpTools({
+      allowedHosts: ["*.xn--e1awd7f.com"],
+      fetch: asFetch(async () => new Response("ok")),
+    });
+    const allowedResult = await run(allowed.httpGet, {
+      url: "https://еріс.com/",
+    });
+    expect(allowedResult.ok).toBe(true);
+  });
+
   it("rejects unsupported protocols, denied hosts, private targets, credentialed URLs, and unsafe redirects", async () => {
     let calls = 0;
     const fetchImpl = asFetch(async () => {
