@@ -9,7 +9,7 @@
  */
 
 import { isIP } from "node:net";
-import { toASCII } from "node:punycode";
+import { domainToASCII } from "node:url";
 
 import type { HeaderEntry, HostPattern, HttpToolsConfig } from "./types";
 
@@ -192,7 +192,7 @@ export function clamp(value: number, min: number, max: number): number {
 }
 
 function cleanHostname(hostname: string): string {
-  return toASCII(hostname.toLowerCase())
+  return domainToASCII(hostname.toLowerCase())
     .replace(/^\[/, "")
     .replace(/\]$/, "")
     .replace(/\.$/, "");
@@ -202,9 +202,9 @@ function cleanHost(host: string): string {
   const value = host.toLowerCase().replace(/\.$/, "");
   const portStart = value.lastIndexOf(":");
   if (portStart > -1 && !value.includes("]")) {
-    return `${toASCII(value.slice(0, portStart))}${value.slice(portStart)}`;
+    return `${domainToASCII(value.slice(0, portStart))}${value.slice(portStart)}`;
   }
-  return toASCII(value);
+  return domainToASCII(value);
 }
 
 function parsePatternHost(pattern: string): string {

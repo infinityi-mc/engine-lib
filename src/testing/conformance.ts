@@ -137,7 +137,10 @@ export interface ConformanceFixtures {
    */
   readonly stream?: { readonly sse: string; readonly expectText: string };
   /** A stream that omits the provider's normal terminal event but should still finish. */
-  readonly streamingError?: { readonly sse: string; readonly expectText: string };
+  readonly streamingError?: {
+    readonly sse: string;
+    readonly expectText: string;
+  };
   /** Whether the adapter should wrap a mid-body stream failure as ProviderError. */
   readonly truncatedBody?: true;
 }
@@ -260,6 +263,14 @@ export function runProviderConformance(
     });
 
     const streamFixture = fixtures.stream;
+    if (
+      streamFixture === undefined &&
+      (fixtures.streamingError !== undefined || fixtures.truncatedBody === true)
+    ) {
+      throw new Error(
+        "Conformance fixtures: `streamingError`/`truncatedBody` require `stream`.",
+      );
+    }
     if (streamFixture !== undefined) {
       it("streams text deltas bracketed by message_start and finish", async () => {
         const events = await collect(
@@ -284,9 +295,9 @@ export function runProviderConformance(
       if (streamingErrorFixture !== undefined) {
         it("emits a fallback finish when the stream omits its terminal event", async () => {
           const events = await collect(
-            makeProvider({ fetch: sseFetch(streamingErrorFixture.sse).fetch }).stream(
-              REQUEST,
-            ),
+            makeProvider({
+              fetch: sseFetch(streamingErrorFixture.sse).fetch,
+            }).stream(REQUEST),
           );
 
           expect(events[0]?.type).toBe("message_start");
@@ -305,9 +316,16 @@ export function runProviderConformance(
       if (fixtures.truncatedBody === true) {
         it("wraps a truncated streaming body as ProviderError", async () => {
           const encoder = new TextEncoder();
+          const truncatedSse =
+            fixtures.streamingError?.sse ?? streamFixture.sse;
+          let sent = false;
           const body = new ReadableStream<Uint8Array>({
-            start(controller) {
-              controller.enqueue(encoder.encode(streamFixture.sse));
+            pull(controller) {
+              if (!sent) {
+                sent = true;
+                controller.enqueue(encoder.encode(truncatedSse));
+                return;
+              }
               controller.error(new Error("network drop"));
             },
           });

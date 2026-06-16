@@ -57,11 +57,17 @@ describe("message factories", () => {
       mimeType: "image/png",
       data: "https://example.com/a.png",
     });
+    expect(image("DATA:image/png;base64,aGVsbG8=", " image/png ")).toEqual({
+      type: "image",
+      mimeType: "image/png",
+      data: "DATA:image/png;base64,aGVsbG8=",
+    });
     expect(image("aGVsbG8=", "image/png")).toEqual({
       type: "image",
       mimeType: "image/png",
       data: "aGVsbG8=",
     });
+    expect(() => image("aGVsbG8=", "not-a-mime")).toThrow(TypeError);
     expect(() => image("javascript:alert(1)", "image/png")).toThrow(TypeError);
   });
 });

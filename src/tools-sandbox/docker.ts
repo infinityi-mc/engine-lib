@@ -74,12 +74,16 @@ function normalizeHostPath(hostPath: string): string {
     throw new Error(`refusing to mount filesystem root: ${hostPath}`);
   }
   const lower = normalized.replace(/\\/g, "/").toLowerCase();
-  const sensitiveRoots = ["/proc", "/sys", "/etc", "/var/run"];
-  if (sensitiveRoots.some((root) => lower === root || lower.startsWith(`${root}/`))) {
-    throw new Error(`refusing to mount sensitive host path: ${hostPath}`);
-  }
   if (basename(lower) === "docker.sock" || lower.endsWith("/docker.sock")) {
     throw new Error(`refusing to mount Docker socket: ${hostPath}`);
+  }
+  const sensitiveRoots = ["/proc", "/sys", "/etc", "/var/run"];
+  if (
+    sensitiveRoots.some(
+      (root) => lower === root || lower.startsWith(`${root}/`),
+    )
+  ) {
+    throw new Error(`refusing to mount sensitive host path: ${hostPath}`);
   }
   return normalized;
 }

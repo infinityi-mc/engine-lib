@@ -689,6 +689,13 @@ describe("handoff — delegation in the run loop", () => {
     expect(calls[0]).toBe("triage:start");
     expect(calls).toContain("triage:finish");
     expect(calls.some((call) => call.startsWith("billing:start:"))).toBe(true);
+    const triageFinish = calls.indexOf("triage:finish");
+    const billingStart = calls.findIndex((call) =>
+      call.startsWith("billing:start:"),
+    );
+    expect(triageFinish).toBeGreaterThan(-1);
+    expect(billingStart).toBeGreaterThan(-1);
+    expect(triageFinish).toBeLessThan(billingStart);
     expect(calls.at(-1)).toBe("billing:finish");
   });
 

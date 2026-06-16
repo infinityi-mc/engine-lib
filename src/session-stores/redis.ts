@@ -389,7 +389,10 @@ export class RedisSessionStore implements SessionStore {
       throw new Error("ttlMs must be a non-negative finite number");
     }
     const tx = this.client.multi?.();
-    if (tx !== undefined) {
+    if (
+      tx !== undefined &&
+      (tx.pExpire !== undefined || tx.pexpire !== undefined)
+    ) {
       this.pExpireTransaction(tx, this.messagesKey(id), ttlMs);
       this.pExpireTransaction(tx, this.metadataKey(id), ttlMs);
       this.pExpireTransaction(tx, this.existsKey(id), ttlMs);

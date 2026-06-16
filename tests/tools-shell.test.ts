@@ -465,4 +465,40 @@ describe("sandbox routing", () => {
     expect(res.ok).toBe(true);
     expect(seen).toEqual([[join(ROOT, "src"), ROOT]]);
   });
+
+  it("preserves sandbox-reported execution metadata", async () => {
+    const { runCommand } = shellTools({
+      allowedCwds: [ROOT],
+      sandbox: {
+        execute: async (_command, _args, options): Promise<CommandResult> => ({
+          command: _command,
+          args: _args,
+          cwd: options.cwd,
+          timeoutMs: 123,
+          sandboxed: false,
+          policyDecision: "allow",
+          stdout: "",
+          stderr: "",
+          exitCode: 0,
+          signal: null,
+          timedOut: false,
+          aborted: false,
+          durationMs: 0,
+          stdoutTruncated: false,
+          stderrTruncated: false,
+        }),
+      },
+    });
+    const { ctx } = captureCtx();
+
+    const res = await run(runCommand, { command: JS, args: ["-e", ""] }, ctx);
+
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("unreachable");
+    expect(res.content).toMatchObject({
+      timeoutMs: 123,
+      sandboxed: false,
+      policyDecision: "allow",
+    });
+  });
 });

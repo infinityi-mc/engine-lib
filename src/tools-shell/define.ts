@@ -259,9 +259,10 @@ export function shellTools(config: ShellToolsConfig): ShellTools {
             );
             result = {
               ...sandboxResult,
-              timeoutMs,
-              sandboxed: true,
-              policyDecision: "allow" as const,
+              timeoutMs: sandboxResult.timeoutMs ?? timeoutMs,
+              sandboxed: sandboxResult.sandboxed,
+              policyDecision:
+                sandboxResult.policyDecision ?? ("allow" as const),
             };
           } else {
             result = await execCommand({

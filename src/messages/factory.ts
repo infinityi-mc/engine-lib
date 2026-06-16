@@ -10,7 +10,9 @@
 
 import type { ContentPart, ImagePart, Message, TextPart } from "./types";
 
-const BASE64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const BASE64_RE =
+  /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const MIME_TYPE_RE = /^[A-Za-z0-9!#$&^_.+-]+\/[A-Za-z0-9!#$&^_.+-]+$/;
 
 /** A {@link TextPart}. */
 export function text(value: string): TextPart {
@@ -19,14 +21,19 @@ export function text(value: string): TextPart {
 
 /** An {@link ImagePart} from an http(s) URL, data URL, or raw base64 payload. */
 export function image(data: string, mimeType: string): ImagePart {
-  if (mimeType.trim() === "") throw new TypeError("image mimeType is required");
+  const normalizedMimeType = mimeType.trim();
+  if (!MIME_TYPE_RE.test(normalizedMimeType)) {
+    throw new TypeError("image mimeType must be a valid type/subtype");
+  }
   const isHttpUrl = /^https?:\/\//.test(data);
-  const isDataUrl = /^data:[^;,]+;base64,[A-Za-z0-9+/]+={0,2}$/.test(data);
+  const isDataUrl = /^data:[^;,]+;base64,[A-Za-z0-9+/]+={0,2}$/i.test(data);
   const isBase64 = data.length > 0 && BASE64_RE.test(data);
   if (!isHttpUrl && !isDataUrl && !isBase64) {
-    throw new TypeError("image data must be an http(s) URL, data URL, or base64 payload");
+    throw new TypeError(
+      "image data must be an http(s) URL, data URL, or base64 payload",
+    );
   }
-  return { type: "image", mimeType, data };
+  return { type: "image", mimeType: normalizedMimeType, data };
 }
 
 /** Coerce `string` → `[text(string)]`; pass part arrays through unchanged. */

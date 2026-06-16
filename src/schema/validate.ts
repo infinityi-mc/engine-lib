@@ -43,7 +43,7 @@ export function validateJsonSchema(
   }
 
   if (node.enum !== undefined) {
-    if (!node.enum.includes(input as string | number)) {
+    if (!node.enum.includes(input as string | number | null)) {
       issues.push(issue(path, `expected one of ${JSON.stringify(node.enum)}`));
     }
     return issues;

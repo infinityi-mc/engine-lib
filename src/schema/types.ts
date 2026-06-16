@@ -50,7 +50,7 @@ export interface JsonSchema {
   /** Array: maximum item count. */
   maxItems?: number;
   /** Enumerated allowed values. */
-  enum?: ReadonlyArray<string | number>;
+  enum?: ReadonlyArray<string | number | null>;
 }
 
 /** Result of a non-throwing parse. */
