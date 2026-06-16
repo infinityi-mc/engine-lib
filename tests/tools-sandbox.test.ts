@@ -134,7 +134,6 @@ describe("SANDBOX-T1 dockerSandbox", () => {
       "pwd",
       [],
       baseOptions({ cwd: unmountedCwd, filesystemPaths: [ROOT] }),
-      [],
     );
 
     const workdirFlag = args.indexOf("-w");
@@ -148,7 +147,6 @@ describe("SANDBOX-T1 dockerSandbox", () => {
       "pwd",
       [],
       baseOptions({ filesystemPaths: [] }),
-      [],
     );
 
     const workdirFlag = args.indexOf("-w");
@@ -166,6 +164,58 @@ describe("SANDBOX-T1 dockerSandbox", () => {
         filesystemPaths: [ROOT, { path: join(ROOT, "tmp"), writable: true }],
       }),
       { envFile: "/tmp/env-file" },
+    );
+
+    expect(args).toContain("--read-only");
+    expect(args).toContain("--cap-drop=ALL");
+    expect(args).toContain("no-new-privileges:true");
+    expect(args).toContain("seccomp=runtime/default");
+    expect(args).toContain("--pids-limit");
+    expect(args).toContain("--user");
+    expect(args).toContain(`${ROOT}:${ROOT}:ro`);
+    expect(args).toContain(`${join(ROOT, "tmp")}:${join(ROOT, "tmp")}:rw`);
+    expect(args).toContain("--env-file");
+    expect(args).toContain("/tmp/env-file");
+    expect(args.join(" ")).not.toContain("SECRET=hidden");
+  });
+
+  it("allows granular hardening opt-outs", () => {
+    const args = buildRunArgs(
+      "alpine:3",
+      "id",
+      [],
+      baseOptions(),
+      {
+        hardening: {
+          readOnlyRootfs: false,
+          dropCapabilities: false,
+          noNewPrivileges: false,
+          seccompProfile: false,
+          pidsLimit: false,
+          user: false,
+        },
+      },
+    );
+
+    expect(args).not.toContain("--read-only");
+    expect(args).not.toContain("--cap-drop=ALL");
+    expect(args).not.toContain("no-new-privileges:true");
+    expect(args).not.toContain("--pids-limit");
+    expect(args).not.toContain("--user");
+  });
+
+  it("isolates the network with networkAccess:false (AC-12)", async () => {
+    if (!(await hasDocker())) {
+      // No container runtime available in this environment; skip the live check.
+      expect(true).toBe(true);
+      return;
+    }
+    const sandbox = dockerSandbox({ image: "alpine:3" });
+    // A local-only command succeeds.
+    const ok = await sandbox.execute(
+      "echo",
+      ["hi"],
+      baseOptions({ networkAccess: false }),
     );
 
     expect(args).toContain("--read-only");
