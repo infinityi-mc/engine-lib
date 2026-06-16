@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import { describe, expect, it } from "bun:test";
 
 import { SandboxError } from "../src/errors";
@@ -126,7 +128,6 @@ describe("SANDBOX-T1 dockerSandbox", () => {
       "pwd",
       [],
       baseOptions({ cwd: unmountedCwd, filesystemPaths: [ROOT] }),
-      [],
     );
 
     const workdirFlag = args.indexOf("-w");
@@ -140,12 +141,61 @@ describe("SANDBOX-T1 dockerSandbox", () => {
       "pwd",
       [],
       baseOptions({ filesystemPaths: [] }),
-      [],
     );
 
     const workdirFlag = args.indexOf("-w");
     expect(workdirFlag).toBeGreaterThanOrEqual(0);
     expect(args[workdirFlag + 1]).toBe(ROOT);
+  });
+
+  it("uses read-only mounts, env-file, and secure defaults", () => {
+    const args = buildRunArgs(
+      "alpine:3",
+      "env",
+      [],
+      baseOptions({
+        env: { SECRET: "hidden" },
+        filesystemPaths: [ROOT, { path: join(ROOT, "tmp"), writable: true }],
+      }),
+      { envFile: "/tmp/env-file" },
+    );
+
+    expect(args).toContain("--read-only");
+    expect(args).toContain("--cap-drop=ALL");
+    expect(args).toContain("no-new-privileges:true");
+    expect(args).toContain("seccomp=runtime/default");
+    expect(args).toContain("--pids-limit");
+    expect(args).toContain("--user");
+    expect(args).toContain(`${ROOT}:${ROOT}:ro`);
+    expect(args).toContain(`${join(ROOT, "tmp")}:${join(ROOT, "tmp")}:rw`);
+    expect(args).toContain("--env-file");
+    expect(args).toContain("/tmp/env-file");
+    expect(args.join(" ")).not.toContain("SECRET=hidden");
+  });
+
+  it("allows granular hardening opt-outs", () => {
+    const args = buildRunArgs(
+      "alpine:3",
+      "id",
+      [],
+      baseOptions(),
+      {
+        hardening: {
+          readOnlyRootfs: false,
+          dropCapabilities: false,
+          noNewPrivileges: false,
+          seccompProfile: false,
+          pidsLimit: false,
+          user: false,
+        },
+      },
+    );
+
+    expect(args).not.toContain("--read-only");
+    expect(args).not.toContain("--cap-drop=ALL");
+    expect(args).not.toContain("no-new-privileges:true");
+    expect(args).not.toContain("--pids-limit");
+    expect(args).not.toContain("--user");
   });
 
   it("isolates the network with networkAccess:false (AC-12)", async () => {
