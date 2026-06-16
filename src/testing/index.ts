@@ -1,8 +1,7 @@
 /**
  * `@infinityi/engine-lib/testing` — in-memory helpers and assertions for tests.
  *
- * Phase 1 ships only the helpers relevant to the foundation layer;
- * provider and session doubles arrive with Phases 2 and 5.
+ * Includes provider and session doubles for contract and integration tests.
  *
  * @module
  */
@@ -295,7 +294,7 @@ export function scriptedProvider(
 
 export { InMemorySessionStore } from "../session/index";
 
-/** Construct a fresh in-memory {@link SessionStore} double. */
+/** Construct a fresh in-memory session-store double. */
 export function inMemorySessionStore(): InMemorySessionStore {
   return new InMemorySessionStore();
 }

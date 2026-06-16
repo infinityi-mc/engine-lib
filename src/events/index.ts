@@ -1,7 +1,7 @@
 /**
  * `@infinityi/engine-lib/events` — the event system & telemetry bridge (Phase 6).
  *
- * The run loop already emits a typed {@link RunEvent} stream (Phase 4). This
+ * The run loop already emits a typed run-event stream (Phase 4). This
  * module adds:
  *
  * - {@link createEventHub} — fan a single run's events out to **multiple
@@ -11,8 +11,8 @@
  * - {@link createRunTelemetry} — automatic `forge/telemetry` spans + metrics for
  *   runs, provider calls, and tool calls.
  *
- * Wire subscribers via {@link RunOptions.subscribers}; telemetry is enabled
- * automatically whenever a {@link RunOptions.telemetry} handle is supplied.
+ * Wire subscribers via `RunOptions.subscribers`; telemetry is enabled
+ * automatically whenever a `RunOptions.telemetry` handle is supplied.
  * The root package exports subscriber factories, while this subpath also
  * exposes event projection and telemetry helpers for integrations.
  *

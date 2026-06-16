@@ -108,6 +108,7 @@ export type {
   ToolContext,
   ToolDefinition,
   ToolFailure,
+  ToolPolicyMetadata,
   ToolResult,
   ToolSpec,
   ToolSuccess,
@@ -142,6 +143,7 @@ export type {
   RunOptions,
   RunResult,
   StreamingRunOptions,
+  WithRunId,
 } from "./execution/index";
 
 // Session (Phase 5)
@@ -231,6 +233,45 @@ export type {
   TrustState,
 } from "./approval/index";
 
+// Governance
+export {
+  applyFilters,
+  auditSubscriber,
+  approvalDecisionFromPolicy,
+  approvalRequestFromPolicy,
+  composePolicies,
+  defaultRedactionPatterns,
+  filterMessageText,
+  filterMessagesText,
+  filesystemPolicySource,
+  forgeDataAuditLog,
+  httpPolicySource,
+  jsonlAuditLog,
+  redactTextForPersistence,
+  redactingCodec,
+  regexRedactor,
+  schemaSensitiveRedactor,
+  shellPolicySource,
+} from "./governance/index";
+export type {
+  AuditAction,
+  AuditEntry,
+  AuditLog,
+  AuditSubscriberOptions,
+  ContentFilter,
+  ContentFilterConfig,
+  FilterContext,
+  FilterStage,
+  ForgeDataAuditLogOptions,
+  PolicyAction,
+  PolicyContext,
+  PolicyDecision,
+  PolicyDecisionEvent,
+  PolicyEngine,
+  RedactionPattern,
+  ShellPolicyLike,
+} from "./governance/index";
+
 // Authorization
 export { roleToolAuthorizer } from "./authorization/index";
 export type {
@@ -260,30 +301,3 @@ export type {
   RunBudget,
   TokenRateLimiter,
 } from "./resilience/index";
-
-// Governance / DLP
-export {
-  applyFilters,
-  auditSubscriber,
-  defaultRedactionPatterns,
-  filterMessageText,
-  filterMessagesText,
-  forgeDataAuditLog,
-  jsonlAuditLog,
-  redactTextForPersistence,
-  redactingCodec,
-  regexRedactor,
-  schemaSensitiveRedactor,
-} from "./governance/index";
-export type {
-  AuditAction,
-  AuditEntry,
-  AuditLog,
-  AuditSubscriberOptions,
-  ContentFilter,
-  ContentFilterConfig,
-  FilterContext,
-  FilterStage,
-  ForgeDataAuditLogOptions,
-  RedactionPattern,
-} from "./governance/index";

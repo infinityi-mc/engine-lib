@@ -9,10 +9,20 @@
  */
 
 import type { Telemetry } from "@infinityi/forge/telemetry";
-import type { Logger } from "@infinityi/forge/telemetry/log";
 
 /** The unit of observability threaded through engine-lib (forge's `Telemetry` handle). */
 export type TelemetryHandle = Telemetry;
+
+/** Minimal structured logger surface consumed by engine-lib. */
+export interface Logger {
+  trace(message: string, fields?: Record<string, unknown>): void;
+  debug(message: string, fields?: Record<string, unknown>): void;
+  info(message: string, fields?: Record<string, unknown>): void;
+  warn(message: string, fields?: Record<string, unknown>): void;
+  error(message: string, fields?: Record<string, unknown>): void;
+  fatal(message: string, fields?: Record<string, unknown>): void;
+  child(fields: Record<string, unknown>): Logger;
+}
 
 /**
  * Options common to every engine-lib entry point (provider calls in
@@ -22,10 +32,10 @@ export type TelemetryHandle = Telemetry;
 export interface EngineContext {
   /** Forge telemetry handle for traces / metrics / logs. */
   readonly telemetry?: TelemetryHandle;
-  /** Structured logger (defaults to `telemetry.log` when omitted). */
+  /** Structured logger (defaults to the telemetry log when omitted). */
   readonly logger?: Logger;
   /** Cancellation signal honored by long-running operations (Phase 4). */
   readonly signal?: AbortSignal;
 }
 
-export type { Logger, Telemetry };
+export type { Telemetry };

@@ -12,12 +12,16 @@
     "src/tools-fs/index.ts",
     "src/tools-http/index.ts",
     "src/tools-web/index.ts",
+    "src/tools-sandbox/index.ts",
     "src/agent/index.ts",
     "src/execution/index.ts",
     "src/session/index.ts",
     "src/context/index.ts",
     "src/retrieval/index.ts",
     "src/events/index.ts",
+    "src/approval/index.ts",
+    "src/resilience/index.ts",
+    "src/governance/index.ts",
     "src/lifecycle/index.ts",
     "src/session-stores/index.ts",
     "src/testing/index.ts",
@@ -28,6 +32,13 @@
   "name": "engine-lib API",
   "excludeInternal": true,
   "externalSymbolLinkMappings": {
-    "@infinityi/forge": { "*": "https://github.com/tqcuong2k/forge" }
+    "@infinityi/forge": {
+      "*": "https://github.com/tqcuong2k/forge",
+      "createLog": "https://github.com/tqcuong2k/forge"
+    },
+    "@infinityi/forge/telemetry/log": {
+      "*": "https://github.com/tqcuong2k/forge",
+      "createLog": "https://github.com/tqcuong2k/forge"
+    }
   }
 }

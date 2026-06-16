@@ -58,12 +58,15 @@ function makeSchema<T>(jsonSchema: JsonSchema): Schema<T> {
   };
 }
 
-type ObjectShape = Record<string, Schema<unknown>>;
-type OptionalKeys<P extends ObjectShape> = {
+export type ObjectShape = Record<string, Schema<unknown>>;
+export type OptionalKeys<P extends ObjectShape> = {
   [K in keyof P]: P[K] extends OptionalSchema<unknown> ? K : never;
 }[keyof P];
-type RequiredKeys<P extends ObjectShape> = Exclude<keyof P, OptionalKeys<P>>;
-type InferShape<P extends ObjectShape> = {
+export type RequiredKeys<P extends ObjectShape> = Exclude<
+  keyof P,
+  OptionalKeys<P>
+>;
+export type InferShape<P extends ObjectShape> = {
   [K in RequiredKeys<P>]: P[K] extends Schema<infer T> ? T : never;
 } & {
   [K in OptionalKeys<P>]?: P[K] extends Schema<infer T>

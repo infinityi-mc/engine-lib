@@ -2,7 +2,7 @@
  * `@infinityi/engine-lib/tools-sandbox` — an **optional** module providing an
  * isolation boundary for command execution.
  *
- * {@link ShellToolsConfig.sandbox} accepts any {@link ToolSandbox}; the shell
+ * `ShellToolsConfig.sandbox` accepts any {@link ToolSandbox}; the shell
  * tool routes execution through it *after* its existing cwd/command/approval
  * gates pass. Without a configured sandbox, `shellTools` uses the in-process
  * executor directly; {@link localSandbox} offers that same execution style as
@@ -26,7 +26,10 @@
 export { localSandbox } from "./local";
 export type { LocalSandboxOptions } from "./local";
 export { dockerSandbox } from "./docker";
-export type { DockerSandboxOptions } from "./docker";
+export type {
+  DockerSandboxHardeningOptions,
+  DockerSandboxOptions,
+} from "./docker";
 
 export type {
   SandboxChunk,

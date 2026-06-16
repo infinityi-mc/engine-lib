@@ -52,7 +52,7 @@ export interface PolicyDecisionEvent {
   readonly argumentsDigest: string;
 }
 
-interface ShellPolicyLike {
+export interface ShellPolicyLike {
   readonly allow?: readonly CommandPattern[];
   readonly deny?: readonly CommandPattern[];
 }

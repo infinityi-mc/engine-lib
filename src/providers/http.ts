@@ -59,7 +59,10 @@ const MAX_ERROR_DETAIL_CHARS = 512;
 
 function scrubErrorDetail(value: string): string {
   return value
-    .replace(/(authorization|proxy-authorization|x-api-key|api-key)(\s*[:=]\s*)\S+/gi, "$1$2[redacted]")
+    .replace(
+      /(authorization|proxy-authorization|x-api-key|api-key)(\s*[:=]\s*)\S+/gi,
+      "$1$2[redacted]",
+    )
     .replace(/(https?:\/\/)[^\/@\s]+@/gi, "$1[redacted]@");
 }
 
@@ -70,11 +73,15 @@ function truncateErrorDetail(value: string): string {
 
 /** Best-effort human-readable detail from a thrown value. */
 function messageOf(error: unknown): string {
-  const message = error instanceof Error
-    ? error.message
-    : typeof error === "object" && error !== null && "message" in error && typeof (error as { message?: unknown }).message === "string"
-      ? (error as { message: string }).message
-      : String(error);
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "object" &&
+          error !== null &&
+          "message" in error &&
+          typeof (error as { message?: unknown }).message === "string"
+        ? (error as { message: string }).message
+        : String(error);
   return truncateErrorDetail(scrubErrorDetail(message));
 }
 

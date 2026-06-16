@@ -61,7 +61,7 @@ export async function withVersionRetry<T>(
   return last ?? { conflict: true, currentVersion: 0 };
 }
 
-type TenantDeniedEvent = {
+export type TenantDeniedEvent = {
   readonly type: "custom";
   readonly name: "tenant.access_denied";
   readonly data: {

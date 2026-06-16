@@ -28,6 +28,7 @@
 
 export { shellTools } from "./define";
 export { SHELL_EVENT } from "./events";
+export { ShellPolicyError } from "../errors";
 
 export type {
   ApprovalDecision,

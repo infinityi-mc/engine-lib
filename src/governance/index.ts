@@ -37,4 +37,5 @@ export type {
   PolicyDecision,
   PolicyDecisionEvent,
   PolicyEngine,
+  ShellPolicyLike,
 } from "./policy";

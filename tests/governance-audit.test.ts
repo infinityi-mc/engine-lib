@@ -210,13 +210,16 @@ describe("AUDIT-T1 jsonlAuditLog + auditSubscriber", () => {
 describe("governance redactors", () => {
   it("redacts common token formats and mixed-case fallback fields", () => {
     const ctx = { stage: "tool-output" } as const;
-    const redacted = regexRedactor()(String.raw`Authorization: Bearer eyJabc.eyJdef.sig
+    const redacted = regexRedactor()(
+      String.raw`Authorization: Bearer eyJabc.eyJdef.sig
 -----BEGIN PRIVATE KEY-----
 abc
 -----END PRIVATE KEY-----
 github=ghp_abcdefghijklmnopqrstuvwxyz
 aws=AKIA1234567890ABCDEF
-slack=xoxb-1234567890-secret`, ctx);
+slack=xoxb-1234567890-secret`,
+      ctx,
+    );
     expect(redacted).not.toContain("eyJabc.eyJdef.sig");
     expect(redacted).not.toContain("PRIVATE KEY");
     expect(redacted).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz");

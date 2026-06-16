@@ -77,13 +77,16 @@ export async function* translateChatStream(
       if (
         call.id !== undefined ||
         call.function?.name !== undefined ||
-        (call.function?.arguments !== undefined && call.function.arguments !== "")
+        (call.function?.arguments !== undefined &&
+          call.function.arguments !== "")
       ) {
         yield {
           type: "tool_call_delta",
           index,
           ...(call.id !== undefined ? { id: call.id } : {}),
-          ...(call.function?.name !== undefined ? { name: call.function.name } : {}),
+          ...(call.function?.name !== undefined
+            ? { name: call.function.name }
+            : {}),
           argumentsTextDelta: call.function?.arguments ?? "",
         };
       }

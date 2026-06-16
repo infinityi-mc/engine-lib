@@ -59,7 +59,10 @@ export function withSessionStoreHooks<T extends SessionStore>(
     const current = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const tail = previous.then(() => current, () => current);
+    const tail = previous.then(
+      () => current,
+      () => current,
+    );
     queues.set(id, tail);
     await previous;
     try {

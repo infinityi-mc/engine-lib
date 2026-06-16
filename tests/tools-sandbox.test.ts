@@ -247,22 +247,16 @@ describe("SANDBOX-T1 dockerSandbox", () => {
   });
 
   it("allows granular hardening opt-outs", () => {
-    const args = buildRunArgs(
-      "alpine:3",
-      "id",
-      [],
-      baseOptions(),
-      {
-        hardening: {
-          readOnlyRootfs: false,
-          dropCapabilities: false,
-          noNewPrivileges: false,
-          seccompProfile: false,
-          pidsLimit: false,
-          user: false,
-        },
+    const args = buildRunArgs("alpine:3", "id", [], baseOptions(), {
+      hardening: {
+        readOnlyRootfs: false,
+        dropCapabilities: false,
+        noNewPrivileges: false,
+        seccompProfile: false,
+        pidsLimit: false,
+        user: false,
       },
-    );
+    });
 
     expect(args).not.toContain("--read-only");
     expect(args).not.toContain("--cap-drop=ALL");

@@ -12,7 +12,7 @@
  * fixtures** (the JSON / SSE bytes its vendor would return) plus the canonical
  * normalized values those fixtures should decode to. The battery drives the
  * public `Provider` seam through an injected fake `fetch` and asserts the
- * normalized {@link CompletionResult} / {@link StreamEvent} shape — never the
+ * normalized completion result / {@link StreamEvent} shape — never the
  * vendor wire format.
  *
  * Shipped from its own subpath (`@infinityi/engine-lib/testing/conformance`)

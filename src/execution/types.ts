@@ -183,7 +183,7 @@ export type RunEventDraft =
       readonly data: Record<string, unknown>;
     };
 
-type WithRunId<T> = T extends { readonly type: string }
+export type WithRunId<T> = T extends { readonly type: string }
   ? T & { readonly runId: string }
   : never;
 
@@ -278,7 +278,7 @@ export interface RunOptions {
   readonly contextWindow?: ContextWindowOptions;
   /** Per-run generation overrides, merged over the agent's `generation` defaults. */
   readonly generation?: GenerationSettings;
-  /** Cap on provider turns (model→tools→model cycles). Defaults to {@link DEFAULT_MAX_STEPS}. */
+  /** Cap on provider turns (model→tools→model cycles). Defaults to 16. */
   readonly maxSteps?: number;
   /** Stream tokens + tool lifecycle. Omitted/`false` → buffered `Promise<RunResult>`. */
   readonly stream?: boolean;
@@ -299,7 +299,7 @@ export interface RunOptions {
   readonly signal?: AbortSignal;
   /**
    * Cap on agent handoffs in a single run, to bound triage↔specialist
-   * ping-pong (Phase 7). Defaults to {@link DEFAULT_MAX_HANDOFFS}. Exceeding it
+   * ping-pong (Phase 7). Defaults to 8. Exceeding it
    * throws {@link MaxHandoffsExceededError}.
    */
   readonly maxHandoffs?: number;

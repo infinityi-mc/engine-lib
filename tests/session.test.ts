@@ -231,7 +231,10 @@ describe("resume metadata", () => {
     });
     const session = createSession({ id: "meta", store });
 
-    await session.setMetadata({ user: "value", "engine:resume": { bad: true } });
+    await session.setMetadata({
+      user: "value",
+      "engine:resume": { bad: true },
+    });
 
     expect(await session.getMetadata()).toMatchObject({
       keep: true,

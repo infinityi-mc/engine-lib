@@ -64,7 +64,8 @@ export async function* translateOpenAIStream(
         if (event.item?.type === "function_call") {
           const index = nextIndex++;
           hadToolCalls = true;
-          if (event.item.id !== undefined) indexByItem.set(event.item.id, index);
+          if (event.item.id !== undefined)
+            indexByItem.set(event.item.id, index);
           if (event.item.call_id !== undefined)
             indexByItem.set(event.item.call_id, index);
           openToolIndexes.add(index);

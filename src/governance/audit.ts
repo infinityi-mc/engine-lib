@@ -329,7 +329,7 @@ function assertTableName(name: string): string {
 }
 
 /**
- * INSERT-only {@link AuditLog} backed by a Forge `Db`. Call {@link migrate}
+ * INSERT-only {@link AuditLog} backed by a Forge `Db`. Call `migrate()`
  * once to create the table. No update/delete API is exposed — the audit trail
  * is append-only.
  */

@@ -73,7 +73,9 @@ function mergeUserMetadata(
   const existingMetadata = existing ?? {};
   const incomingResume = readResumeInfo(next);
   const preservedEngine = Object.fromEntries(
-    Object.entries(existingMetadata).filter(([key]) => key.startsWith("engine:")),
+    Object.entries(existingMetadata).filter(([key]) =>
+      key.startsWith("engine:"),
+    ),
   );
   const userMetadata = Object.fromEntries(
     Object.entries(next).filter(([key]) => !key.startsWith("engine:")),

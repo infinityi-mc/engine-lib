@@ -12,7 +12,7 @@
 import type { SchemaIssue } from "../errors";
 import type { JsonSchema } from "./types";
 
-type Path = ReadonlyArray<string | number>;
+export type Path = ReadonlyArray<string | number>;
 
 function issue(path: Path, message: string): SchemaIssue {
   return { path: [...path], message };

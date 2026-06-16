@@ -39,8 +39,8 @@ export {
 } from "./http";
 export type { ProviderHttpOptions, SseRequest } from "./http";
 
-export { parseSse } from "./sse";
-export type { SseMessage } from "./sse";
+export { DEFAULT_SSE_IDLE_TIMEOUT_MS, parseSse } from "./sse";
+export type { SseMessage, SseParseOptions } from "./sse";
 
 export { createProvider } from "./adapter";
 export type { AdapterSpec } from "./adapter";

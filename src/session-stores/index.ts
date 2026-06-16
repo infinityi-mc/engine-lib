@@ -1,6 +1,6 @@
 /**
  * `@infinityi/engine-lib/session-stores` — optional durable implementations of
- * the stable {@link SessionStore} contract.
+ * the stable session-store contract.
  *
  * These adapters are opt-in so the root package stays lightweight. Built-ins
  * include Forge SQL/SQLite/PostgreSQL, Redis, and filesystem JSONL stores, plus
@@ -25,6 +25,7 @@ export {
   withVersionRetry,
 } from "./concurrency";
 export { RedisSessionStore } from "./redis";
+export { InMemorySessionStore } from "../session/index";
 export {
   SESSION_STORE_SCHEMA_VERSION,
   isCloseableSessionStore,
@@ -45,7 +46,11 @@ export type {
   RedisSessionStoreOptions,
   RedisSessionStoreTransaction,
 } from "./redis";
-export type { CasSessionStore, VersionMismatch } from "./concurrency";
+export type {
+  CasSessionStore,
+  TenantDeniedEvent,
+  VersionMismatch,
+} from "./concurrency";
 export type {
   CloseableSessionStore,
   ExpiringSessionStore,

@@ -140,9 +140,9 @@ describe("filesystemTools read/search/discovery", () => {
       mode: "regex",
     });
     expect(regexText.ok).toBe(true);
-    expect(JSON.stringify((regexText as { content: unknown }).content)).toContain(
-      "index.ts",
-    );
+    expect(
+      JSON.stringify((regexText as { content: unknown }).content),
+    ).toContain("index.ts");
 
     const symbols = await run(tools.symbols, { path: "index.ts" });
     expect(symbols.ok).toBe(true);

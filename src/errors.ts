@@ -231,7 +231,7 @@ export class FilesystemPolicyError extends AgentError {
 }
 
 /**
- * A {@link ToolSandbox} could not provide a requested isolation guarantee (for
+ * A tool sandbox could not provide a requested isolation guarantee (for
  * example, `localSandbox` asked for `networkAccess: false` without an explicit
  * downgrade). Surfaced as a tool failure so the model can recover; the command
  * is never run unisolated.

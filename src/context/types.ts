@@ -87,6 +87,6 @@ export interface ContextWindowOptions {
   readonly maxTokens: number;
   /** Reduction policy; defaults to `truncateOldest()`. */
   readonly strategy?: ContextStrategy;
-  /** Token counter; defaults to {@link estimateTokens}. */
+  /** Token counter; defaults to the built-in character-based estimate. */
   readonly countTokens?: TokenCounter;
 }

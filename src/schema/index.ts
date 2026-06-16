@@ -12,6 +12,12 @@ export { s } from "./builder";
 export { asSchema, fromJsonSchema, toJsonSchema } from "./json-schema";
 export { validateJsonSchema } from "./validate";
 export type {
+  InferShape,
+  ObjectShape,
+  OptionalKeys,
+  RequiredKeys,
+} from "./builder";
+export type {
   Infer,
   JsonSchema,
   OptionalSchema,
@@ -19,3 +25,4 @@ export type {
   Schema,
   SchemaIssue,
 } from "./types";
+export type { Path } from "./validate";
