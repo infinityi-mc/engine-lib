@@ -169,11 +169,13 @@ describe("SANDBOX-T1 dockerSandbox", () => {
     expect(args).toContain("--read-only");
     expect(args).toContain("--cap-drop=ALL");
     expect(args).toContain("no-new-privileges:true");
-    expect(args).toContain("seccomp=runtime/default");
+    expect(args).not.toContain("seccomp=runtime/default");
     expect(args).toContain("--pids-limit");
     expect(args).toContain("--user");
-    expect(args).toContain(`${ROOT}:${ROOT}:ro`);
-    expect(args).toContain(`${join(ROOT, "tmp")}:${join(ROOT, "tmp")}:rw`);
+    expect(args).toContain(`${ROOT}:${containerPath(ROOT)}:ro`);
+    expect(args).toContain(
+      `${join(ROOT, "tmp")}:${containerPath(join(ROOT, "tmp"), 1)}:rw`,
+    );
     expect(args).toContain("--env-file");
     expect(args).toContain("/tmp/env-file");
     expect(args.join(" ")).not.toContain("SECRET=hidden");

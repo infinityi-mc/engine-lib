@@ -90,7 +90,9 @@ function applyHardening(
   if (hardening?.dropCapabilities ?? true) args.push("--cap-drop=ALL");
   if (hardening?.noNewPrivileges ?? true)
     args.push("--security-opt", "no-new-privileges:true");
-  const seccomp = hardening?.seccompProfile ?? "runtime/default";
+  // Docker's runtime-default seccomp profile is enabled by omitting this flag;
+  // values like "runtime/default" are Kubernetes syntax and fail on Docker CLI.
+  const seccomp = hardening?.seccompProfile ?? false;
   if (seccomp !== false) args.push("--security-opt", `seccomp=${seccomp}`);
   const pidsLimit = hardening?.pidsLimit ?? 256;
   if (pidsLimit !== false) args.push("--pids-limit", String(pidsLimit));
