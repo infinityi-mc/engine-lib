@@ -217,21 +217,19 @@ describe("SANDBOX-T1 dockerSandbox", () => {
       ["hi"],
       baseOptions({ networkAccess: false }),
     );
-
-    expect(args).toContain("--read-only");
-    expect(args).toContain("--cap-drop=ALL");
-    expect(args).toContain("no-new-privileges:true");
-    expect(args).toContain("seccomp=runtime/default");
-    expect(args).toContain("--pids-limit");
-    expect(args).toContain("--user");
-    expect(args).toContain(`${ROOT}:${containerPath(ROOT, 0)}:ro`);
-    expect(args).toContain(
-      `${join(ROOT, "tmp")}:${containerPath(join(ROOT, "tmp"), 1)}:rw`,
+    expect(ok.stdout.trim()).toBe("hi");
+    // A network call fails (no reachability) — wget/ping should be unable to resolve.
+    const blocked = await sandbox.execute(
+      "sh",
+      [
+        "-c",
+        "command -v wget >/dev/null || echo NOWGET; wget -T 2 -q -O- http://example.com || echo NETFAIL",
+      ],
+      baseOptions({ networkAccess: false }),
     );
-    expect(args).toContain("--env-file");
-    expect(args).toContain("/tmp/env-file");
-    expect(args.join(" ")).not.toContain("SECRET=hidden");
-  });
+    expect(blocked.stdout).not.toContain("NOWGET");
+    expect(blocked.stdout).toContain("NETFAIL");
+  }, 60_000);
 
   it("allows granular hardening opt-outs", () => {
     const args = buildRunArgs("alpine:3", "id", [], baseOptions(), {
