@@ -28,7 +28,7 @@ describe("s — JSON Schema generation", () => {
       additionalProperties: false,
       properties: {
         service: { type: "string" },
-        lines: { type: "integer" },
+        lines: { type: ["integer", "null"] },
         tags: { type: "array", items: { type: "string" } },
       },
       required: ["service", "tags"],
@@ -55,6 +55,10 @@ describe("s — validation", () => {
     expect(value).toEqual({ service: "api", lines: 10 });
     // optional may be omitted
     expect(schema.parse({ service: "api" })).toEqual({ service: "api" });
+    // providers often send null for omitted optional fields
+    expect(schema.parse({ service: "api", lines: null })).toEqual({
+      service: "api",
+    });
   });
 
   it("collects all issues via safeParse", () => {

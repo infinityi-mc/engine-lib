@@ -33,6 +33,15 @@ export function validateJsonSchema(
 ): SchemaIssue[] {
   const issues: SchemaIssue[] = [];
 
+  if (Array.isArray(node.type)) {
+    for (const type of node.type) {
+      const typeIssues = validateJsonSchema({ ...node, type }, input, path);
+      if (typeIssues.length === 0) return [];
+    }
+    issues.push(issue(path, `expected one of ${JSON.stringify(node.type)}`));
+    return issues;
+  }
+
   if (node.enum !== undefined) {
     if (!node.enum.includes(input as string | number)) {
       issues.push(issue(path, `expected one of ${JSON.stringify(node.enum)}`));

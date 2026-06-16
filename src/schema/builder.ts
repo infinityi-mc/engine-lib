@@ -31,6 +31,8 @@ import type {
 } from "./types";
 import { validateJsonSchema } from "./validate";
 
+type JsonSchemaType = NonNullable<JsonSchema["type"]>;
+
 /** Tracks which schemas were produced by `s.optional` (excluded from `required`). */
 const optionalSchemas = new WeakSet<object>();
 
@@ -142,15 +144,51 @@ export const s = {
     };
     if (required.length > 0) node.required = required;
     if (opts?.description !== undefined) node.description = opts.description;
-    return makeSchema<InferShape<P>>(node);
+    return {
+      jsonSchema: node,
+      safeParse(input: unknown): SafeParseResult<InferShape<P>> {
+        const issues = validateJsonSchema(node, input);
+        if (issues.length > 0) {
+          return {
+            success: false,
+            error: new SchemaValidationError("schema validation failed", {
+              issues,
+            }),
+          };
+        }
+
+        const out: Record<string, unknown> = {};
+        for (const [key, prop] of Object.entries(props)) {
+          if (!Object.hasOwn(input as Record<string, unknown>, key)) continue;
+          const result = prop.safeParse((input as Record<string, unknown>)[key]);
+          if (!result.success) return result as SafeParseResult<InferShape<P>>;
+          if (result.data !== undefined) out[key] = result.data;
+        }
+        return { success: true, data: out as InferShape<P> };
+      },
+      parse(input: unknown): InferShape<P> {
+        const result = this.safeParse(input);
+        if (!result.success) throw result.error;
+        return result.data;
+      },
+    };
   },
 
   /** Mark a schema optional: `undefined` validates, and object keys become non-required. */
   optional<T>(inner: Schema<T>): OptionalSchema<T> {
+    const jsonSchema: JsonSchema =
+      inner.jsonSchema.type === undefined || Array.isArray(inner.jsonSchema.type)
+        ? inner.jsonSchema
+        : {
+            ...inner.jsonSchema,
+            type: [inner.jsonSchema.type, "null"] as JsonSchemaType,
+          };
     const schema: Schema<T | undefined> = {
-      jsonSchema: inner.jsonSchema,
+      jsonSchema,
       safeParse(input: unknown): SafeParseResult<T | undefined> {
-        if (input === undefined) return { success: true, data: undefined };
+        if (input === undefined || input === null) {
+          return { success: true, data: undefined };
+        }
         return inner.safeParse(input);
       },
       parse(input: unknown): T | undefined {

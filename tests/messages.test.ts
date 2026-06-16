@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import {
   assistant,
+  image,
   normalizeContent,
   system,
   text,
@@ -48,5 +49,19 @@ describe("message factories", () => {
     const msg = toolResult("call_1", "boom", { isError: true });
     const part = msg.content[0];
     expect(part).toMatchObject({ type: "tool_result", isError: true });
+  });
+
+  it("builds validated image parts", () => {
+    expect(image("https://example.com/a.png", "image/png")).toEqual({
+      type: "image",
+      mimeType: "image/png",
+      data: "https://example.com/a.png",
+    });
+    expect(image("aGVsbG8=", "image/png")).toEqual({
+      type: "image",
+      mimeType: "image/png",
+      data: "aGVsbG8=",
+    });
+    expect(() => image("javascript:alert(1)", "image/png")).toThrow(TypeError);
   });
 });

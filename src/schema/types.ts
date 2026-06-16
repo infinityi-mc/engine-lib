@@ -25,7 +25,16 @@ export interface JsonSchema {
     | "number"
     | "integer"
     | "boolean"
-    | "null";
+    | "null"
+    | ReadonlyArray<
+        | "object"
+        | "array"
+        | "string"
+        | "number"
+        | "integer"
+        | "boolean"
+        | "null"
+      >;
   description?: string;
   /** Object: property schemas. */
   properties?: Record<string, JsonSchema>;
@@ -53,8 +62,8 @@ export type SafeParseResult<T> =
  * The engine-lib schema contract. A `Schema<T>` couples a provider-facing
  * {@link JsonSchema} with runtime validation that yields a typed `T`.
  *
- * The stable surface is intentionally small: `jsonSchema`, `parse`,
- * `safeParse`, and the type-only `_output` marker used by {@link Infer}.
+ * The stable surface is intentionally small: `jsonSchema`, `parse`, and
+ * `safeParse`.
  */
 export interface Schema<T> {
   /** Provider-facing JSON Schema (consumed by provider adapters in Phase 2+). */
@@ -63,8 +72,6 @@ export interface Schema<T> {
   parse(input: unknown): T;
   /** Validate without throwing. */
   safeParse(input: unknown): SafeParseResult<T>;
-  /** Phantom marker carrying the output type for {@link Infer}. Never present at runtime. */
-  readonly _output?: T;
 }
 
 /**
