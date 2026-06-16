@@ -148,6 +148,36 @@ describe("AUDIT-T1 jsonlAuditLog + auditSubscriber", () => {
     ]);
   });
 
+  it("persists terminal run finish and error events without raw error messages", async () => {
+    const entries: AuditEntry[] = [];
+    const log: AuditLog = { record: async (e) => void entries.push(e) };
+    const sub = auditSubscriber(log);
+    await sub(withRunId({ type: "run.start", agent: "a" }));
+    await sub(
+      withRunId({
+        type: "run.finish",
+        result: {
+          output: "done",
+          messages: [],
+          steps: 1,
+          finishReason: "stop",
+          usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
+        },
+      }),
+    );
+    await sub(
+      withRunId({
+        type: "error",
+        error: Object.assign(new Error("Authorization: Bearer secret"), {
+          name: "ProviderError",
+        }),
+      }),
+    );
+
+    expect(entries.map((e) => e.action)).toEqual(["run.finish", "run.error"]);
+    expect(JSON.stringify(entries)).not.toContain("Authorization");
+  });
+
   it("redacts tenant access-denied custom event detail recursively", async () => {
     const entries: AuditEntry[] = [];
     const log: AuditLog = { record: async (e) => void entries.push(e) };
@@ -219,6 +249,10 @@ describe("AUDIT-T1 forgeDataAuditLog", () => {
       principal: "user-1",
     };
     await log.record(entry);
+    await log.record({
+      ...entry,
+      detail: { value: `x'); drop table engine_audit_entries; --` },
+    });
 
     const table = raw(db.dialect.quoteIdentifier("engine_audit_entries"));
     const rows = await db
@@ -228,7 +262,7 @@ describe("AUDIT-T1 forgeDataAuditLog", () => {
         detail_json: string;
       }>(sql`select agent, action, detail_json from ${table}`)
       .execute();
-    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows).toHaveLength(2);
     expect(rows.rows[0]?.action).toBe("tool.call");
     expect(JSON.parse(rows.rows[0]!.detail_json).argumentsDigest).toBe(
       "fnv1a:0001",

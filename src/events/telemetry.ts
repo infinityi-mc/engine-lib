@@ -97,6 +97,16 @@ function tokenTotal(usage: Usage): number {
   return usage.totalTokens + usage.inputTokens + usage.outputTokens;
 }
 
+const METRIC_ATTR_KEYS = new Set(["agent.name", "agent.outcome", "tool.name"]);
+
+function metricAttrs(attrs: Attrs): Attrs {
+  const out: Attrs = {};
+  for (const [key, value] of Object.entries(attrs)) {
+    if (METRIC_ATTR_KEYS.has(key)) out[key] = value;
+  }
+  return out;
+}
+
 /**
  * Build the {@link RunTelemetry} bridge from a forge telemetry handle.
  * Returns a fully no-op implementation when no tracer/meter is available.
@@ -136,15 +146,16 @@ export function createRunTelemetry(telemetry?: TelemetryHandle): RunTelemetry {
       return wrapSpan(span);
     },
     recordRun(attrs, durationMs, usage) {
-      runDuration?.record(durationMs, attrs);
-      runs?.add(1, attrs);
+      const metric = metricAttrs(attrs);
+      runDuration?.record(durationMs, metric);
+      runs?.add(1, metric);
       if (tokenTotal(usage) > 0) {
-        tokens?.add(usage.inputTokens, { ...attrs, "token.type": "input" });
-        tokens?.add(usage.outputTokens, { ...attrs, "token.type": "output" });
+        tokens?.add(usage.inputTokens, { ...metric, "token.type": "input" });
+        tokens?.add(usage.outputTokens, { ...metric, "token.type": "output" });
       }
     },
     recordTool(attrs, durationMs) {
-      toolDuration?.record(durationMs, attrs);
+      toolDuration?.record(durationMs, metricAttrs(attrs));
     },
   };
 }

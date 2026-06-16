@@ -29,6 +29,8 @@ import type { ContentFilter } from "./filters";
 
 /** The classifications an {@link AuditEntry} may record. */
 export type AuditAction =
+  | "run.finish"
+  | "run.error"
   | "tool.call"
   | "tool.result"
   | "policy.allow"
@@ -206,6 +208,34 @@ export function auditSubscriber(
             argumentsDigest: event.argumentsDigest,
             ...(event.reason !== undefined
               ? { reason: await redact(event.reason, opts.redactDetail) }
+              : {}),
+          },
+        });
+        return;
+      }
+      case "run.finish": {
+        await log.record({
+          ...base(event),
+          action: "run.finish",
+          target: event.result.finishReason,
+          detail: {
+            finishReason: event.result.finishReason,
+            steps: event.result.steps,
+            usage: event.result.usage,
+          },
+        });
+        return;
+      }
+      case "error": {
+        await log.record({
+          ...base(event),
+          action: "run.error",
+          target: event.error.name,
+          detail: {
+            name: event.error.name,
+            code: event.error.constructor.name,
+            ...(event.error.usage !== undefined
+              ? { usage: event.error.usage }
               : {}),
           },
         });

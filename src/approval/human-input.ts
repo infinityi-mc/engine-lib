@@ -16,6 +16,8 @@ export interface DeferredHumanInputGateway extends HumanInputGateway {
   pending(): readonly HumanInputRequest[];
 }
 
+export const MAX_HUMAN_ANSWER_LENGTH = 16 * 1024;
+
 const ASK_HUMAN_PARAMS = s.object({
   question: s.string({ description: "Question to ask the human operator." }),
   context: s.optional(
@@ -42,6 +44,15 @@ function messageOf(error: unknown): string {
 
 function abortError(): CancelledError {
   return new CancelledError("human input cancelled");
+}
+
+function validateAnswer(answer: string): string {
+  if (answer.length > MAX_HUMAN_ANSWER_LENGTH) {
+    throw new Error(
+      `human input answer exceeds ${MAX_HUMAN_ANSWER_LENGTH} characters`,
+    );
+  }
+  return answer;
 }
 
 function withAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
@@ -106,7 +117,7 @@ export function askHumanTool(config: AskHumanConfig = {}): ToolDefinition {
           requestId: request.requestId,
           cancelled: false,
         });
-        return { ok: true, content: answer };
+        return { ok: true, content: validateAnswer(answer) };
       } catch (error) {
         const cancelled =
           error instanceof CancelledError || ctx.signal?.aborted === true;
@@ -154,7 +165,11 @@ export function deferredHumanInputGateway(): DeferredHumanInputGateway {
           request: req,
           resolve: (answer) => {
             cleanup();
-            resolve(answer);
+            try {
+              resolve(validateAnswer(answer));
+            } catch (error) {
+              reject(error instanceof Error ? error : new Error(String(error)));
+            }
           },
           reject: (error) => {
             cleanup();
