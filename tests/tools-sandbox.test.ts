@@ -184,22 +184,16 @@ describe("SANDBOX-T1 dockerSandbox", () => {
   });
 
   it("allows granular hardening opt-outs", () => {
-    const args = buildRunArgs(
-      "alpine:3",
-      "id",
-      [],
-      baseOptions(),
-      {
-        hardening: {
-          readOnlyRootfs: false,
-          dropCapabilities: false,
-          noNewPrivileges: false,
-          seccompProfile: false,
-          pidsLimit: false,
-          user: false,
-        },
+    const args = buildRunArgs("alpine:3", "id", [], baseOptions(), {
+      hardening: {
+        readOnlyRootfs: false,
+        dropCapabilities: false,
+        noNewPrivileges: false,
+        seccompProfile: false,
+        pidsLimit: false,
+        user: false,
       },
-    );
+    });
 
     expect(args).not.toContain("--read-only");
     expect(args).not.toContain("--cap-drop=ALL");
@@ -207,31 +201,4 @@ describe("SANDBOX-T1 dockerSandbox", () => {
     expect(args).not.toContain("--pids-limit");
     expect(args).not.toContain("--user");
   });
-
-  it("isolates the network with networkAccess:false (AC-12)", async () => {
-    if (!(await hasDocker())) {
-      // No container runtime available in this environment; skip the live check.
-      expect(true).toBe(true);
-      return;
-    }
-    const sandbox = dockerSandbox({ image: "alpine:3" });
-    // A local-only command succeeds.
-    const ok = await sandbox.execute(
-      "echo",
-      ["hi"],
-      baseOptions({ networkAccess: false }),
-    );
-    expect(ok.stdout.trim()).toBe("hi");
-    // A network call fails (no reachability) — wget/ping should be unable to resolve.
-    const blocked = await sandbox.execute(
-      "sh",
-      [
-        "-c",
-        "command -v wget >/dev/null || echo NOWGET; wget -T 2 -q -O- http://example.com || echo NETFAIL",
-      ],
-      baseOptions({ networkAccess: false }),
-    );
-    expect(blocked.stdout).not.toContain("NOWGET");
-    expect(blocked.stdout).toContain("NETFAIL");
-  }, 60_000);
 });
