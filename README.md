@@ -1,109 +1,14 @@
 # engine-lib
 
-**Agent infrastructure for TypeScript, built on [`@infinityi/forge`](https://github.com/tqcuong2k/forge).**
+Agent infrastructure for TypeScript, built on [`@infinityi/forge`](https://github.com/tqcuong2k/forge).
 
-[![Bun](https://img.shields.io/badge/bun-1.3%2B-orange.svg)](https://bun.sh)
-[![TypeScript](https://img.shields.io/badge/TypeScript-6.0.3%2B-blue.svg)](https://www.typescriptlang.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-## Project Goal
-
-Every project that wants to add an agent ends up rebuilding the same
-scaffolding: a provider client, a message/content model, a tool-calling loop,
-session state, context injection, and a way to observe what the agent is doing.
-It is tedious, error-prone, and rarely the interesting part of the product.
-
-`engine-lib` is the reusable layer that owns that scaffolding once. It provides
-a provider-agnostic way to define agents and tools, run them against major LLM
-providers, manage conversation state, and observe behavior so a host
-application can ship agent features without re-implementing the plumbing.
-
-It is built on `@infinityi/forge`, inheriting its configuration, telemetry,
-resilience, and lifecycle primitives rather than rebuilding those concerns.
-Where Forge is the infrastructure layer for application services, `engine-lib`
-is the agent infrastructure layer for products that need agent behavior.
-
-## Target Users
-
-`engine-lib` is for developers building agent-integrated products, including:
-
-- coding terminals and developer tools that need file access, command execution,
-  streaming, and tool-calling behavior
-- operations and server-management tools that need incident triage, log
-  inspection, and remediation workflows
-- backend services that need LLM-driven behavior with structured tools, durable
-  sessions, and observability
-
-It is not intended to be a no-code agent builder, hosted runtime, UI framework,
-prompt template system, hosted RAG service, managed vector database, model host,
-or evaluation platform.
-
-## Core Concepts
-
-| Concept             | Description                                                                                                                  |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Provider            | A normalized adapter over an LLM API. Built-in adapters cover OpenAI, Anthropic, Google, and OpenAI-compatible APIs.         |
-| Message and content | A provider-neutral conversation model with typed content parts for text, tool calls, tool results, and images.               |
-| Agent               | A declarative definition containing provider, instructions, tools, generation defaults, hooks, and optional handoff targets. |
-| Tool                | A schema-validated capability the model can invoke. Tools return structured success or failure results.                      |
-| Execution           | The provider-native run loop that dispatches tool calls and repeats until a final answer, cancellation, or budget failure.   |
-| Session             | Durable conversation state: ordered message history plus metadata behind a pluggable store.                                  |
-| Context             | Request-time information injected by host-provided context providers and never persisted as conversation history.            |
-| Events              | A typed event stream for UI streaming, logs, metrics, auditing, telemetry, and optional tool-pack audit data.                |
-
-## Design Principles
-
-1. Provider-native execution, no custom reasoning loop.
-2. Forge-backed configuration, telemetry, resilience, and lifecycle integration.
-3. Contracts over implementations for providers, tools, sessions, context, and
-   events.
-4. Schema-validated boundaries with fail-fast validation.
-5. Observable behavior by default.
-6. Composable modules instead of a monolithic framework.
-7. Explicit wiring and no hidden global runtime.
-8. Strong TypeScript ergonomics for common application paths.
-
-## Scope
-
-The root package exports the stable application surface:
-
-- schema, message, and error helpers
-- provider factories
-- tool and agent definition helpers
-- execution, session, and context helpers
-- multi-agent helpers
-- event subscribers and telemetry integration hooks
-
-Optional subpaths provide advanced or opt-in features:
-
-- provider adapter plumbing
-- durable session stores
-- shell, filesystem, HTTP, and web tool packs
-- retrieval primitives for host-owned RAG pipelines
-- testing doubles and provider conformance helpers
-- Forge lifecycle integration
-
-The root barrel intentionally does not expose shell execution, filesystem
-access, HTTP access, web crawling, browser automation, retrieval, or UI
-components. Those capabilities are either explicit opt-in subpaths or outside
-the library's scope.
-
-## Documentation
-
-Consumer documentation lives in [`docs/`](./docs/README.md). The docs cover
-installation, public import paths, providers, tools, execution, sessions,
-context, events, multi-agent coordination, optional tool packs, testing, and
-lifecycle integration.
-
-API reference is generated with TypeDoc:
+## Installation
 
 ```bash
-bun run docs
+bun add @infinityi/engine-lib
 ```
 
-Generated API output is written to `docs/api/`.
-
-## Development
+For local development in this repository:
 
 ```bash
 bun install
@@ -112,13 +17,210 @@ bun test
 bun run build
 ```
 
-Useful scripts:
+## Quick Start
 
-- `bun run check` - type-check the repository
-- `bun test` - run the test suite
-- `bun run build` - emit JavaScript and declaration files to `dist/`
-- `bun run docs` - generate TypeDoc API reference
+```ts
+import { defineAgent, runAgent } from "@infinityi/engine-lib";
+import { mockProvider, textResult } from "@infinityi/engine-lib/testing";
+
+const agent = defineAgent({
+  name: "assistant",
+  provider: mockProvider({ result: () => textResult("hello") }),
+});
+
+const result = await runAgent(agent, { input: "Say hello." });
+console.log(result.output);
+```
+
+Use a real provider in production and `@infinityi/engine-lib/testing` for unit
+and contract tests.
+
+## Features
+
+- provider-agnostic agent definitions for OpenAI, Anthropic, Google, and
+  OpenAI-compatible APIs
+- schema-validated tools with structured success and failure results
+- provider-native execution with buffered and streaming run modes
+- durable sessions, resume metadata, forking, and pluggable session stores
+- request-time context injection and context-window management
+- event subscribers, telemetry hooks, and append-only audit logging
+- handoffs and sub-agents-as-tools for multi-agent coordination
+- opt-in tool packs for shell, filesystem, HTTP, web, and sandboxed execution
+- optional retrieval, approval, authorization, governance, and resilience
+  modules
+- network-free testing helpers and provider/session conformance utilities
+
+## Usage
+
+### Define an agent and run it
+
+```ts
+import { createOpenAI, defineAgent, runAgent } from "@infinityi/engine-lib";
+
+const provider = createOpenAI({
+  apiKey: process.env.OPENAI_API_KEY!,
+  model: "gpt-5",
+});
+
+const agent = defineAgent({
+  name: "assistant",
+  provider,
+  instructions: "Answer clearly and use tools when needed.",
+});
+
+const result = await runAgent(agent, {
+  input: "Summarize the latest deployment status.",
+});
+```
+
+### Add tools
+
+```ts
+import { defineAgent, defineTool, runAgent, s } from "@infinityi/engine-lib";
+
+const lookupService = defineTool({
+  name: "lookup_service",
+  description: "Return the current status for a service.",
+  parameters: s.object({
+    service: s.enum(["api", "worker", "billing"]),
+  }),
+  execute: async ({ service }) => ({
+    ok: true,
+    content: { service, status: "healthy" },
+  }),
+});
+
+const agent = defineAgent({
+  name: "ops",
+  provider,
+  tools: [lookupService],
+});
+
+await runAgent(agent, { input: "Check billing." });
+```
+
+Use tool failures (`{ ok: false, error: ... }`) for recoverable domain errors.
+Throw only for unexpected implementation failures.
+
+### Persist session state
+
+```ts
+import { createSession, runAgent } from "@infinityi/engine-lib";
+
+const session = createSession({ id: "user-123" });
+
+await runAgent(agent, { input: "first", session });
+await runAgent(agent, { input: "second", session });
+
+const history = await session.messages();
+```
+
+Use `@infinityi/engine-lib/session-stores` when you need SQLite,
+PostgreSQL, Redis, Forge SQL, or filesystem-backed persistence.
+
+### Stream events
+
+```ts
+const handle = runAgent(agent, { input: "go", stream: true });
+
+for await (const event of handle) {
+  console.log(event.type);
+}
+
+const result = await handle.completed;
+```
+
+Use `subscribers` or `onEvent` when you want UI streaming, audit trails,
+logging, or metrics.
+
+## API Overview
+
+### Root package
+
+Use the root import for the stable application surface:
+
+- schemas: `s`, `asSchema`, `fromJsonSchema`, `toJsonSchema`
+- messages: `user`, `assistant`, `system`, `text`, `toolResult`
+- providers: `createOpenAI`, `createAnthropic`, `createGoogle`,
+  `createOpenAICompatible`
+- tools: `defineTool`
+- agents: `defineAgent`, `asTool`, `createAgentRegistry`
+- execution: `runAgent`
+- sessions: `createSession`, `forkSession`, `readResumeInfo`
+- context: `staticContext`, `dynamicContext`, `truncateToolAware`
+- events: `createEventHub`, `loggingSubscriber`, `messageBusSubscriber`
+- approval: `askHumanTool`, `deferredHumanInputGateway`,
+  `trustApprovalPolicy`
+- authorization: `roleToolAuthorizer`
+- resilience: `withProviderRetry`, `circuitBreaker`, rate limiters
+- governance: `auditSubscriber`, `jsonlAuditLog`, `forgeDataAuditLog`
+
+### Subpath modules
+
+| Import                                      | Use when you need                                           |
+| ------------------------------------------- | ----------------------------------------------------------- |
+| `@infinityi/engine-lib/schema`              | schema building, JSON Schema conversion, validation helpers |
+| `@infinityi/engine-lib/messages`            | provider-neutral messages and content parts                 |
+| `@infinityi/engine-lib/errors`              | public error taxonomy                                       |
+| `@infinityi/engine-lib/runtime`             | Forge secret and telemetry helpers                          |
+| `@infinityi/engine-lib/providers`           | provider contracts, adapter helpers, HTTP/SSE plumbing      |
+| `@infinityi/engine-lib/tools`               | tool-result mappers and provider-tool conversion            |
+| `@infinityi/engine-lib/agent`               | registries, handoff helpers, and sub-agent tools            |
+| `@infinityi/engine-lib/execution`           | run types, usage helpers, limits, run-id utilities          |
+| `@infinityi/engine-lib/session`             | session handles and store contracts                         |
+| `@infinityi/engine-lib/session-stores`      | durable stores, compaction, codecs, migrations              |
+| `@infinityi/engine-lib/context`             | context providers, token estimation, window strategies      |
+| `@infinityi/engine-lib/retrieval`           | document loading, chunking, embeddings, retrievers, memory  |
+| `@infinityi/engine-lib/events`              | event projection and telemetry helpers                      |
+| `@infinityi/engine-lib/approval`            | human-in-the-loop approval flows                            |
+| `@infinityi/engine-lib/governance`          | audit sinks, redaction, policy composition                  |
+| `@infinityi/engine-lib/resilience`          | retry, circuit breaker, rate limiting, budget enforcement   |
+| `@infinityi/engine-lib/tools-shell`         | policy-gated shell tools                                    |
+| `@infinityi/engine-lib/tools-fs`            | allowed-root filesystem tools                               |
+| `@infinityi/engine-lib/tools-http`          | policy-gated HTTP tools and client                          |
+| `@infinityi/engine-lib/tools-web`           | web search, fetch, readability, crawl helpers               |
+| `@infinityi/engine-lib/tools-sandbox`       | local and container-backed tool sandboxes                   |
+| `@infinityi/engine-lib/testing`             | mock providers, scripted providers, fetch doubles           |
+| `@infinityi/engine-lib/testing/conformance` | provider conformance battery                                |
+| `@infinityi/engine-lib/lifecycle`           | Forge lifecycle adapter                                     |
+
+Detailed guides live in [`docs/`](./docs/guide/README.md).
+
+## Configuration
+
+Common provider configuration:
+
+- OpenAI: `apiKey`, `model`
+- Anthropic: `apiKey`, `model`
+- Google: `apiKey`, `model`
+- OpenAI-compatible: `baseUrl`, `model`, optional `apiKey`
+
+Run-time controls are set through `runAgent(...)` options, including:
+
+- `stream` for streaming mode
+- `maxSteps` and `maxHandoffs` to bound execution
+- `session` for durable history
+- `context` and `contextWindow` for request shaping
+- `subscribers`, `onEvent`, and `telemetry` for observability
+- `checkpoint` and `resume` for crash-tolerant runs
+- `signal` for cancellation
+
+Optional modules add their own host-owned configuration, such as allowed roots,
+allowed hosts, approval hooks, durable-store wiring, and retrieval backends.
+
+## Contributing
+
+```bash
+bun install
+bun run check
+bun test
+bun run build
+bun run docs
+```
+
+When updating public APIs, keep the guides in `docs/` aligned with the current
+source and regenerate TypeDoc if needed.
 
 ## License
 
-MIT - see [`LICENSE`](./LICENSE).
+MIT. See [`LICENSE`](./LICENSE).
