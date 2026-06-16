@@ -226,6 +226,11 @@ class FakeRedisTransaction implements RedisSessionStoreTransaction {
     return this;
   }
 
+  pExpire(key: string, ttlMs: number): RedisSessionStoreTransaction {
+    this.operations.push(() => this.client.pExpire(key, ttlMs));
+    return this;
+  }
+
   exec(): void {
     for (const operation of this.operations) operation();
   }

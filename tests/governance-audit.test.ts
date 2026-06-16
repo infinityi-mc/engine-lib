@@ -15,6 +15,7 @@ import {
   forgeDataAuditLog,
   jsonlAuditLog,
   regexRedactor,
+  schemaSensitiveRedactor,
 } from "../src/governance/index";
 import type { AuditEntry, AuditLog } from "../src/governance/index";
 import { createEventHub } from "../src/events/index";
@@ -138,6 +139,7 @@ describe("AUDIT-T1 jsonlAuditLog + auditSubscriber", () => {
         id: "c2",
         name: "deploy",
         approved: true,
+        argumentsDigest: "sha256:y",
       }),
     );
     expect(entries.map((e) => e.action)).toEqual([
@@ -172,6 +174,28 @@ describe("AUDIT-T1 jsonlAuditLog + auditSubscriber", () => {
     };
     expect(detail.reason).toBe("[REDACTED]");
     expect(detail.nested?.values?.[0]).toBe("[REDACTED]");
+  });
+});
+
+describe("governance redactors", () => {
+  it("redacts common token formats and mixed-case fallback fields", () => {
+    const ctx = { stage: "tool-output" } as const;
+    const redacted = regexRedactor()(String.raw`Authorization: Bearer eyJabc.eyJdef.sig
+-----BEGIN PRIVATE KEY-----
+abc
+-----END PRIVATE KEY-----
+github=ghp_abcdefghijklmnopqrstuvwxyz
+aws=AKIA1234567890ABCDEF
+slack=xoxb-1234567890-secret`, ctx);
+    expect(redacted).not.toContain("eyJabc.eyJdef.sig");
+    expect(redacted).not.toContain("PRIVATE KEY");
+    expect(redacted).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz");
+    expect(redacted).not.toContain("AKIA1234567890ABCDEF");
+    expect(redacted).not.toContain("xoxb-1234567890-secret");
+
+    expect(schemaSensitiveRedactor()("Password=foo Token=bar", ctx)).toBe(
+      "[REDACTED] [REDACTED]",
+    );
   });
 });
 

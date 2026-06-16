@@ -99,6 +99,7 @@ export type RunEventDraft =
       readonly name: string;
       readonly approved: boolean;
       readonly reason?: string;
+      readonly argumentsDigest: string;
     }
   | {
       readonly type: "human.input_requested";

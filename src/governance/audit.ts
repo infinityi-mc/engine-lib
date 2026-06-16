@@ -203,6 +203,7 @@ export function auditSubscriber(
           target: event.name,
           detail: {
             name: event.name,
+            argumentsDigest: event.argumentsDigest,
             ...(event.reason !== undefined
               ? { reason: await redact(event.reason, opts.redactDetail) }
               : {}),

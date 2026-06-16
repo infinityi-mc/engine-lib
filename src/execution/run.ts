@@ -686,6 +686,7 @@ async function* executeAgent(
             name: call.name,
             approved: false,
             reason,
+            argumentsDigest: argumentsDigest(parsedArguments),
           });
           failures.set(call.id, { ok: false, error: reason });
         } else {
@@ -724,6 +725,7 @@ async function* executeAgent(
             name: call.name,
             approved: false,
             reason,
+            argumentsDigest: argumentsDigest(parsedArguments),
           });
           failures.set(call.id, { ok: false, error: reason });
           continue;
@@ -754,6 +756,7 @@ async function* executeAgent(
           name: call.name,
           approved: decision.approved === true,
           ...(decision.reason !== undefined ? { reason: decision.reason } : {}),
+          argumentsDigest: argumentsDigest(parsedArguments),
         });
         if (decision.approved !== true) {
           failures.set(call.id, {
@@ -773,6 +776,7 @@ async function* executeAgent(
           name: call.name,
           approved: false,
           reason,
+          argumentsDigest: argumentsDigest(parsedArguments),
         });
         failures.set(call.id, { ok: false, error: reason });
       }
