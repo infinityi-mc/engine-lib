@@ -38,6 +38,8 @@ export interface JsonSchema {
   additionalProperties?: boolean;
   /** Array: element schema. */
   items?: JsonSchema;
+  /** Array: maximum item count. */
+  maxItems?: number;
   /** Enumerated allowed values. */
   enum?: ReadonlyArray<string | number>;
 }

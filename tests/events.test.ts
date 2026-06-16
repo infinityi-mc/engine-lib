@@ -284,6 +284,35 @@ describe("messageBusSubscriber", () => {
     expect(toolCall?.payload).toMatchObject({ id: "c1", name: "echo" });
   });
 
+  it("redacts sensitive bus payloads by default and allows full opt-in", async () => {
+    const secret = "super-secret-token";
+    const redacted: Array<{ type: string; payload: unknown }> = [];
+    const full: Array<{ type: string; payload: unknown }> = [];
+    const makeBus = (target: Array<{ type: string; payload: unknown }>) =>
+      ({
+        publish: async (m: { type: string; payload: unknown }) =>
+          void target.push(m),
+        publishBatch: async () => {},
+        flush: async () => {},
+        shutdown: async () => {},
+      }) as unknown as MessageBus;
+
+    const event: RunEvent = {
+      type: "tool.result",
+      runId: RUN_ID,
+      id: "c1",
+      name: "echo",
+      result: { ok: true, content: secret },
+    } as never;
+
+    await messageBusSubscriber(makeBus(redacted))(event);
+    await messageBusSubscriber(makeBus(full), { redaction: "full" })(event);
+
+    expect(JSON.stringify(redacted[0]?.payload)).not.toContain(secret);
+    expect(JSON.stringify(redacted[0]?.payload)).toContain("resultDigest");
+    expect(JSON.stringify(full[0]?.payload)).toContain(secret);
+  });
+
   it("eventPayload projects an error event to name + message", () => {
     const err = Object.assign(new Error("nope"), { name: "ProviderError" });
     expect(

@@ -31,6 +31,7 @@ import {
 } from "./policy";
 import { SCHEMAS } from "./schemas";
 import {
+  assertSafeRegexPattern,
   searchSemantic as runSemanticSearch,
   searchText as runTextSearch,
 } from "./search";
@@ -407,6 +408,7 @@ export function filesystemTools(
               entry.type === "file" && extname(entry.relativePath) === ext,
           );
         } else if (mode === "regex") {
+          assertSafeRegexPattern(args.query);
           const regex = new RegExp(args.query);
           matches = matches.filter((entry) => regex.test(entry.relativePath));
         } else if (mode === "fuzzy") {

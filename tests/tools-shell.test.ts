@@ -396,7 +396,11 @@ describe("sandbox routing", () => {
       filesystemPaths: [ROOT, join(ROOT, "src")],
       sandbox: {
         execute: async (_command, _args, options) => {
-          seen.push([...options.filesystemPaths]);
+          seen.push(
+            options.filesystemPaths.map((path) =>
+              typeof path === "string" ? path : path.path,
+            ),
+          );
           return {
             command: _command,
             args: _args,

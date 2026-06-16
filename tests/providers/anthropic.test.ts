@@ -193,4 +193,69 @@ describe("translateAnthropicStream", () => {
       },
     ]);
   });
+
+  it("uses the last tool index for input_json_delta events missing index", async () => {
+    const events = await collect(
+      translateAnthropicStream(
+        sseMessages(
+          {
+            event: "content_block_start",
+            data: JSON.stringify({
+              type: "content_block_start",
+              index: 0,
+              content_block: { type: "tool_use", id: "tu_1", name: "f" },
+            }),
+          },
+          {
+            event: "content_block_delta",
+            data: JSON.stringify({
+              type: "content_block_delta",
+              delta: { type: "input_json_delta", partial_json: '{"a":1}' },
+            }),
+          },
+          {
+            event: "content_block_stop",
+            data: JSON.stringify({ type: "content_block_stop", index: 0 }),
+          },
+          {
+            event: "message_stop",
+            data: JSON.stringify({ type: "message_stop" }),
+          },
+        ),
+        "claude",
+      ),
+    );
+
+    expect(events).toEqual([
+      { type: "tool_call_start", index: 0, id: "tu_1", name: "f" },
+      { type: "tool_call_delta", index: 0, argumentsTextDelta: '{"a":1}' },
+      { type: "tool_call_end", index: 0 },
+      {
+        type: "finish",
+        finishReason: "tool_calls",
+        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+      },
+    ]);
+  });
+
+  it("emits an error event when input_json_delta has no routable index", async () => {
+    const events = await collect(
+      translateAnthropicStream(
+        sseMessages({
+          event: "content_block_delta",
+          data: JSON.stringify({
+            type: "content_block_delta",
+            delta: { type: "input_json_delta", partial_json: '{"a":1}' },
+          }),
+        }),
+        "claude",
+      ),
+    );
+
+    expect(events[0]?.type).toBe("error");
+    if (events[0]?.type === "error") {
+      expect(events[0].error.provider).toBe("anthropic");
+    }
+    expect(events[1]).toEqual({ type: "finish", finishReason: "other" });
+  });
 });

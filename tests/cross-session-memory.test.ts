@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { InMemoryVectorStore } from "../src/retrieval/index";
 import type { EmbeddingProvider, MemoryStore } from "../src/retrieval/index";
 import {
+  createTenantScopedMemory,
   memoryContextProvider,
   memoryExtractor,
   tenantMemoryFilter,
@@ -243,6 +244,51 @@ describe("MEM-T1 tenant filtering (AC-15)", () => {
       topK: 5,
       filter: tenantMemoryFilter("t1"),
     });
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.content).toContain("tenant one");
+    expect(hits[0]?.metadata?.tenantId).toBe("t1");
+  });
+
+  it("memoryContextProvider applies the tenant filter by default", async () => {
+    const memory = makeStore();
+    await memory.store({
+      content: "tenant one likes coffee",
+      source: { sessionId: "s1", timestamp: "2026-06-15T00:00:00Z" },
+      metadata: { tenantId: "t1" },
+    });
+    await memory.store({
+      content: "tenant two likes coffee",
+      source: { sessionId: "s2", timestamp: "2026-06-15T00:01:00Z" },
+      metadata: { tenantId: "t2" },
+    });
+
+    const provider = memoryContextProvider({ memory, tenantId: "t1" });
+    const items = await resolveContext(provider, "coffee");
+
+    expect(items).toHaveLength(1);
+    expect(String(items[0]?.content)).toContain("tenant one");
+    expect(String(items[0]?.content)).not.toContain("tenant two");
+  });
+
+  it("tenant-scoped memory stamps and enforces tenant metadata", async () => {
+    const base = makeStore();
+    const scoped = createTenantScopedMemory(base, "t1");
+    await scoped.store({
+      content: "tenant one likes coffee",
+      source: { sessionId: "s1", timestamp: "2026-06-15T00:00:00Z" },
+      metadata: { tenantId: "attacker", category: "preference" },
+    });
+    await base.store({
+      content: "tenant two likes coffee",
+      source: { sessionId: "s2", timestamp: "2026-06-15T00:01:00Z" },
+      metadata: { tenantId: "t2", category: "preference" },
+    });
+
+    const hits = await scoped.recall("coffee", {
+      topK: 5,
+      filter: (record) => record.metadata?.category === "preference",
+    });
+
     expect(hits).toHaveLength(1);
     expect(hits[0]?.content).toContain("tenant one");
     expect(hits[0]?.metadata?.tenantId).toBe("t1");

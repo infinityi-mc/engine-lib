@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -524,6 +524,22 @@ describe("FilesystemJsonlSessionStore", () => {
     expect(compacted.trim().split(/\r?\n/)).toHaveLength(1);
   });
 
+  it("skips corrupt trailing JSONL records during replay", async () => {
+    const directory = await tempDirectory();
+    const store = new FilesystemJsonlSessionStore({ directory });
+    await store.migrate();
+    await store.append("s1", [user("valid")]);
+    const files = (await readdir(directory)).filter((entry) =>
+      entry.endsWith(".jsonl"),
+    );
+    await writeFile(join(directory, files[0]!), "{not-json", { flag: "a" });
+
+    expect(messageTexts(await store.load("s1"))).toEqual(["valid"]);
+    expect((await store.list()).sessions.map((session) => session.id)).toContain(
+      "s1",
+    );
+  });
+
   it("round-trips through a custom codec without plaintext at rest", async () => {
     const codec: SessionStoreCodec = {
       encodeMessage: (message) =>
@@ -596,6 +612,75 @@ describe("withSessionStoreHooks", () => {
     expect(
       messageTexts({ id: "archive", messages: archived[0]!.messages ?? [] }),
     ).toEqual(["old"]);
+  });
+
+  it("serializes compaction with concurrent appends on the same session", async () => {
+    let releaseCompact!: () => void;
+    const compactStarted = new Promise<void>((resolve) => {
+      releaseCompact = resolve;
+    });
+    let compactEntered!: () => void;
+    const compactorEntered = new Promise<void>((resolve) => {
+      compactEntered = resolve;
+    });
+    const store = withSessionStoreHooks(new InMemorySessionStore(), {
+      compactor: {
+        shouldCompact: () => true,
+        compact: async (state) => {
+          compactEntered();
+          await compactStarted;
+          return state;
+        },
+      },
+    });
+
+    const first = store.append("race", [user("a")]);
+    await compactorEntered;
+    const second = store.append("race", [user("b")]);
+    releaseCompact();
+    await Promise.all([first, second]);
+
+    expect(messageTexts(await store.load("race"))?.toSorted()).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+
+  it("runs compaction independently for different sessions", async () => {
+    let releaseS1!: () => void;
+    const s1Gate = new Promise<void>((resolve) => {
+      releaseS1 = resolve;
+    });
+    let s1Entered!: () => void;
+    const s1CompactorEntered = new Promise<void>((resolve) => {
+      s1Entered = resolve;
+    });
+    const compacted: string[] = [];
+    const store = withSessionStoreHooks(new InMemorySessionStore(), {
+      compactor: {
+        shouldCompact: (state) => state.messages.length > 1,
+        compact: async (state) => {
+          compacted.push(state.id);
+          if (state.id === "s1") {
+            s1Entered();
+            await s1Gate;
+          }
+          return { ...state, messages: state.messages.slice(-1) };
+        },
+      },
+    });
+
+    await store.append("s1", [user("s1-old")]);
+    const s1Append = store.append("s1", [user("s1-new")]);
+    await s1CompactorEntered;
+    await store.append("s2", [user("s2-old"), user("s2-new")]);
+    releaseS1();
+    await s1Append;
+
+    expect(messageTexts(await store.load("s1"))).toEqual(["s1-new"]);
+    expect(messageTexts(await store.load("s2"))).toEqual(["s2-new"]);
+    expect(compacted).toContain("s1");
+    expect(compacted).toContain("s2");
   });
 
   it("summarizingCompactor persists one pinned summary and reports AppendResult", async () => {

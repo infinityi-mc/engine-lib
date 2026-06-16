@@ -9,6 +9,9 @@
  * @module
  */
 
+/** Default maximum silence between SSE body chunks. */
+export const DEFAULT_SSE_IDLE_TIMEOUT_MS = 30_000;
+
 /** One dispatched SSE message. */
 export interface SseMessage {
   /** The `event:` name, if the stream set one. */
@@ -17,13 +20,66 @@ export interface SseMessage {
   readonly data: string;
 }
 
+/** Options for decoding an SSE byte stream. */
+export interface SseParseOptions {
+  /** Caller cancellation signal. */
+  readonly signal?: AbortSignal;
+  /** Maximum silence between body chunks. Default {@link DEFAULT_SSE_IDLE_TIMEOUT_MS}. */
+  readonly idleTimeoutMs?: number;
+}
+
+function normalizeOptions(
+  options?: AbortSignal | SseParseOptions,
+): SseParseOptions {
+  if (options === undefined) return {};
+  if ("aborted" in options) return { signal: options };
+  return options;
+}
+
+type SseReadResult = { readonly done: boolean; readonly value?: Uint8Array };
+
+type SseReader = { read(): Promise<SseReadResult> };
+
+async function readWithTimeout(
+  reader: SseReader,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<SseReadResult> {
+  if (signal?.aborted) throw new DOMException("aborted", "AbortError");
+
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  try {
+    return await Promise.race([
+      reader.read(),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error("SSE read timeout")),
+          timeoutMs,
+        );
+        if (signal !== undefined) {
+          onAbort = () => reject(new DOMException("aborted", "AbortError"));
+          signal.addEventListener("abort", onAbort, { once: true });
+        }
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+    if (signal !== undefined && onAbort !== undefined) {
+      signal.removeEventListener("abort", onAbort);
+    }
+  }
+}
+
 /** Decode an SSE byte stream into dispatched {@link SseMessage}s. */
 export async function* parseSse(
   stream: ReadableStream<Uint8Array>,
-  signal?: AbortSignal,
+  options?: AbortSignal | SseParseOptions,
 ): AsyncGenerator<SseMessage> {
+  const { signal, idleTimeoutMs = DEFAULT_SSE_IDLE_TIMEOUT_MS } =
+    normalizeOptions(options);
   const reader = stream.getReader();
-  const decoder = new TextDecoder();
+  const decoder = new TextDecoder("utf-8", { ignoreBOM: true });
   let buffer = "";
   let event: string | undefined;
   let data: string[] = [];
@@ -69,7 +125,11 @@ export async function* parseSse(
   try {
     while (true) {
       if (signal?.aborted) return;
-      const { done, value } = await reader.read();
+      const { done, value } = await readWithTimeout(
+        reader,
+        idleTimeoutMs,
+        signal,
+      );
       if (done) {
         completed = true;
         break;

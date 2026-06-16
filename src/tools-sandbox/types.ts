@@ -31,7 +31,10 @@ export interface SandboxOptions {
   /** Whether the command may reach the network. */
   readonly networkAccess: boolean;
   /** Filesystem paths the command may access (mount surface for container sandboxes). */
-  readonly filesystemPaths: readonly string[];
+  readonly filesystemPaths: readonly (
+    | string
+    | { readonly path: string; readonly writable?: boolean }
+  )[];
   /** Optional memory ceiling in megabytes. */
   readonly memoryLimitMb?: number;
   /** Optional CPU limit (cores). */

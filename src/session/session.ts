@@ -14,6 +14,7 @@
 
 import type { Message } from "../messages/types";
 import { forkSession } from "./fork";
+import { readResumeInfo, RESUME_METADATA_KEY } from "./resume";
 import { InMemorySessionStore } from "./store";
 import type { AppendResult, ForkOptions, Session, SessionStore } from "./types";
 
@@ -37,6 +38,80 @@ export interface CreateSessionOptions {
 
 function generateId(): string {
   return `session_${crypto.randomUUID()}`;
+}
+
+const sessionQueues = new WeakMap<SessionStore, Map<string, Promise<void>>>();
+
+async function enqueueSession<T>(
+  store: SessionStore,
+  id: string,
+  task: () => Promise<T>,
+): Promise<T> {
+  let queues = sessionQueues.get(store);
+  if (queues === undefined) {
+    queues = new Map();
+    sessionQueues.set(store, queues);
+  }
+  const previous = queues.get(id) ?? Promise.resolve();
+  const run = previous.catch(() => {}).then(task);
+  const next = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  queues.set(id, next);
+  try {
+    return await run;
+  } finally {
+    if (queues.get(id) === next) queues.delete(id);
+  }
+}
+
+function mergeUserMetadata(
+  existing: Readonly<Record<string, unknown>> | undefined,
+  next: Record<string, unknown>,
+): Record<string, unknown> {
+  const existingMetadata = existing ?? {};
+  const incomingResume = readResumeInfo(next);
+  const preservedEngine = Object.fromEntries(
+    Object.entries(existingMetadata).filter(([key]) => key.startsWith("engine:")),
+  );
+  const userMetadata = Object.fromEntries(
+    Object.entries(next).filter(([key]) => !key.startsWith("engine:")),
+  );
+  return {
+    ...existingMetadata,
+    ...userMetadata,
+    ...preservedEngine,
+    ...(incomingResume !== undefined
+      ? { [RESUME_METADATA_KEY]: incomingResume }
+      : {}),
+  };
+}
+
+function seedState(
+  id: string,
+  seed: readonly Message[] | undefined,
+  metadata: Record<string, unknown> | undefined,
+  tenantId: string | undefined,
+  existing: Awaited<ReturnType<SessionStore["load"]>>,
+) {
+  const shouldSeedMessages =
+    seed !== undefined &&
+    seed.length > 0 &&
+    (existing === undefined || existing.messages.length === 0);
+  const shouldSeedMetadata = metadata !== undefined && existing === undefined;
+  if (!shouldSeedMessages && !shouldSeedMetadata) return undefined;
+  return {
+    id,
+    messages: shouldSeedMessages ? (seed ?? []) : (existing?.messages ?? []),
+    ...(shouldSeedMetadata
+      ? { metadata }
+      : existing?.metadata !== undefined
+        ? { metadata: existing.metadata }
+        : {}),
+    version: existing?.version ?? 1,
+    ...(tenantId !== undefined ? { tenantId } : {}),
+  };
 }
 
 /**
@@ -72,28 +147,11 @@ export function createSession(opts: CreateSessionOptions = {}): Session {
         return;
       }
 
-      const existing = await store.load(id);
-      const shouldSeedMessages =
-        seed !== undefined &&
-        seed.length > 0 &&
-        (existing === undefined || existing.messages.length === 0);
-      const shouldSeedMetadata =
-        metadata !== undefined && existing === undefined;
-      if (shouldSeedMessages || shouldSeedMetadata) {
-        await store.save({
-          id,
-          messages: shouldSeedMessages
-            ? (seed ?? [])
-            : (existing?.messages ?? []),
-          ...(shouldSeedMetadata
-            ? { metadata }
-            : existing?.metadata !== undefined
-              ? { metadata: existing.metadata }
-              : {}),
-          version: existing?.version ?? 1,
-          ...(tenantId !== undefined ? { tenantId } : {}),
-        });
-      }
+      await enqueueSession(store, id, async () => {
+        const existing = await store.load(id);
+        const state = seedState(id, seed, metadata, tenantId, existing);
+        if (state !== undefined) await store.save(state);
+      });
     })();
     return seedPromise;
   };
@@ -121,7 +179,13 @@ export function createSession(opts: CreateSessionOptions = {}): Session {
     },
     async setMetadata(nextMetadata: Record<string, unknown>): Promise<void> {
       await ensureSeeded();
-      await store.setMetadata(id, nextMetadata);
+      await enqueueSession(store, id, async () => {
+        const existing = await store.load(id);
+        await store.setMetadata(
+          id,
+          mergeUserMetadata(existing?.metadata, nextMetadata),
+        );
+      });
     },
     async getMetadata(): Promise<Record<string, unknown> | undefined> {
       await ensureSeeded();

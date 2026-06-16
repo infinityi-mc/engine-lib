@@ -8,6 +8,9 @@
  * @module
  */
 
+import type { LookupAddress } from "node:dns";
+import { lookup } from "node:dns/promises";
+
 import {
   combine,
   exponentialBackoff,
@@ -27,6 +30,7 @@ import {
   assertUrlAllowed,
   buildRequestHeaders,
   clamp,
+  isPrivateTarget,
   normalizeHttpConfig,
   type NormalizedHttpConfig,
 } from "./policy";
@@ -253,13 +257,32 @@ function validateUrl(raw: string): URL {
   }
 }
 
-function checkUrl(
+async function checkUrl(
   url: URL,
   config: NormalizedHttpConfig,
   ctx: ToolContext | undefined,
-): void {
+): Promise<void> {
   try {
     assertUrlAllowed(url, config);
+    if (!config.allowPrivateNetwork) {
+      let addresses: LookupAddress[];
+      try {
+        addresses = await lookup(url.hostname, { all: true });
+      } catch (error) {
+        if (config.fetch !== fetch) {
+          addresses = [];
+        } else {
+          throw error;
+        }
+      }
+      for (const address of addresses) {
+        if (isPrivateTarget(address.address)) {
+          throw new HttpPolicyError(
+            `resolved private or localhost address ${address.address} for ${url.hostname} is not allowed`,
+          );
+        }
+      }
+    }
     emitHttpPolicy(ctx, "allow", url.href);
   } catch (error) {
     const message = messageOf(error);
@@ -286,7 +309,7 @@ export function createHttpToolClient(config: HttpToolsConfig): HttpToolClient {
   ): Promise<HttpRequestResult> {
     let method = req.method;
     let url = validateUrl(req.url);
-    checkUrl(url, normalized, ctx);
+    await checkUrl(url, normalized, ctx);
 
     async function evaluateEnginePolicy(
       evaluatedMethod: "GET" | "POST",
@@ -332,6 +355,14 @@ export function createHttpToolClient(config: HttpToolsConfig): HttpToolClient {
         const currentMethod = method;
         const currentUrl = url;
         const { body, contentType } = bodyFor(req, currentMethod);
+        if (
+          body !== undefined &&
+          Buffer.byteLength(body, "utf8") > normalized.maxRequestBytes
+        ) {
+          throw new HttpPolicyError(
+            `request body exceeds maxRequestBytes (${normalized.maxRequestBytes})`,
+          );
+        }
         const requestHeaders = buildRequestHeaders(
           normalized,
           req.headers,
@@ -390,7 +421,7 @@ export function createHttpToolClient(config: HttpToolsConfig): HttpToolClient {
           }
           const next = new URL(location, currentUrl);
           await cancelBody(response);
-          checkUrl(next, normalized, ctx);
+          await checkUrl(next, normalized, ctx);
           const nextMethod = redirectedMethod(method, response.status);
           await evaluateEnginePolicy(nextMethod, next);
           redirects.push(next.href);

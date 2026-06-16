@@ -39,6 +39,8 @@ export type StreamEvent =
   | {
       readonly type: "tool_call_delta";
       readonly index: number;
+      readonly id?: string;
+      readonly name?: string;
       readonly argumentsTextDelta: string;
     }
   | { readonly type: "tool_call_end"; readonly index: number }
@@ -94,7 +96,11 @@ export class StreamAccumulator {
         break;
       case "tool_call_delta": {
         const call = this.toolCalls.get(event.index);
-        if (call) call.argumentsText += event.argumentsTextDelta;
+        if (call) {
+          if (event.id !== undefined) call.id = event.id;
+          if (event.name !== undefined) call.name = event.name;
+          call.argumentsText += event.argumentsTextDelta;
+        }
         break;
       }
       case "tool_call_end":

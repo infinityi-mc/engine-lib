@@ -13,7 +13,12 @@
  */
 
 import type { EngineContext } from "../runtime/types";
-import { createProviderHttp, openSseStream, toProviderError } from "./http";
+import {
+  DEFAULT_TIMEOUT_MS,
+  createProviderHttp,
+  openSseStream,
+  toProviderError,
+} from "./http";
 import type { ProviderHttpOptions } from "./http";
 import { parseSse } from "./sse";
 import type { SseMessage } from "./sse";
@@ -93,7 +98,13 @@ export function createProvider(spec: AdapterSpec): Provider {
         ctx,
       );
       try {
-        yield* spec.translateStream(parseSse(stream, ctx?.signal), model);
+        yield* spec.translateStream(
+          parseSse(stream, {
+            signal: ctx?.signal,
+            idleTimeoutMs: spec.http.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+          }),
+          model,
+        );
       } catch (error) {
         // Mid-stream failures (e.g. a network drop while reading the body) must
         // surface as ProviderError too, matching complete()'s contract.

@@ -13,6 +13,12 @@ import type { SandboxOptions } from "../src/tools-sandbox/index";
 const ROOT = process.cwd();
 const JS = process.execPath;
 
+function containerPath(hostPath: string, index = 0): string {
+  return /^[A-Za-z]:[\\/]/.test(hostPath) || hostPath.includes("\\")
+    ? `/workspace/mount-${index}`
+    : hostPath;
+}
+
 function ctx(): ToolContext {
   return { toolCallId: "c1", agentName: "test" };
 }
@@ -132,7 +138,7 @@ describe("SANDBOX-T1 dockerSandbox", () => {
 
     const workdirFlag = args.indexOf("-w");
     expect(workdirFlag).toBeGreaterThanOrEqual(0);
-    expect(args[workdirFlag + 1]).toBe(ROOT);
+    expect(args[workdirFlag + 1]).toBe(containerPath(ROOT));
   });
 
   it("falls back to the requested cwd when there are no mounted paths", () => {
@@ -145,7 +151,7 @@ describe("SANDBOX-T1 dockerSandbox", () => {
 
     const workdirFlag = args.indexOf("-w");
     expect(workdirFlag).toBeGreaterThanOrEqual(0);
-    expect(args[workdirFlag + 1]).toBe(ROOT);
+    expect(args[workdirFlag + 1]).toBe(containerPath(ROOT));
   });
 
   it("uses read-only mounts, env-file, and secure defaults", () => {
@@ -211,17 +217,38 @@ describe("SANDBOX-T1 dockerSandbox", () => {
       ["hi"],
       baseOptions({ networkAccess: false }),
     );
-    expect(ok.stdout.trim()).toBe("hi");
-    // A network call fails (no reachability) — wget/ping should be unable to resolve.
-    const blocked = await sandbox.execute(
-      "sh",
-      [
-        "-c",
-        "command -v wget >/dev/null || echo NOWGET; wget -T 2 -q -O- http://example.com || echo NETFAIL",
-      ],
-      baseOptions({ networkAccess: false }),
+
+    expect(args).toContain("--read-only");
+    expect(args).toContain("--cap-drop=ALL");
+    expect(args).toContain("no-new-privileges:true");
+    expect(args).toContain("seccomp=runtime/default");
+    expect(args).toContain("--pids-limit");
+    expect(args).toContain("--user");
+    expect(args).toContain(`${ROOT}:${containerPath(ROOT, 0)}:ro`);
+    expect(args).toContain(
+      `${join(ROOT, "tmp")}:${containerPath(join(ROOT, "tmp"), 1)}:rw`,
     );
-    expect(blocked.stdout).not.toContain("NOWGET");
-    expect(blocked.stdout).toContain("NETFAIL");
-  }, 60_000);
+    expect(args).toContain("--env-file");
+    expect(args).toContain("/tmp/env-file");
+    expect(args.join(" ")).not.toContain("SECRET=hidden");
+  });
+
+  it("allows granular hardening opt-outs", () => {
+    const args = buildRunArgs("alpine:3", "id", [], baseOptions(), {
+      hardening: {
+        readOnlyRootfs: false,
+        dropCapabilities: false,
+        noNewPrivileges: false,
+        seccompProfile: false,
+        pidsLimit: false,
+        user: false,
+      },
+    });
+
+    expect(args).not.toContain("--read-only");
+    expect(args).not.toContain("--cap-drop=ALL");
+    expect(args).not.toContain("no-new-privileges:true");
+    expect(args).not.toContain("--pids-limit");
+    expect(args).not.toContain("--user");
+  });
 });

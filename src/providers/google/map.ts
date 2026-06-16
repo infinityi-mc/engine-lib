@@ -217,7 +217,7 @@ export function parseGoogleResponse(
         id: part.functionCall.id ?? `call_${name}_${index}`,
         name,
         arguments: part.functionCall.args,
-        argumentsText: JSON.stringify(part.functionCall.args ?? {}),
+        argumentsText: JSON.stringify(part.functionCall.args) ?? "null",
       });
       index += 1;
     }

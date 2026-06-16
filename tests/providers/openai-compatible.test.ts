@@ -178,7 +178,7 @@ describe("translateChatStream", () => {
       { type: "message_start", model: "m" },
       { type: "text_delta", text: "hi" },
       { type: "tool_call_start", index: 0, id: "c1", name: "f" },
-      { type: "tool_call_delta", index: 0, argumentsTextDelta: '{"a"' },
+      { type: "tool_call_delta", index: 0, id: "c1", name: "f", argumentsTextDelta: '{"a"' },
       { type: "tool_call_delta", index: 0, argumentsTextDelta: ":1}" },
       { type: "tool_call_end", index: 0 },
       {

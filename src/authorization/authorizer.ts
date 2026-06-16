@@ -24,9 +24,20 @@ export interface ToolAuthorizer {
 
 export function roleToolAuthorizer(opts: {
   readonly allow: Readonly<Record<string, readonly string[]>>;
+  readonly agents?: Readonly<Record<string, readonly string[]>>;
 }): ToolAuthorizer {
   return {
     authorize(call, ctx): ToolAuthorization {
+      // N24: per-agent allowlist — when present, agent-scoped check runs first.
+      if (opts.agents !== undefined) {
+        const agentTools = opts.agents[ctx.agentName];
+        if (agentTools !== undefined && !agentTools.includes(call.name)) {
+          return {
+            allowed: false,
+            reason: `tool "${call.name}" is not permitted for agent "${ctx.agentName}"`,
+          };
+        }
+      }
       const roles = ctx.roles ?? [];
       for (const role of roles) {
         const allowed = opts.allow[role];
@@ -34,7 +45,7 @@ export function roleToolAuthorizer(opts: {
       }
       return {
         allowed: false,
-        reason: `tool \"${call.name}\" is not permitted for current roles`,
+        reason: `tool "${call.name}" is not permitted for current roles`,
       };
     },
   };

@@ -135,6 +135,15 @@ describe("filesystemTools read/search/discovery", () => {
       JSON.stringify((semantic as { content: unknown }).content),
     ).toContain("greet");
 
+    const regexText = await run(tools.searchText, {
+      pattern: "hello|greet",
+      mode: "regex",
+    });
+    expect(regexText.ok).toBe(true);
+    expect(JSON.stringify((regexText as { content: unknown }).content)).toContain(
+      "index.ts",
+    );
+
     const symbols = await run(tools.symbols, { path: "index.ts" });
     expect(symbols.ok).toBe(true);
     expect(JSON.stringify((symbols as { content: unknown }).content)).toContain(
@@ -145,6 +154,37 @@ describe("filesystemTools read/search/discovery", () => {
     expect(read.ok).toBe(true);
     expect(JSON.stringify((read as { content: unknown }).content)).toContain(
       "export function greet",
+    );
+  });
+
+  it("rejects unsafe regex patterns before filesystem searches", async () => {
+    const root = await workspace();
+    await writeFile(join(root, "index.ts"), "aaaaaaaaaaaaaaaaaaaa!");
+    const tools = filesystemTools({ allowedRoots: [root] });
+
+    const unsafeText = await run(tools.searchText, {
+      pattern: "(a+)+$",
+      mode: "regex",
+    });
+    expect(unsafeText.ok).toBe(false);
+    expect((unsafeText as { error: string }).error).toContain(
+      "catastrophic backtracking",
+    );
+
+    const longText = await run(tools.searchText, {
+      pattern: "a".repeat(257),
+      mode: "regex",
+    });
+    expect(longText.ok).toBe(false);
+    expect((longText as { error: string }).error).toContain("maximum length");
+
+    const unsafeFind = await run(tools.findFiles, {
+      query: "(a+)+$",
+      mode: "regex",
+    });
+    expect(unsafeFind.ok).toBe(false);
+    expect((unsafeFind as { error: string }).error).toContain(
+      "catastrophic backtracking",
     );
   });
 

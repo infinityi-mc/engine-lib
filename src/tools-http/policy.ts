@@ -8,6 +8,8 @@
  * @module
  */
 
+import { isIP } from "node:net";
+
 import type { HeaderEntry, HostPattern, HttpToolsConfig } from "./types";
 
 const DEFAULT_PROTOCOLS = ["https:", "http:"] as const;
@@ -42,6 +44,7 @@ export interface NormalizedHttpConfig {
   readonly defaultTimeoutMs: number;
   readonly minTimeoutMs: number;
   readonly maxTimeoutMs: number;
+  readonly maxRequestBytes: number;
   readonly maxResponseBytes: number;
   readonly maxBodyChars: number;
   readonly maxRedirects: number;
@@ -129,6 +132,7 @@ export function normalizeHttpConfig(
   const minTimeoutMs = config.minTimeoutMs ?? 100;
   const defaultTimeoutMs = config.defaultTimeoutMs ?? 10_000;
   const maxTimeoutMs = config.maxTimeoutMs ?? 60_000;
+  const maxRequestBytes = config.maxRequestBytes ?? 1_000_000;
   const maxResponseBytes = config.maxResponseBytes ?? 1_000_000;
   const maxBodyChars = config.maxBodyChars ?? 20_000;
   const maxRedirects = config.maxRedirects ?? 5;
@@ -142,6 +146,7 @@ export function normalizeHttpConfig(
   if (minTimeoutMs > maxTimeoutMs) {
     throw new HttpPolicyError("minTimeoutMs must be <= maxTimeoutMs");
   }
+  assertPositiveInteger("maxRequestBytes", maxRequestBytes);
   assertPositiveInteger("maxResponseBytes", maxResponseBytes);
   assertPositiveInteger("maxBodyChars", maxBodyChars);
   assertNonNegativeInteger("maxRedirects", maxRedirects);
@@ -168,6 +173,7 @@ export function normalizeHttpConfig(
     defaultTimeoutMs: clamp(defaultTimeoutMs, minTimeoutMs, maxTimeoutMs),
     minTimeoutMs,
     maxTimeoutMs,
+    maxRequestBytes,
     maxResponseBytes,
     maxBodyChars,
     maxRedirects,
@@ -232,6 +238,19 @@ function parseIPv4(hostname: string): readonly number[] | null {
   return numbers.every((n) => Number.isInteger(n)) ? numbers : null;
 }
 
+function parseNormalizedIPv4(hostname: string): readonly number[] | null {
+  const host = cleanHostname(hostname);
+  if (isIP(host) !== 4) return null;
+  return parseIPv4(host);
+}
+
+function looksLikeNumericIPv4(hostname: string): boolean {
+  const host = cleanHostname(hostname);
+  return /^(?:0x[0-9a-f]+|0[0-7]+|\d+)(?:\.(?:0x[0-9a-f]+|0[0-7]+|\d+))*$/i.test(
+    host,
+  );
+}
+
 function isPrivateIPv4(parts: readonly number[]): boolean {
   const [a = 0, b = 0] = parts;
   if (a === 0 || a === 10 || a === 127) return true;
@@ -261,9 +280,10 @@ function isPrivateIPv6(hostname: string): boolean {
 export function isPrivateTarget(hostname: string): boolean {
   const host = cleanHostname(hostname);
   if (host === "localhost" || host.endsWith(".localhost")) return true;
-  const ipv4 = parseIPv4(host);
+  const ipv4 = parseNormalizedIPv4(host);
   if (ipv4 !== null) return isPrivateIPv4(ipv4);
-  if (host.includes(":")) return isPrivateIPv6(host);
+  if (isIP(host) === 6) return isPrivateIPv6(host);
+  if (looksLikeNumericIPv4(host)) return true;
   return false;
 }
 

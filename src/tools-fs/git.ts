@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { isAbsolute, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -63,12 +64,16 @@ export async function diffStatus(
   const top = await git(root, ["rev-parse", "--show-toplevel"]);
   if (top === null) return { isGitRepo: false, files: [], truncated: false };
 
+  // N19: canonicalize root for containment check against git-reported paths.
+  const resolvedRoot = resolve(root.trim());
+
   const pathArgs =
     options.paths !== undefined && options.paths.length > 0
       ? ["--", ...options.paths]
       : [];
   const status = await git(root, ["status", "--porcelain=v1", ...pathArgs]);
   if (status === null) return { isGitRepo: false, files: [], truncated: false };
+  const topTrimmed = top.trim();
   const files = status
     .split(/\r?\n/)
     .filter((line) => line.trim() !== "")
@@ -79,6 +84,15 @@ export async function diffStatus(
         .replace(/^.* -> /, "")
         .replaceAll("\\", "/");
       return { path, status: statusCode };
+    })
+    // N19: filter paths that resolve outside the requested root directory.
+    .filter((file) => {
+      if (options.paths !== undefined && options.paths.length > 0) return true;
+      const abs = resolve(topTrimmed, file.path);
+      const rel = relative(resolvedRoot, abs);
+      // A path is inside root iff `relative` doesn't start with `..` and isn't
+      // an absolute path (which indicates a different drive on Windows).
+      return !rel.startsWith("..") && !isAbsolute(rel) && rel !== "";
     });
 
   if (!options.includeDiff || files.length === 0) {

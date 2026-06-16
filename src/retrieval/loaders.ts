@@ -65,13 +65,34 @@ export function staticDocumentLoader(
 export async function loadDocuments(
   loaders: readonly DocumentLoader[],
   ctx?: EngineContext,
+  options?: { readonly maxDocumentChars?: number },
 ): Promise<LoadDocumentsResult> {
+  if (
+    options?.maxDocumentChars !== undefined &&
+    (!Number.isFinite(options.maxDocumentChars) ||
+      !Number.isInteger(options.maxDocumentChars) ||
+      options.maxDocumentChars <= 0)
+  ) {
+    throw new Error("maxDocumentChars must be a finite positive integer");
+  }
   const documents: LoadedDocument[] = [];
   for (const loader of loaders) {
     throwIfAborted(ctx);
     const output = await loader.load(ctx);
     const loaded = await collect(output, ctx);
-    documents.push(...loaded);
+    for (const doc of loaded) {
+      if (
+        options?.maxDocumentChars !== undefined &&
+        doc.content.length > options.maxDocumentChars
+      ) {
+        documents.push({
+          ...doc,
+          content: doc.content.slice(0, options.maxDocumentChars),
+        });
+      } else {
+        documents.push(doc);
+      }
+    }
   }
   return { documents, loaders: loaders.length };
 }

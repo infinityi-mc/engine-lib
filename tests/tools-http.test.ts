@@ -107,6 +107,8 @@ describe("tools-http policy", () => {
       "ftp://example.com/file",
       "https://denied.example/",
       "http://127.0.0.1/",
+      "http://0/",
+      "http://0x7f000001/",
       "https://user:pass@example.com/",
     ]) {
       const res = await run(httpGet, { url });

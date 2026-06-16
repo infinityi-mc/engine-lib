@@ -75,13 +75,16 @@ export async function* translateChatStream(
         };
       }
       if (
-        call.function?.arguments !== undefined &&
-        call.function.arguments !== ""
+        call.id !== undefined ||
+        call.function?.name !== undefined ||
+        (call.function?.arguments !== undefined && call.function.arguments !== "")
       ) {
         yield {
           type: "tool_call_delta",
           index,
-          argumentsTextDelta: call.function.arguments,
+          ...(call.id !== undefined ? { id: call.id } : {}),
+          ...(call.function?.name !== undefined ? { name: call.function.name } : {}),
+          argumentsTextDelta: call.function?.arguments ?? "",
         };
       }
     }

@@ -198,6 +198,13 @@ export function tenantMemoryFilter(tenantId: string): VectorRecordFilter {
   return (record) => record.metadata?.tenantId === tenantId;
 }
 
+function andVectorFilters(
+  first: VectorRecordFilter,
+  second: VectorRecordFilter,
+): VectorRecordFilter {
+  return (record) => first(record) && second(record);
+}
+
 /** Options for {@link memoryContextProvider}. */
 export interface MemoryContextProviderOptions {
   readonly memory: MemoryStore;
@@ -211,6 +218,8 @@ export interface MemoryContextProviderOptions {
   readonly topK?: number;
   readonly minScore?: number;
   readonly filter?: VectorRecordFilter;
+  /** Tenant scope to apply when no explicit filter is supplied. */
+  readonly tenantId?: string;
   /** Heading for the injected context block. Defaults to "Relevant Memory". */
   readonly title?: string;
   /** Invoked after a successful recall so the host can emit `memory.recalled`. */
@@ -249,6 +258,11 @@ export function memoryContextProvider(
     async resolve(ctx, run) {
       const query = await resolveMemoryQuery(options, ctx, run);
       if (query === undefined) return [];
+      const filter =
+        options.filter ??
+        (options.tenantId !== undefined
+          ? tenantMemoryFilter(options.tenantId)
+          : undefined);
       let entries: readonly MemoryEntry[];
       try {
         entries = await options.memory.recall(query, {
@@ -256,7 +270,7 @@ export function memoryContextProvider(
           ...(options.minScore !== undefined
             ? { minScore: options.minScore }
             : {}),
-          ...(options.filter !== undefined ? { filter: options.filter } : {}),
+          ...(filter !== undefined ? { filter } : {}),
         });
       } catch (error) {
         ctx.logger?.warn?.("memory recall failed", {
@@ -309,6 +323,31 @@ export interface MemoryExtractOptions {
  * redacting via `filters` first. A store failure is swallowed (`onFinish` is
  * already isolated) so memory extraction never fails the run.
  */
+export function createTenantScopedMemory(
+  memory: MemoryStore,
+  tenantId: string,
+): MemoryStore {
+  const tenantFilter = tenantMemoryFilter(tenantId);
+  return {
+    async store(entry: MemoryEntry): Promise<void> {
+      await memory.store({
+        ...entry,
+        metadata: { ...(entry.metadata ?? {}), tenantId },
+      });
+    },
+    recall(
+      query: string,
+      options?: RecallOptions,
+    ): Promise<readonly MemoryEntry[]> {
+      const filter =
+        options?.filter !== undefined
+          ? andVectorFilters(tenantFilter, options.filter)
+          : tenantFilter;
+      return memory.recall(query, { ...(options ?? {}), filter });
+    },
+  };
+}
+
 export function memoryExtractor(
   options: MemoryExtractOptions,
 ): (

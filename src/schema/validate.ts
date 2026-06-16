@@ -53,7 +53,7 @@ export function validateJsonSchema(
       if (input !== null) issues.push(issue(path, "expected null"));
       break;
     case "number":
-      if (typeof input !== "number" || Number.isNaN(input)) {
+      if (typeof input !== "number" || !Number.isFinite(input)) {
         issues.push(issue(path, "expected number"));
       }
       break;
@@ -66,6 +66,9 @@ export function validateJsonSchema(
       if (!Array.isArray(input)) {
         issues.push(issue(path, "expected array"));
         break;
+      }
+      if (node.maxItems !== undefined && input.length > node.maxItems) {
+        issues.push(issue(path, `expected at most ${node.maxItems} items`));
       }
       if (node.items !== undefined) {
         input.forEach((element, index) => {
@@ -87,7 +90,7 @@ export function validateJsonSchema(
       const properties = node.properties ?? {};
       const required = node.required ?? [];
       for (const key of required) {
-        if (input[key] === undefined) {
+        if (!Object.hasOwn(input, key) || input[key] === undefined) {
           issues.push(issue([...path, key], "required"));
         }
       }
@@ -100,7 +103,7 @@ export function validateJsonSchema(
       }
       if (node.additionalProperties === false) {
         for (const key of Object.keys(input)) {
-          if (!(key in properties)) {
+          if (!Object.hasOwn(properties, key)) {
             issues.push(issue([...path, key], "unexpected property"));
           }
         }

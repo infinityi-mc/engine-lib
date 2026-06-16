@@ -1,6 +1,6 @@
 import {
-  appendFile,
   mkdir,
+  open,
   readdir,
   readFile,
   rename,
@@ -413,7 +413,13 @@ export class FilesystemJsonlSessionStore implements SessionStore {
 
   private async appendRecord(id: string, record: JsonlRecord): Promise<void> {
     await this.ensureDirectory();
-    await appendFile(this.pathFor(id), `${JSON.stringify(record)}\n`, "utf8");
+    const file = await open(this.pathFor(id), "a");
+    try {
+      await file.writeFile(`${JSON.stringify(record)}\n`, "utf8");
+      await file.sync();
+    } finally {
+      await file.close();
+    }
   }
 
   private async replayFile(
@@ -442,7 +448,12 @@ export class FilesystemJsonlSessionStore implements SessionStore {
     for (const rawLine of text.split(/\r?\n/)) {
       const line = rawLine.trim();
       if (line.length === 0) continue;
-      const record = JSON.parse(line) as JsonlRecord;
+      let record: JsonlRecord;
+      try {
+        record = JSON.parse(line) as JsonlRecord;
+      } catch {
+        continue;
+      }
       if (id === undefined) id = record.id;
       if (record.id !== id) continue;
       if (createdAt === undefined) createdAt = record.at;
@@ -513,7 +524,13 @@ export class FilesystemJsonlSessionStore implements SessionStore {
         : {}),
     };
     const tmp = `${path}.tmp-${process.pid}-${Date.now()}`;
-    await writeFile(tmp, `${JSON.stringify(record)}\n`, "utf8");
+    const file = await open(tmp, "w");
+    try {
+      await file.writeFile(`${JSON.stringify(record)}\n`, "utf8");
+      await file.sync();
+    } finally {
+      await file.close();
+    }
     await rename(tmp, path);
   }
 }

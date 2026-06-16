@@ -14,6 +14,9 @@ import type {
   SourceLocation,
 } from "./types";
 
+/** N23: conservative default budget (tokens) when no window or explicit cap is set. */
+const DEFAULT_RETRIEVAL_BUDGET = 4_096;
+
 function textOf(message: Message): string {
   return message.content
     .filter((part): part is TextPart => part.type === "text")
@@ -102,7 +105,7 @@ function availableBudget(
 ): number | undefined {
   if (options.maxContextTokens !== undefined)
     return Math.max(0, options.maxContextTokens);
-  if (run?.contextWindow === undefined) return undefined;
+  if (run?.contextWindow === undefined) return DEFAULT_RETRIEVAL_BUDGET;
   const reserveTokens =
     options.reserveTokens ??
     Math.min(512, Math.floor(run.contextWindow.maxTokens * 0.1));
