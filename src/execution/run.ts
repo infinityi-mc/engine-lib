@@ -558,6 +558,10 @@ async function* executeAgent(
       reportUsage: (u) => {
         usage = addUsage(usage, u);
       },
+      ...(opts.maxSteps !== undefined ? { maxSteps: opts.maxSteps } : {}),
+      ...(opts.maxHandoffs !== undefined
+        ? { maxHandoffs: opts.maxHandoffs }
+        : {}),
     };
 
     const tool: ToolDefinition | undefined = active.registry.get(call.name);
@@ -1601,13 +1605,17 @@ async function* executeAgent(
         yield { type: "agent.handoff", from: from.name, to: target.name };
         await from.hooks?.onHandoff?.({ from, to: target }, engineCtx);
 
-        active = activate(target);
-        handoffTrail.push(target.name);
-
         // Inject the new agent's instructions as an additional system message so
         // it steers subsequent turns without rewriting the original system turn
         // (history-preserving). Like the initial instructions, this is derived
         // from agent config and not persisted to the session.
+        await from.hooks?.onFinish?.(
+          { output: extractText(finalMessage), usage },
+          engineCtx,
+        );
+        active = activate(target);
+        handoffTrail.push(target.name);
+
         const nextInstructions = await resolveInstructions(
           active.agent,
           engineCtx,
@@ -1615,6 +1623,10 @@ async function* executeAgent(
         if (nextInstructions !== undefined && nextInstructions !== "") {
           messages.push(system(nextInstructions));
         }
+        await active.agent.hooks?.onStart?.(
+          { agent: active.agent, messages: [...messages] },
+          engineCtx,
+        );
       }
 
       if (

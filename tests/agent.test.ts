@@ -70,6 +70,15 @@ describe("defineAgent", () => {
     expect(() => defineAgent({ name: "  ", provider })).toThrow(TypeError);
   });
 
+  it("rejects names that cannot be used in handoff tool names", () => {
+    expect(() => defineAgent({ name: "bad.name", provider })).toThrow(
+      /letters, numbers, underscores, or hyphens/,
+    );
+    expect(() => defineAgent({ name: "bad name", provider })).toThrow(
+      /letters, numbers, underscores, or hyphens/,
+    );
+  });
+
   it("throws on duplicate tool names at definition time", () => {
     const dup = defineTool({
       name: "echo",

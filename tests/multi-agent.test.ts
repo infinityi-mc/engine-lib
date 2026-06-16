@@ -137,6 +137,72 @@ describe("asTool — sub-agent-as-tool", () => {
     );
   });
 
+  it("forwards parent step caps to the child run", async () => {
+    const child = defineAgent({
+      name: "researcher",
+      provider: scriptedProvider([
+        toolCallResult([{ id: "n1", name: "noop", arguments: {} }]),
+        toolCallResult([{ id: "n2", name: "noop", arguments: {} }]),
+        textResult("too late"),
+      ]),
+      tools: [noop],
+    });
+    const parent = defineAgent({
+      name: "lead",
+      provider: scriptedProvider([
+        toolCallResult([
+          { id: "c1", name: "researcher", arguments: { input: "go" } },
+        ]),
+        textResult("done"),
+      ]),
+      tools: [asTool(child)],
+    });
+
+    const result = await runAgent(parent, { input: "go", maxSteps: 2 });
+    const content = result.messages
+      .flatMap((message) => message.content)
+      .find((part) => part.type === "tool_result");
+
+    expect(content?.type === "tool_result" && content.isError).toBe(true);
+    expect(
+      JSON.stringify(content?.type === "tool_result" && content.content),
+    ).toContain("exceeded max steps (2)");
+  });
+
+  it("forwards parent handoff caps to the child run", async () => {
+    const specialist = defineAgent({
+      name: "specialist",
+      provider: scriptedProvider([textResult("too late")]),
+    });
+    const child = defineAgent({
+      name: "router_child",
+      handoffs: [specialist],
+      provider: scriptedProvider([
+        toolCallResult([transfer("h1", "specialist")]),
+      ]),
+    });
+    const parent = defineAgent({
+      name: "lead",
+      provider: scriptedProvider([
+        toolCallResult([
+          { id: "c1", name: "router_child", arguments: { input: "go" } },
+        ]),
+        textResult("done"),
+      ]),
+      tools: [asTool(child)],
+    });
+
+    const result = await runAgent(parent, { input: "go", maxHandoffs: 0 });
+    const content = result.messages
+      .flatMap((message) => message.content)
+      .find((part) => part.type === "tool_result");
+
+    expect(content?.type === "tool_result" && content.isError).toBe(true);
+    expect(
+      JSON.stringify(content?.type === "tool_result" && content.content),
+    ).toContain("exceeded max handoffs (0)");
+  });
+
   it("runs the child, feeds its output back, and propagates usage + agent.child events", async () => {
     const child = defineAgent({
       name: "researcher",
@@ -588,6 +654,42 @@ describe("handoff — delegation in the run loop", () => {
       "log",
       "transfer_to_billing",
     ]);
+  });
+
+  it("fires finish and start hooks when handing off", async () => {
+    const calls: string[] = [];
+    const specialist = defineAgent({
+      name: "billing",
+      hooks: {
+        onStart: ({ agent, messages }) => {
+          calls.push(`${agent.name}:start:${messages.length}`);
+        },
+        onFinish: () => {
+          calls.push("billing:finish");
+        },
+      },
+      provider: scriptedProvider([textResult("billing done")]),
+    });
+    const router = defineAgent({
+      name: "triage",
+      hooks: {
+        onStart: () => {
+          calls.push("triage:start");
+        },
+        onFinish: () => {
+          calls.push("triage:finish");
+        },
+      },
+      handoffs: [specialist],
+      provider: scriptedProvider([toolCallResult([transfer("h1", "billing")])]),
+    });
+
+    await runAgent(router, { input: "go" });
+
+    expect(calls[0]).toBe("triage:start");
+    expect(calls).toContain("triage:finish");
+    expect(calls.some((call) => call.startsWith("billing:start:"))).toBe(true);
+    expect(calls.at(-1)).toBe("billing:finish");
   });
 
   it("caps ping-pong handoffs with MaxHandoffsExceededError", async () => {
