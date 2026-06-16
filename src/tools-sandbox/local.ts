@@ -32,6 +32,7 @@ export interface LocalSandboxOptions {
 export function localSandbox(opts: LocalSandboxOptions = {}): ToolSandbox {
   const allowNetworkDowngrade = opts.allowNetworkDowngrade ?? false;
   return {
+    ...(allowNetworkDowngrade ? { networkDowngrade: true } : {}),
     async execute(
       command: string,
       args: readonly string[],

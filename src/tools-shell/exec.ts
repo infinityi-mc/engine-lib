@@ -174,6 +174,7 @@ export async function execCommand(opts: ExecOptions): Promise<CommandResult> {
       exitCode: proc.exitCode,
       signal: proc.signalCode ?? null,
       timedOut,
+      aborted: abortKill,
       durationMs: Date.now() - startedAt,
       stdout: out.text,
       stderr: err.text,

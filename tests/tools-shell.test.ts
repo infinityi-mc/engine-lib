@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { RunBridgeEvent } from "../src/execution/types";
@@ -11,6 +13,7 @@ import type {
 import {
   classifyCommand,
   filterEnv,
+  normalizeAllowedCwds,
   resolveCwd,
 } from "../src/tools-shell/policy";
 import { shellTools } from "../src/tools-shell/index";
@@ -63,6 +66,25 @@ describe("resolveCwd", () => {
   it("rejects paths that escape every root", () => {
     expect(resolveCwd("..", [ROOT])).toBeNull();
     expect(resolveCwd("/etc", [ROOT])).toBeNull();
+  });
+  it("rejects cwd escapes through symlinks", () => {
+    const base = mkdtempSync(join(tmpdir(), "engine-shell-policy-"));
+    const outside = mkdtempSync(join(tmpdir(), "engine-shell-outside-"));
+    try {
+      try {
+        symlinkSync(outside, join(base, "link"), "dir");
+      } catch (err) {
+        if (err instanceof Error && "code" in err && err.code === "EPERM") return;
+        throw err;
+      }
+      expect(resolveCwd("link", normalizeAllowedCwds([base]))).toBeNull();
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+  it("returns the real path for allowed cwd symlinks", () => {
+    expect(resolveCwd(undefined, [ROOT])).toBe(realpathSync(ROOT));
   });
 });
 
@@ -237,6 +259,7 @@ describe("run_command", () => {
     expect(res.ok).toBe(true);
     const out = (res as { content: CommandResult }).content;
     expect(out.timedOut).toBe(true);
+    expect(out.aborted).toBe(false);
     expect(out.exitCode).toBeNull();
   });
 
@@ -410,6 +433,7 @@ describe("sandbox routing", () => {
             exitCode: 0,
             signal: null,
             timedOut: false,
+            aborted: false,
             durationMs: 0,
             stdoutTruncated: false,
             stderrTruncated: false,

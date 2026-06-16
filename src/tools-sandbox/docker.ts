@@ -16,9 +16,10 @@
  * @module
  */
 
+import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join, parse, resolve } from "node:path";
 
 import { execCommand } from "../tools-shell/exec";
 import type { SandboxOptions, SandboxResult, ToolSandbox } from "./types";
@@ -37,12 +38,19 @@ export interface DockerSandboxHardeningOptions {
 export interface DockerRunArgsOptions {
   readonly extraArgs?: readonly string[];
   readonly envFile?: string;
+  readonly containerName?: string;
   readonly hardening?: DockerSandboxHardeningOptions;
 }
 
 /** Options for {@link dockerSandbox}. */
 export interface DockerSandboxOptions {
-  /** Container image to run the command in. */
+  /**
+   * Container image to run the command in.
+   *
+   * Security-sensitive callers should pin this to an immutable digest, for
+   * example `alpine@sha256:...`, rather than a mutable tag such as `alpine:3`.
+   * The sandbox intentionally does not resolve or verify image tags itself.
+   */
   readonly image: string;
   /** Container runtime CLI. Defaults to `"docker"`. */
   readonly runtime?: "docker" | "podman";
@@ -56,6 +64,31 @@ function pathOf(
   path: string | { readonly path: string; readonly writable?: boolean },
 ): string {
   return typeof path === "string" ? path : path.path;
+}
+
+function normalizeHostPath(hostPath: string): string {
+  if (hostPath.trim() === "") throw new Error("sandbox path must be non-empty");
+  const normalized = resolve(hostPath);
+  const parsed = parse(normalized);
+  if (normalized === parsed.root) {
+    throw new Error(`refusing to mount filesystem root: ${hostPath}`);
+  }
+  const lower = normalized.replace(/\\/g, "/").toLowerCase();
+  const sensitiveRoots = ["/proc", "/sys", "/etc", "/var/run"];
+  if (sensitiveRoots.some((root) => lower === root || lower.startsWith(`${root}/`))) {
+    throw new Error(`refusing to mount sensitive host path: ${hostPath}`);
+  }
+  if (basename(lower) === "docker.sock" || lower.endsWith("/docker.sock")) {
+    throw new Error(`refusing to mount Docker socket: ${hostPath}`);
+  }
+  return normalized;
+}
+
+function normalizeMount(
+  path: string | { readonly path: string; readonly writable?: boolean },
+): string | { readonly path: string; readonly writable?: boolean } {
+  const normalized = normalizeHostPath(pathOf(path));
+  return typeof path === "string" ? normalized : { ...path, path: normalized };
 }
 
 function containerPath(hostPath: string, index: number): string {
@@ -110,6 +143,7 @@ export function buildRunArgs(
 ): string[] {
   let extraArgs: readonly string[];
   let envFile: string | undefined;
+  let containerName: string | undefined;
   let hardening: DockerSandboxHardeningOptions | undefined;
   if (Array.isArray(runOptions)) {
     extraArgs = runOptions as readonly string[];
@@ -117,23 +151,26 @@ export function buildRunArgs(
     const opts = runOptions as DockerRunArgsOptions;
     extraArgs = opts.extraArgs ?? [];
     envFile = opts.envFile;
+    containerName = opts.containerName;
     hardening = opts.hardening;
   }
   const args: string[] = ["run", "--rm", "-i"];
+  if (containerName !== undefined) args.push("--name", containerName);
   if (!options.networkAccess) args.push("--network", "none");
   if (options.memoryLimitMb !== undefined)
     args.push("--memory", `${options.memoryLimitMb}m`);
   if (options.cpuLimit !== undefined)
     args.push("--cpus", String(options.cpuLimit));
   applyHardening(args, hardening);
-  for (const [index, path] of options.filesystemPaths.entries()) {
+  const filesystemPaths = options.filesystemPaths.map(normalizeMount);
+  for (const [index, path] of filesystemPaths.entries()) {
     args.push("-v", mountSpec(path, index));
   }
   // Run inside the first mounted path when present, else the requested cwd.
   const workdir =
-    options.filesystemPaths[0] !== undefined
-      ? containerPath(pathOf(options.filesystemPaths[0]), 0)
-      : containerPath(options.cwd, 0);
+    filesystemPaths[0] !== undefined
+      ? containerPath(pathOf(filesystemPaths[0]), 0)
+      : containerPath(normalizeHostPath(options.cwd), 0);
   args.push("-w", workdir);
   if (envFile !== undefined) args.push("--env-file", envFile);
   args.push(...extraArgs);
@@ -156,6 +193,7 @@ export function dockerSandbox(options: DockerSandboxOptions): ToolSandbox {
     ): Promise<SandboxResult> {
       const envDir = await mkdtemp(join(tmpdir(), "engine-sandbox-"));
       const envFile = join(envDir, "env");
+      const containerName = `engine-sandbox-${randomUUID()}`;
       try {
         const envContent = Object.entries(sandboxOptions.env)
           .map(([key, value]) => {
@@ -173,7 +211,7 @@ export function dockerSandbox(options: DockerSandboxOptions): ToolSandbox {
           command,
           commandArgs,
           sandboxOptions,
-          { extraArgs, envFile, hardening: options.hardening },
+          { extraArgs, envFile, containerName, hardening: options.hardening },
         );
         const result = await execCommand({
           command: runtime,
@@ -198,6 +236,18 @@ export function dockerSandbox(options: DockerSandboxOptions): ToolSandbox {
           cwd: sandboxOptions.cwd,
         };
       } finally {
+        try {
+          await execCommand({
+            command: runtime,
+            args: ["rm", "-f", containerName],
+            cwd: sandboxOptions.cwd,
+            env: {},
+            timeoutMs: 5_000,
+            maxOutputBytes: 0,
+          });
+        } catch {
+          // Best-effort sweep for containers left behind when the run CLI is killed.
+        }
         await rm(envDir, { recursive: true, force: true });
       }
     },

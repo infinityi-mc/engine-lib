@@ -2,13 +2,14 @@
  * Pure policy functions for the `tools-shell` module: working-directory
  * allowlisting, environment filtering, and command allow/deny classification.
  *
- * Everything here is side-effect-free and independently unit-testable — no
- * spawning, no filesystem access. The tool's `execute` composes these gates
+ * Everything here is independently unit-testable — no spawning. The tool's
+ * `execute` composes these gates
  * before any process is created.
  *
  * @module
  */
 
+import { realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 
 import { ShellPolicyError } from "../errors";
@@ -27,7 +28,7 @@ export function normalizeAllowedCwds(allowedCwds: readonly string[]): string[] {
         `shellTools: allowedCwds entry must be an absolute path, got ${JSON.stringify(dir)}`,
       );
     }
-    return resolve(dir);
+    return realpathSync(resolve(dir));
   });
 }
 
@@ -38,18 +39,21 @@ export function normalizeAllowedCwds(allowedCwds: readonly string[]): string[] {
  * root when given as a relative path, so a bare `"."` maps into the sandbox
  * rather than the host process cwd.
  *
- * Containment is checked on **logical paths only** — symlinks are not resolved.
- * A symlink placed inside an allowed root that points outside it (e.g.
- * `/root/link -> /etc`) would pass this check. Hosts in security-sensitive
- * contexts should pre-resolve their `allowedCwds` with `fs.realpathSync` and
- * avoid placing outward-pointing symlinks inside their sandbox roots.
+ * Containment is checked against filesystem realpaths so symlinks inside an
+ * allowed root cannot redirect a command cwd outside the allowlist.
  */
 export function resolveCwd(
   requested: string | undefined,
   allowedRoots: readonly string[],
 ): string | null {
   const base = allowedRoots[0]!;
-  const abs = requested === undefined ? base : resolve(base, requested);
+  const logical = requested === undefined ? base : resolve(base, requested);
+  let abs: string;
+  try {
+    abs = realpathSync(logical);
+  } catch {
+    return null;
+  }
   for (const root of allowedRoots) {
     const rel = relative(root, abs);
     // Inside `root` iff the relative path doesn't climb out (`..`) and isn't absolute.

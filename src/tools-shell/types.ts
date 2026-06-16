@@ -45,6 +45,8 @@ export interface CommandResult {
   readonly signal: string | null;
   /** `true` when the process was killed because it exceeded its timeout. */
   readonly timedOut: boolean;
+  /** `true` when the process was killed by the caller's cancellation signal. */
+  readonly aborted: boolean;
   /** Wall-clock duration in milliseconds. */
   readonly durationMs: number;
   /** Captured stdout (truncated to {@link ShellToolsConfig.maxOutputBytes}). */

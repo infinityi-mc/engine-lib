@@ -26,6 +26,7 @@ import {
   emitExecError,
   emitExecStart,
   emitPolicy,
+  emitSandboxDowngrade,
 } from "./events";
 import { execCommand } from "./exec";
 import {
@@ -214,6 +215,10 @@ export function shellTools(config: ShellToolsConfig): ShellTools {
         // Execute.
         const env = filterEnv(process.env, config.env);
         emitExecStart(ctx, req);
+        const networkAccess = config.networkAccess ?? true;
+        if (networkAccess === false && config.sandbox?.networkDowngrade === true) {
+          emitSandboxDowngrade(ctx, req);
+        }
         let result;
         try {
           if (config.sandbox !== undefined) {
@@ -227,7 +232,7 @@ export function shellTools(config: ShellToolsConfig): ShellTools {
               cwd: req.cwd,
               env,
               timeoutMs,
-              networkAccess: config.networkAccess ?? true,
+              networkAccess,
               filesystemPaths: sandboxFilesystemPaths,
               maxOutputBytes,
               ...(config.memoryLimitMb !== undefined

@@ -136,6 +136,10 @@ export interface ConformanceFixtures {
    * `capabilities.streaming` — the battery cross-checks the two.
    */
   readonly stream?: { readonly sse: string; readonly expectText: string };
+  /** A stream that omits the provider's normal terminal event but should still finish. */
+  readonly streamingError?: { readonly sse: string; readonly expectText: string };
+  /** Whether the adapter should wrap a mid-body stream failure as ProviderError. */
+  readonly truncatedBody?: true;
 }
 
 /** Options for {@link runProviderConformance}. */
@@ -275,6 +279,49 @@ export function runProviderConformance(
           .join("");
         expect(text).toBe(streamFixture.expectText);
       });
+
+      const streamingErrorFixture = fixtures.streamingError;
+      if (streamingErrorFixture !== undefined) {
+        it("emits a fallback finish when the stream omits its terminal event", async () => {
+          const events = await collect(
+            makeProvider({ fetch: sseFetch(streamingErrorFixture.sse).fetch }).stream(
+              REQUEST,
+            ),
+          );
+
+          expect(events[0]?.type).toBe("message_start");
+          expect(events[events.length - 1]?.type).toBe("finish");
+          const text = events
+            .filter(
+              (e): e is Extract<StreamEvent, { type: "text_delta" }> =>
+                e.type === "text_delta",
+            )
+            .map((e) => e.text)
+            .join("");
+          expect(text).toBe(streamingErrorFixture.expectText);
+        });
+      }
+
+      if (fixtures.truncatedBody === true) {
+        it("wraps a truncated streaming body as ProviderError", async () => {
+          const encoder = new TextEncoder();
+          const body = new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(encoder.encode(streamFixture.sse));
+              controller.error(new Error("network drop"));
+            },
+          });
+          const fetchImpl = (async () =>
+            new Response(body, {
+              status: 200,
+              headers: { "content-type": "text/event-stream" },
+            })) as unknown as FetchFn;
+
+          await expect(
+            collect(makeProvider({ fetch: fetchImpl }).stream(REQUEST)),
+          ).rejects.toBeInstanceOf(ProviderError);
+        });
+      }
     } else {
       it.skip("streaming (no stream fixture provided)", () => {});
     }

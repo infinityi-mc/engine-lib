@@ -78,6 +78,14 @@ runProviderConformance("openai", {
       ].join(""),
       expectText: "hi",
     },
+    streamingError: {
+      sse: [
+        `data: ${JSON.stringify({ type: "response.created" })}\n\n`,
+        `data: ${JSON.stringify({ type: "response.output_text.delta", delta: "hi" })}\n\n`,
+      ].join(""),
+      expectText: "hi",
+    },
+    truncatedBody: true,
   },
 });
 
@@ -133,6 +141,18 @@ runProviderConformance("anthropic", {
       ].join(""),
       expectText: "hi",
     },
+    streamingError: {
+      sse: [
+        `data: ${JSON.stringify({ type: "message_start", message: { model: "claude" } })}\n\n`,
+        `data: ${JSON.stringify({
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "text_delta", text: "hi" },
+        })}\n\n`,
+      ].join(""),
+      expectText: "hi",
+    },
+    truncatedBody: true,
   },
 });
 
@@ -186,6 +206,11 @@ runProviderConformance("google", {
       ].join(""),
       expectText: "hi",
     },
+    streamingError: {
+      sse: `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "hi" }] } }] })}\n\n`,
+      expectText: "hi",
+    },
+    truncatedBody: true,
   },
 });
 
@@ -244,5 +269,10 @@ runProviderConformance("openai-compatible", {
       ].join(""),
       expectText: "hi",
     },
+    streamingError: {
+      sse: `data: ${JSON.stringify({ model: "m", choices: [{ delta: { content: "hi" } }] })}\n\n`,
+      expectText: "hi",
+    },
+    truncatedBody: true,
   },
 });
