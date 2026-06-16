@@ -29,6 +29,12 @@ export interface FilesystemToolsConfig {
   /**
    * Optional host hook for validation commands requested by edit tools.
    * When omitted, requested commands are reported as skipped rather than run.
+   *
+   * SECURITY: `command` is model-supplied text and must be treated as untrusted.
+   * Hosts must not pass it to a shell or command runner without their own
+   * allowlist, argument parsing, sandboxing, approval flow, and timeout/resource
+   * limits. A safe host should execute only pre-approved validation commands or
+   * reject the request.
    */
   readonly runValidationCommand?: (
     command: string,

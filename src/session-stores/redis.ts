@@ -26,6 +26,8 @@ import { SESSION_STORE_SCHEMA_VERSION } from "./versioning";
 export interface RedisSessionStoreTransaction {
   del(...keys: string[]): RedisSessionStoreTransaction;
   set(key: string, value: string): RedisSessionStoreTransaction;
+  pExpire?(key: string, ttlMs: number): RedisSessionStoreTransaction;
+  pexpire?(key: string, ttlMs: number): RedisSessionStoreTransaction;
   rPush?(key: string, ...values: string[]): RedisSessionStoreTransaction;
   rpush?(key: string, ...values: string[]): RedisSessionStoreTransaction;
   exec(): Promise<unknown> | unknown;
@@ -386,6 +388,17 @@ export class RedisSessionStore implements SessionStore {
     if (!Number.isFinite(ttlMs) || ttlMs < 0) {
       throw new Error("ttlMs must be a non-negative finite number");
     }
+    const tx = this.client.multi?.();
+    if (
+      tx !== undefined &&
+      (tx.pExpire !== undefined || tx.pexpire !== undefined)
+    ) {
+      this.pExpireTransaction(tx, this.messagesKey(id), ttlMs);
+      this.pExpireTransaction(tx, this.metadataKey(id), ttlMs);
+      this.pExpireTransaction(tx, this.existsKey(id), ttlMs);
+      await tx.exec();
+      return;
+    }
     await Promise.all([
       this.pExpire(this.messagesKey(id), ttlMs),
       this.pExpire(this.metadataKey(id), ttlMs),
@@ -393,6 +406,7 @@ export class RedisSessionStore implements SessionStore {
     ]);
   }
 
+  /** Redis owns TTL expiry; this store has no timestamp index to sweep. */
   purgeExpired(_options: PurgeExpiredOptions = {}): Promise<string[]> {
     return Promise.resolve([]);
   }
@@ -472,6 +486,24 @@ export class RedisSessionStore implements SessionStore {
     }
     throw new Error(
       "Redis session store client must implement pExpire/pexpire for setExpiry()",
+    );
+  }
+
+  private pExpireTransaction(
+    tx: RedisSessionStoreTransaction,
+    key: string,
+    ttlMs: number,
+  ): void {
+    if (tx.pExpire !== undefined) {
+      tx.pExpire(key, ttlMs);
+      return;
+    }
+    if (tx.pexpire !== undefined) {
+      tx.pexpire(key, ttlMs);
+      return;
+    }
+    throw new Error(
+      "Redis session store transaction must implement pExpire/pexpire for setExpiry()",
     );
   }
 

@@ -39,12 +39,20 @@ export interface CommandResult {
   readonly command: string;
   readonly args: readonly string[];
   readonly cwd: string;
+  /** Effective timeout in milliseconds for this execution. */
+  readonly timeoutMs: number;
+  /** Whether execution was delegated to a configured sandbox boundary. */
+  readonly sandboxed: boolean;
+  /** Native shell policy decision that allowed this execution to start. */
+  readonly policyDecision: "allow";
   /** Process exit code, or `null` when killed by a signal (e.g. timeout). */
   readonly exitCode: number | null;
   /** Signal that killed the process, or `null`. */
   readonly signal: string | null;
   /** `true` when the process was killed because it exceeded its timeout. */
   readonly timedOut: boolean;
+  /** `true` when the process was killed by the caller's cancellation signal. */
+  readonly aborted: boolean;
   /** Wall-clock duration in milliseconds. */
   readonly durationMs: number;
   /** Captured stdout (truncated to {@link ShellToolsConfig.maxOutputBytes}). */
@@ -63,8 +71,16 @@ export type CommandPattern = string | RegExp;
 /** Allow/deny rules for which commands may run. Deny always wins. */
 export interface ShellPolicy {
   /**
+   * Program-name rules matched against argv[0] only. Prefer this for simple
+   * command allowlists such as `git`; `allow` regexes inspect the full argv
+   * string and do not make arguments like `git -c ...` safe by themselves.
+   */
+  readonly argv0?: readonly CommandPattern[];
+  /**
    * If present, a command must match at least one entry to be permitted.
    * Omitted → all commands are permitted unless denied.
+   * String entries match argv[0] exactly; regex entries match the joined
+   * command line including arguments.
    */
   readonly allow?: readonly CommandPattern[];
   /** A command matching any entry is rejected, even if also allowed. */

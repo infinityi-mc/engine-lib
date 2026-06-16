@@ -35,6 +35,22 @@ export const defaultRedactionPatterns: readonly RedactionPattern[] = [
   { pattern: /\b\d{3}-\d{2}-\d{4}\b/g, replacement: REDACTED },
   { pattern: /\b(?:\d[ -]*?){13,19}\b/g, replacement: REDACTED },
   {
+    pattern: /authorization\s*:\s*bearer\s+[^\s,;]+/gi,
+    replacement: REDACTED,
+  },
+  {
+    pattern: /\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g,
+    replacement: REDACTED,
+  },
+  {
+    pattern:
+      /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+    replacement: REDACTED,
+  },
+  { pattern: /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g, replacement: REDACTED },
+  { pattern: /\bAKIA[0-9A-Z]{16}\b/g, replacement: REDACTED },
+  { pattern: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g, replacement: REDACTED },
+  {
     pattern: /\b(?:api[_-]?key|token|secret|password)\s*[:=]\s*[^\s,;]+/gi,
     replacement: REDACTED,
   },
@@ -99,6 +115,10 @@ function redactSensitive(value: unknown, names: ReadonlySet<string>): unknown {
   return out;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export function schemaSensitiveRedactor(
   fieldNames: readonly string[] = [
     "password",
@@ -111,14 +131,22 @@ export function schemaSensitiveRedactor(
   ],
 ): ContentFilter {
   const names = new Set(fieldNames.map((name) => name.toLowerCase()));
+  const fields = fieldNames.map(escapeRegExp).join("|");
+  const jsonField = new RegExp(
+    `"([^"]*(?:${fields})[^"]*)"\\s*:\\s*"[^"]*"`,
+    "gi",
+  );
+  const assignmentField = new RegExp(
+    `\\b(?:${fields})\\s*[:=]\\s*[^\\s,;]+`,
+    "gi",
+  );
   return (content) => {
     try {
       return JSON.stringify(redactSensitive(JSON.parse(content), names));
     } catch {
-      return content.replace(
-        /"([^"]*(?:password|secret|token|api[_-]?key)[^"]*)"\s*:\s*"[^"]*"/gi,
-        (_match, key: string) => `"${key}":"${REDACTED}"`,
-      );
+      return content
+        .replace(jsonField, (_match, key: string) => `"${key}":"${REDACTED}"`)
+        .replace(assignmentField, REDACTED);
     }
   };
 }

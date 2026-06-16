@@ -8,7 +8,15 @@ import { InMemorySessionStore } from "../src/session/index";
 import { mockProvider } from "../src/testing/index";
 
 /** A minimal lifecycle context for driving hooks directly. */
-const ctx = {
+const ctx: {
+  signal: AbortSignal;
+  logger: {
+    debug(): void;
+    info(): void;
+    warn(): void;
+    error(...args: unknown[]): void;
+  };
+} = {
   signal: new AbortController().signal,
   logger: { debug() {}, info() {}, warn() {}, error() {} },
 };
@@ -73,6 +81,22 @@ describe("agentRuntimeComponent — config validation on start", () => {
     await component.start?.(ctx);
     expect(probed).toBe(false);
   });
+
+  it("starts only once", async () => {
+    let probes = 0;
+    const component = agentRuntimeComponent({
+      providers: [mockProvider({ name: "p" })],
+      probe: () => {
+        probes++;
+      },
+      probeOnStart: true,
+    });
+
+    await component.start?.(ctx);
+    await component.start?.(ctx);
+
+    expect(probes).toBe(1);
+  });
 });
 
 describe("agentRuntimeComponent — healthcheck", () => {
@@ -125,6 +149,42 @@ describe("agentRuntimeComponent — stop", () => {
     });
     await component.stop?.(ctx);
     expect(closed).toBe(true);
+  });
+
+  it("stops only once", async () => {
+    let stops = 0;
+    const component = agentRuntimeComponent({
+      onStop: () => {
+        stops++;
+      },
+    });
+
+    await component.stop?.(ctx);
+    await component.stop?.(ctx);
+
+    expect(stops).toBe(1);
+  });
+
+  it("logs onStop failures without throwing", async () => {
+    let logged = false;
+    const component = agentRuntimeComponent({
+      onStop: () => {
+        throw new Error("close failed");
+      },
+    });
+
+    await expect(
+      component.stop?.({
+        ...ctx,
+        logger: {
+          ...ctx.logger,
+          error: () => {
+            logged = true;
+          },
+        },
+      }),
+    ).resolves.toBeUndefined();
+    expect(logged).toBe(true);
   });
 });
 

@@ -207,7 +207,7 @@ export function eventFields(
       return {
         runId: event.runId,
         name: event.error.name,
-        message: event.error.message,
+        code: event.error.constructor.name,
       };
     case "agent.child":
       return {
@@ -343,7 +343,7 @@ export function eventPayload(event: RunEvent): Record<string, unknown> {
       return {
         runId: event.runId,
         name: event.error.name,
-        message: event.error.message,
+        code: event.error.constructor.name,
       };
     case "agent.child":
       return {

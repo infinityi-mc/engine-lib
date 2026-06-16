@@ -9,6 +9,7 @@
  */
 
 import { isIP } from "node:net";
+import { domainToASCII } from "node:url";
 
 import type { HeaderEntry, HostPattern, HttpToolsConfig } from "./types";
 
@@ -191,23 +192,27 @@ export function clamp(value: number, min: number, max: number): number {
 }
 
 function cleanHostname(hostname: string): string {
-  return hostname
-    .toLowerCase()
+  return domainToASCII(hostname.toLowerCase())
     .replace(/^\[/, "")
     .replace(/\]$/, "")
     .replace(/\.$/, "");
 }
 
 function cleanHost(host: string): string {
-  return host.toLowerCase().replace(/\.$/, "");
+  const value = host.toLowerCase().replace(/\.$/, "");
+  const portStart = value.lastIndexOf(":");
+  if (portStart > -1 && !value.includes("]")) {
+    return `${domainToASCII(value.slice(0, portStart))}${value.slice(portStart)}`;
+  }
+  return domainToASCII(value);
 }
 
 function parsePatternHost(pattern: string): string {
   const trimmed = pattern.trim().toLowerCase();
   if (/^[a-z][a-z0-9+.-]*:\/\//.test(trimmed)) {
-    return new URL(trimmed).host.toLowerCase();
+    return cleanHost(new URL(trimmed).host);
   }
-  return trimmed.replace(/\.$/, "");
+  return cleanHost(trimmed);
 }
 
 /** Match a URL against a host policy pattern. */
@@ -221,8 +226,9 @@ export function matchesHost(url: URL, pattern: HostPattern): boolean {
   const value = parsePatternHost(pattern);
   if (value === "*") return true;
   if (value.startsWith("*.")) {
+    const apex = value.slice(2);
     const suffix = value.slice(1);
-    return hostname.endsWith(suffix) && hostname.length > suffix.length;
+    return hostname === apex || hostname.endsWith(suffix);
   }
   return value.includes(":") ? host === value : hostname === value;
 }

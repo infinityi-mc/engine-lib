@@ -226,8 +226,31 @@ class FakeRedisTransaction implements RedisSessionStoreTransaction {
     return this;
   }
 
+  pExpire(key: string, ttlMs: number): RedisSessionStoreTransaction {
+    this.operations.push(() => this.client.pExpire(key, ttlMs));
+    return this;
+  }
+
   exec(): void {
     for (const operation of this.operations) operation();
+  }
+}
+
+class FakeRedisTransactionWithoutTtl implements RedisSessionStoreTransaction {
+  del(): RedisSessionStoreTransaction {
+    return this;
+  }
+
+  set(): RedisSessionStoreTransaction {
+    return this;
+  }
+
+  rPush(): RedisSessionStoreTransaction {
+    return this;
+  }
+
+  exec(): void {
+    throw new Error("transaction should not be used for TTL without pExpire");
   }
 }
 
@@ -502,6 +525,23 @@ describe("RedisSessionStore v2 capabilities", () => {
       "engine:sessions:dHRs:metadata",
     ]);
   });
+
+  it("falls back to client-level PEXPIRE when transactions lack TTL", async () => {
+    class ClientWithNonTtlTransaction extends FakeRedisClient {
+      override multi(): RedisSessionStoreTransaction {
+        return new FakeRedisTransactionWithoutTtl();
+      }
+    }
+
+    const client = new ClientWithNonTtlTransaction();
+    const store = new RedisSessionStore({ client });
+
+    await store.setExpiry("ttl", 1000);
+
+    expect(client.expiries.map((entry) => entry.ttlMs)).toEqual([
+      1000, 1000, 1000,
+    ]);
+  });
 });
 
 describe("FilesystemJsonlSessionStore", () => {
@@ -535,9 +575,9 @@ describe("FilesystemJsonlSessionStore", () => {
     await writeFile(join(directory, files[0]!), "{not-json", { flag: "a" });
 
     expect(messageTexts(await store.load("s1"))).toEqual(["valid"]);
-    expect((await store.list()).sessions.map((session) => session.id)).toContain(
-      "s1",
-    );
+    expect(
+      (await store.list()).sessions.map((session) => session.id),
+    ).toContain("s1");
   });
 
   it("round-trips through a custom codec without plaintext at rest", async () => {

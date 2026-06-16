@@ -25,6 +25,8 @@
 import { createToolRegistry } from "./registry";
 import type { AgentDefinition } from "./types";
 
+const SAFE_AGENT_NAME = /^[A-Za-z0-9_-]+$/;
+
 /**
  * Define an agent, validating its name and tool-name uniqueness.
  *
@@ -38,6 +40,11 @@ import type { AgentDefinition } from "./types";
 export function defineAgent(def: AgentDefinition): AgentDefinition {
   if (typeof def.name !== "string" || def.name.trim() === "") {
     throw new TypeError("defineAgent: `name` must be a non-empty string");
+  }
+  if (!SAFE_AGENT_NAME.test(def.name)) {
+    throw new TypeError(
+      "defineAgent: `name` must contain only letters, numbers, underscores, or hyphens",
+    );
   }
   // Build the registry purely for its eager collision check; the run loop
   // (Phase 4) reconstructs it from the returned `tools`.

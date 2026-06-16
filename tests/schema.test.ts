@@ -28,10 +28,24 @@ describe("s — JSON Schema generation", () => {
       additionalProperties: false,
       properties: {
         service: { type: "string" },
-        lines: { type: "integer" },
+        lines: { type: ["integer", "null"] },
         tags: { type: "array", items: { type: "string" } },
       },
       required: ["service", "tags"],
+    });
+  });
+
+  it("emits nullable JSON Schema for optional enums", () => {
+    const schema = s.object({
+      mode: s.optional(s.enum(["fast", "safe"])),
+    });
+
+    expect(toJsonSchema(schema)).toEqual({
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        mode: { type: ["string", "null"], enum: ["fast", "safe", null] },
+      },
     });
   });
 
@@ -55,6 +69,18 @@ describe("s — validation", () => {
     expect(value).toEqual({ service: "api", lines: 10 });
     // optional may be omitted
     expect(schema.parse({ service: "api" })).toEqual({ service: "api" });
+    // providers often send null for omitted optional fields
+    expect(schema.parse({ service: "api", lines: null })).toEqual({
+      service: "api",
+    });
+  });
+
+  it("coerces optional enum nulls to undefined after object validation", () => {
+    const schema = s.object({
+      mode: s.optional(s.enum(["fast", "safe"])),
+    });
+
+    expect(schema.parse({ mode: null })).toEqual({});
   });
 
   it("collects all issues via safeParse", () => {
@@ -87,7 +113,8 @@ describe("s — validation", () => {
 
     const missing = raw.safeParse({});
     expect(missing.success).toBe(false);
-    if (!missing.success) expect(missing.error.issues[0]?.message).toBe("required");
+    if (!missing.success)
+      expect(missing.error.issues[0]?.message).toBe("required");
     expect(raw.safeParse({ toString: "ok" }).success).toBe(true);
   });
 

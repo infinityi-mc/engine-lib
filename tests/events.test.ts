@@ -7,6 +7,7 @@ import { runAgent } from "../src/execution/index";
 import type { RunEvent } from "../src/execution/index";
 import {
   createEventHub,
+  eventFields,
   eventPayload,
   loggingSubscriber,
   messageBusSubscriber,
@@ -313,15 +314,21 @@ describe("messageBusSubscriber", () => {
     expect(JSON.stringify(full[0]?.payload)).toContain(secret);
   });
 
-  it("eventPayload projects an error event to name + message", () => {
-    const err = Object.assign(new Error("nope"), { name: "ProviderError" });
+  it("event projections do not expose raw error messages", () => {
+    const secret = "Authorization: Bearer token123";
+    const err = Object.assign(new Error(secret), { name: "ProviderError" });
     expect(
       eventPayload({ type: "error", runId: RUN_ID, error: err as never }),
     ).toEqual({
       runId: RUN_ID,
       name: "ProviderError",
-      message: "nope",
+      code: "Error",
     });
+    expect(
+      JSON.stringify(
+        eventFields({ type: "error", runId: RUN_ID, error: err as never }),
+      ),
+    ).not.toContain(secret);
   });
 });
 
@@ -497,6 +504,9 @@ describe("runAgent — telemetry bridge", () => {
         m.name === "agent.tokens" && m.attributes?.["token.type"] === "input",
     );
     expect(inputTokens?.value).toBe(10);
+    expect(
+      metrics.some((m) => Object.hasOwn(m.attributes ?? {}, "run.id")),
+    ).toBe(false);
   });
 
   it("marks the run span errored and records an error outcome when the run fails", async () => {

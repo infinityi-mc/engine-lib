@@ -99,6 +99,7 @@ export type RunEventDraft =
       readonly name: string;
       readonly approved: boolean;
       readonly reason?: string;
+      readonly argumentsDigest: string;
     }
   | {
       readonly type: "human.input_requested";
@@ -204,6 +205,10 @@ export interface RunBridge {
   emit(event: RunBridgeEvent): void;
   /** Add token usage from nested work into the parent run's running total. */
   reportUsage(usage: Usage): void;
+  /** Parent run step cap, when explicitly configured. */
+  readonly maxSteps?: number;
+  /** Parent run handoff cap, when explicitly configured. */
+  readonly maxHandoffs?: number;
 }
 
 /** Checkpointing behavior for durable mid-run progress. */

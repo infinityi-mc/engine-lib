@@ -1,7 +1,8 @@
-import { join } from "node:path";
+import { join, parse } from "node:path";
 
 import { describe, expect, it } from "bun:test";
 
+import type { RunBridgeEvent } from "../src/execution/types";
 import { SandboxError } from "../src/errors";
 import type { ToolContext } from "../src/tools/types";
 import type { CommandResult } from "../src/tools-shell/types";
@@ -21,6 +22,18 @@ function containerPath(hostPath: string, index = 0): string {
 
 function ctx(): ToolContext {
   return { toolCallId: "c1", agentName: "test" };
+}
+
+function captureCtx(): { ctx: ToolContext; events: RunBridgeEvent[] } {
+  const events: RunBridgeEvent[] = [];
+  return {
+    ctx: {
+      toolCallId: "c1",
+      agentName: "test",
+      run: { emit: (event) => events.push(event), reportUsage: () => {} },
+    },
+    events,
+  };
 }
 
 function baseOptions(over: Partial<SandboxOptions> = {}): SandboxOptions {
@@ -109,6 +122,27 @@ describe("SANDBOX-T1 shell integration", () => {
     expect(res.ok).toBe(false);
     expect((res as { error: string }).error).toContain("networkAccess");
   });
+
+  it("emits an audit event when localSandbox downgrades network isolation", async () => {
+    const { runCommand } = shellTools({
+      allowedCwds: [ROOT],
+      sandbox: localSandbox({ allowNetworkDowngrade: true }),
+      networkAccess: false,
+    });
+    const { ctx, events } = captureCtx();
+
+    const res = await runCommand.execute(
+      { command: JS, args: ["-e", "0"] } as never,
+      ctx,
+    );
+
+    expect(res.ok).toBe(true);
+    expect(
+      events
+        .filter((event) => event.type === "custom")
+        .map((event) => event.name),
+    ).toContain("shell.sandbox.downgrade");
+  });
 });
 
 // --- dockerSandbox: gated on a container runtime being present ---------------
@@ -179,6 +213,37 @@ describe("SANDBOX-T1 dockerSandbox", () => {
     expect(args).toContain("--env-file");
     expect(args).toContain("/tmp/env-file");
     expect(args.join(" ")).not.toContain("SECRET=hidden");
+  });
+
+  it("can name containers for post-run cleanup", () => {
+    const args = buildRunArgs("alpine:3", "id", [], baseOptions(), {
+      containerName: "engine-sandbox-test",
+    });
+
+    expect(args).toContain("--name");
+    expect(args).toContain("engine-sandbox-test");
+  });
+
+  it("rejects sensitive docker mounts", () => {
+    expect(() =>
+      buildRunArgs(
+        "alpine:3",
+        "id",
+        [],
+        baseOptions({ filesystemPaths: ["/var/run/docker.sock"] }),
+      ),
+    ).toThrow(/docker socket/i);
+  });
+
+  it("rejects unsafe fallback docker workdirs", () => {
+    expect(() =>
+      buildRunArgs(
+        "alpine:3",
+        "pwd",
+        [],
+        baseOptions({ cwd: parse(ROOT).root, filesystemPaths: [] }),
+      ),
+    ).toThrow(/filesystem root/i);
   });
 
   it("allows granular hardening opt-outs", () => {

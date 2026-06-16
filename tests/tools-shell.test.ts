@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { RunBridgeEvent } from "../src/execution/types";
@@ -11,6 +13,7 @@ import type {
 import {
   classifyCommand,
   filterEnv,
+  normalizeAllowedCwds,
   resolveCwd,
 } from "../src/tools-shell/policy";
 import { shellTools } from "../src/tools-shell/index";
@@ -64,6 +67,26 @@ describe("resolveCwd", () => {
     expect(resolveCwd("..", [ROOT])).toBeNull();
     expect(resolveCwd("/etc", [ROOT])).toBeNull();
   });
+  it("rejects cwd escapes through symlinks", () => {
+    const base = mkdtempSync(join(tmpdir(), "engine-shell-policy-"));
+    const outside = mkdtempSync(join(tmpdir(), "engine-shell-outside-"));
+    try {
+      try {
+        symlinkSync(outside, join(base, "link"), "dir");
+      } catch (err) {
+        if (err instanceof Error && "code" in err && err.code === "EPERM")
+          return;
+        throw err;
+      }
+      expect(resolveCwd("link", normalizeAllowedCwds([base]))).toBeNull();
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+  it("returns the real path for allowed cwd symlinks", () => {
+    expect(resolveCwd(undefined, [ROOT])).toBe(realpathSync(ROOT));
+  });
 });
 
 describe("classifyCommand", () => {
@@ -78,6 +101,13 @@ describe("classifyCommand", () => {
     const policy = { allow: ["echo"] };
     expect(classifyCommand("echo", [], policy).allowed).toBe(true);
     expect(classifyCommand("ls", [], policy).allowed).toBe(false);
+  });
+  it("supports argv0-only allow rules", () => {
+    const policy = { argv0: [/^git$/] };
+    expect(
+      classifyCommand("git", ["-c", "core.fsmonitor=evil"], policy).allowed,
+    ).toBe(true);
+    expect(classifyCommand("git-upload-pack", [], policy).allowed).toBe(false);
   });
   it("stays denied across repeated calls with a global-flag regex", () => {
     // `g`/`y` regexes advance lastIndex; a reused deny rule must not alternate.
@@ -137,6 +167,8 @@ describe("run_command", () => {
     expect(out.stdout.trim()).toBe("hello");
     expect(out.exitCode).toBe(0);
     expect(out.timedOut).toBe(false);
+    expect(out.sandboxed).toBe(false);
+    expect(out.policyDecision).toBe("allow");
     expect(customNames(events)).toEqual([
       "shell.policy",
       "shell.exec.start",
@@ -237,6 +269,7 @@ describe("run_command", () => {
     expect(res.ok).toBe(true);
     const out = (res as { content: CommandResult }).content;
     expect(out.timedOut).toBe(true);
+    expect(out.aborted).toBe(false);
     expect(out.exitCode).toBeNull();
   });
 
@@ -405,11 +438,15 @@ describe("sandbox routing", () => {
             command: _command,
             args: _args,
             cwd: options.cwd,
+            timeoutMs: options.timeoutMs,
+            sandboxed: true,
+            policyDecision: "allow" as const,
             stdout: "",
             stderr: "",
             exitCode: 0,
             signal: null,
             timedOut: false,
+            aborted: false,
             durationMs: 0,
             stdoutTruncated: false,
             stderrTruncated: false,
@@ -427,5 +464,41 @@ describe("sandbox routing", () => {
 
     expect(res.ok).toBe(true);
     expect(seen).toEqual([[join(ROOT, "src"), ROOT]]);
+  });
+
+  it("preserves sandbox-reported execution metadata", async () => {
+    const { runCommand } = shellTools({
+      allowedCwds: [ROOT],
+      sandbox: {
+        execute: async (_command, _args, options): Promise<CommandResult> => ({
+          command: _command,
+          args: _args,
+          cwd: options.cwd,
+          timeoutMs: 123,
+          sandboxed: false,
+          policyDecision: "allow",
+          stdout: "",
+          stderr: "",
+          exitCode: 0,
+          signal: null,
+          timedOut: false,
+          aborted: false,
+          durationMs: 0,
+          stdoutTruncated: false,
+          stderrTruncated: false,
+        }),
+      },
+    });
+    const { ctx } = captureCtx();
+
+    const res = await run(runCommand, { command: JS, args: ["-e", ""] }, ctx);
+
+    expect(res.ok).toBe(true);
+    if (!res.ok) throw new Error("unreachable");
+    expect(res.content).toMatchObject({
+      timeoutMs: 123,
+      sandboxed: false,
+      policyDecision: "allow",
+    });
   });
 });

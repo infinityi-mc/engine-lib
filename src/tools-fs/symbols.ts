@@ -2,7 +2,12 @@ import { lstat } from "node:fs/promises";
 import { extname } from "node:path";
 
 import type { FilesystemPolicy } from "./policy";
-import { displayPath, resolvePath, resolveRoot } from "./policy";
+import {
+  assertResolvedPathStillAllowed,
+  displayPath,
+  resolvePath,
+  resolveRoot,
+} from "./policy";
 import { listEntries, lineOffsets, readTextFile } from "./files";
 import type { SymbolInfo, SymbolKind } from "./types";
 
@@ -223,6 +228,7 @@ export async function symbolsForPath(
   readonly root: string;
 }> {
   const resolved = await resolvePath(policy, input, { mustExist: true });
+  assertResolvedPathStillAllowed(policy, resolved);
   const info = await lstat(resolved.path);
   const maxResults = options.maxResults ?? 200;
 
@@ -239,9 +245,13 @@ export async function symbolsForPath(
     const out: SymbolInfo[] = [];
     for (const entry of listed.entries) {
       if (!TS_EXTENSIONS.has(extname(entry.path).toLowerCase())) continue;
+      const resolvedEntry = await resolvePath(policy, entry.path, {
+        mustExist: true,
+      });
+      assertResolvedPathStillAllowed(policy, resolvedEntry);
       out.push(
         ...(await symbolsForFile(
-          entry.path,
+          resolvedEntry.path,
           root.path,
           policy.maxReadBytes,
           options.kinds,

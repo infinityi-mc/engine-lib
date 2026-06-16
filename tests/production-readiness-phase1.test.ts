@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { defineAgent, defineTool } from "../src/agent/index";
 import {
+  MAX_HUMAN_ANSWER_LENGTH,
   TRUST_METADATA_KEY,
   askHumanTool,
   deferredHumanInputGateway,
@@ -163,6 +164,22 @@ describe("production readiness Phase 1", () => {
     expect(events.some((event) => event.type === "human.input_provided")).toBe(
       true,
     );
+  });
+
+  it("rejects human-input answers over the configured cap", async () => {
+    const gateway = deferredHumanInputGateway();
+    const request = gateway.request(
+      {
+        requestId: "h-limit",
+        question: "Continue?",
+        agentName: "phase1",
+        toolCallId: "h-limit",
+      },
+      {},
+    );
+
+    gateway.resolve("h-limit", "x".repeat(MAX_HUMAN_ANSWER_LENGTH + 1));
+    await expect(request).rejects.toThrow("human input answer exceeds");
   });
 
   it("emits human-input cancellation events before aborting the run", async () => {

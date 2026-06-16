@@ -52,6 +52,8 @@ export type SandboxResult = CommandResult;
 
 /** An isolation boundary for command execution. */
 export interface ToolSandbox {
+  /** True when the sandbox may run unisolated for networkAccess:false requests. */
+  readonly networkDowngrade?: boolean;
   execute(
     command: string,
     args: readonly string[],

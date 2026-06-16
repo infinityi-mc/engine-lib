@@ -12,9 +12,40 @@ import { createAnthropic } from "../../src/providers/anthropic/index";
 import { createGoogle } from "../../src/providers/google/index";
 import { createOpenAI } from "../../src/providers/openai/index";
 import { createOpenAICompatible } from "../../src/providers/openai-compatible/index";
-import { runProviderConformance } from "../../src/testing/conformance";
+import {
+  runProviderConformance,
+  type ConformanceTestApi,
+} from "../../src/testing/conformance";
 
 const testApi = { describe, expect, it };
+
+describe("runProviderConformance fixture validation", () => {
+  it("rejects streaming error fixtures without a stream fixture", () => {
+    const declarationOnlyApi = {
+      describe: (_name: string, fn: () => void) => fn(),
+      expect,
+      it: () => {},
+    } as unknown as ConformanceTestApi;
+
+    expect(() =>
+      runProviderConformance("invalid", {
+        testApi: declarationOnlyApi,
+        makeProvider: () => {
+          throw new Error("not used");
+        },
+        fixtures: {
+          text: { body: {}, expectText: "hi" },
+          toolCall: { body: {}, expectName: "tool" },
+          usage: {
+            body: {},
+            expect: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+          },
+          streamingError: { sse: "data: {}\n\n", expectText: "hi" },
+        },
+      }),
+    ).toThrow(/require `stream`/);
+  });
+});
 
 runProviderConformance("openai", {
   testApi,
@@ -78,6 +109,14 @@ runProviderConformance("openai", {
       ].join(""),
       expectText: "hi",
     },
+    streamingError: {
+      sse: [
+        `data: ${JSON.stringify({ type: "response.created" })}\n\n`,
+        `data: ${JSON.stringify({ type: "response.output_text.delta", delta: "hi" })}\n\n`,
+      ].join(""),
+      expectText: "hi",
+    },
+    truncatedBody: true,
   },
 });
 
@@ -133,6 +172,18 @@ runProviderConformance("anthropic", {
       ].join(""),
       expectText: "hi",
     },
+    streamingError: {
+      sse: [
+        `data: ${JSON.stringify({ type: "message_start", message: { model: "claude" } })}\n\n`,
+        `data: ${JSON.stringify({
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "text_delta", text: "hi" },
+        })}\n\n`,
+      ].join(""),
+      expectText: "hi",
+    },
+    truncatedBody: true,
   },
 });
 
@@ -186,6 +237,11 @@ runProviderConformance("google", {
       ].join(""),
       expectText: "hi",
     },
+    streamingError: {
+      sse: `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "hi" }] } }] })}\n\n`,
+      expectText: "hi",
+    },
+    truncatedBody: true,
   },
 });
 
@@ -244,5 +300,10 @@ runProviderConformance("openai-compatible", {
       ].join(""),
       expectText: "hi",
     },
+    streamingError: {
+      sse: `data: ${JSON.stringify({ model: "m", choices: [{ delta: { content: "hi" } }] })}\n\n`,
+      expectText: "hi",
+    },
+    truncatedBody: true,
   },
 });

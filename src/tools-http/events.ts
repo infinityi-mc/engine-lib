@@ -25,6 +25,23 @@ function emit(
   ctx?.run?.emit({ type: "custom", name, data });
 }
 
+const SENSITIVE_QUERY_PARAM =
+  /(?:key|token|secret|signature|sig|password|pass|auth|credential)/i;
+
+function redactUrl(raw: string): string {
+  try {
+    const url = new URL(raw);
+    for (const key of Array.from(url.searchParams.keys())) {
+      if (SENSITIVE_QUERY_PARAM.test(key)) {
+        url.searchParams.set(key, "[REDACTED]");
+      }
+    }
+    return url.href;
+  } catch {
+    return raw;
+  }
+}
+
 /** Surface a URL policy decision. */
 export function emitHttpPolicy(
   ctx: ToolContext | undefined,
@@ -34,7 +51,7 @@ export function emitHttpPolicy(
 ): void {
   emit(ctx, HTTP_EVENT.policy, {
     decision,
-    url,
+    url: redactUrl(url),
     ...(reason !== undefined ? { reason } : {}),
   });
 }
@@ -46,7 +63,11 @@ export function emitHttpRequestStart(
   url: string,
   timeoutMs: number,
 ): void {
-  emit(ctx, HTTP_EVENT.requestStart, { method, url, timeoutMs });
+  emit(ctx, HTTP_EVENT.requestStart, {
+    method,
+    url: redactUrl(url),
+    timeoutMs,
+  });
 }
 
 /** Surface the end of a logical HTTP request or a transport failure. */
@@ -59,10 +80,10 @@ export function emitHttpRequestEnd(
 ): void {
   emit(ctx, HTTP_EVENT.requestEnd, {
     method,
-    url,
+    url: redactUrl(url),
     ...(result !== undefined
       ? {
-          finalUrl: result.finalUrl,
+          finalUrl: redactUrl(result.finalUrl),
           status: result.status,
           elapsedMs: result.elapsedMs,
           responseBytes: result.responseBytes,

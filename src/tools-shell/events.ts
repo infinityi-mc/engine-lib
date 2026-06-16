@@ -20,6 +20,7 @@ export const SHELL_EVENT = {
   execStart: "shell.exec.start",
   execChunk: "shell.exec.chunk",
   execEnd: "shell.exec.end",
+  sandboxDowngrade: "shell.sandbox.downgrade",
 } as const;
 
 /** Emit a `custom` event through the run bridge, if one is present. */
@@ -88,9 +89,13 @@ export function emitExecChunk(
 export function emitExecEnd(ctx: ToolContext, result: CommandResult): void {
   emit(ctx, SHELL_EVENT.execEnd, {
     command: result.command,
+    sandboxed: result.sandboxed,
+    policyDecision: result.policyDecision,
+    timeoutMs: result.timeoutMs,
     exitCode: result.exitCode,
     signal: result.signal,
     timedOut: result.timedOut,
+    aborted: result.aborted,
     durationMs: result.durationMs,
     stdoutTruncated: result.stdoutTruncated,
     stderrTruncated: result.stderrTruncated,
@@ -113,6 +118,22 @@ export function emitExecError(
     exitCode: null,
     signal: null,
     timedOut: false,
+    aborted: false,
     error,
+  });
+}
+
+/** Network isolation was requested but the configured sandbox cannot enforce it. */
+export function emitSandboxDowngrade(
+  ctx: ToolContext,
+  req: CommandRequest,
+): void {
+  emit(ctx, SHELL_EVENT.sandboxDowngrade, {
+    command: req.command,
+    args: req.args,
+    cwd: req.cwd,
+    mode: req.mode,
+    requested: { networkAccess: false },
+    enforced: { networkAccess: true },
   });
 }

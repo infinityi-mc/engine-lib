@@ -15,6 +15,7 @@ import {
   forgeDataAuditLog,
   jsonlAuditLog,
   regexRedactor,
+  schemaSensitiveRedactor,
 } from "../src/governance/index";
 import type { AuditEntry, AuditLog } from "../src/governance/index";
 import { createEventHub } from "../src/events/index";
@@ -138,12 +139,43 @@ describe("AUDIT-T1 jsonlAuditLog + auditSubscriber", () => {
         id: "c2",
         name: "deploy",
         approved: true,
+        argumentsDigest: "sha256:y",
       }),
     );
     expect(entries.map((e) => e.action)).toEqual([
       "authorization.deny",
       "approval.granted",
     ]);
+  });
+
+  it("persists terminal run finish and error events without raw error messages", async () => {
+    const entries: AuditEntry[] = [];
+    const log: AuditLog = { record: async (e) => void entries.push(e) };
+    const sub = auditSubscriber(log);
+    await sub(withRunId({ type: "run.start", agent: "a" }));
+    await sub(
+      withRunId({
+        type: "run.finish",
+        result: {
+          output: "done",
+          messages: [],
+          steps: 1,
+          finishReason: "stop",
+          usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
+        },
+      }),
+    );
+    await sub(
+      withRunId({
+        type: "error",
+        error: Object.assign(new Error("Authorization: Bearer secret"), {
+          name: "ProviderError",
+        }),
+      }),
+    );
+
+    expect(entries.map((e) => e.action)).toEqual(["run.finish", "run.error"]);
+    expect(JSON.stringify(entries)).not.toContain("Authorization");
   });
 
   it("redacts tenant access-denied custom event detail recursively", async () => {
@@ -175,6 +207,28 @@ describe("AUDIT-T1 jsonlAuditLog + auditSubscriber", () => {
   });
 });
 
+describe("governance redactors", () => {
+  it("redacts common token formats and mixed-case fallback fields", () => {
+    const ctx = { stage: "tool-output" } as const;
+    const redacted = regexRedactor()(String.raw`Authorization: Bearer eyJabc.eyJdef.sig
+-----BEGIN PRIVATE KEY-----
+abc
+-----END PRIVATE KEY-----
+github=ghp_abcdefghijklmnopqrstuvwxyz
+aws=AKIA1234567890ABCDEF
+slack=xoxb-1234567890-secret`, ctx);
+    expect(redacted).not.toContain("eyJabc.eyJdef.sig");
+    expect(redacted).not.toContain("PRIVATE KEY");
+    expect(redacted).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz");
+    expect(redacted).not.toContain("AKIA1234567890ABCDEF");
+    expect(redacted).not.toContain("xoxb-1234567890-secret");
+
+    expect(schemaSensitiveRedactor()("Password=foo Token=bar", ctx)).toBe(
+      "[REDACTED] [REDACTED]",
+    );
+  });
+});
+
 describe("AUDIT-T1 forgeDataAuditLog", () => {
   it("INSERT-only sink persists entries to a table", async () => {
     const db = createDb<DatabaseSchema>({
@@ -195,6 +249,10 @@ describe("AUDIT-T1 forgeDataAuditLog", () => {
       principal: "user-1",
     };
     await log.record(entry);
+    await log.record({
+      ...entry,
+      detail: { value: `x'); drop table engine_audit_entries; --` },
+    });
 
     const table = raw(db.dialect.quoteIdentifier("engine_audit_entries"));
     const rows = await db
@@ -204,7 +262,7 @@ describe("AUDIT-T1 forgeDataAuditLog", () => {
         detail_json: string;
       }>(sql`select agent, action, detail_json from ${table}`)
       .execute();
-    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows).toHaveLength(2);
     expect(rows.rows[0]?.action).toBe("tool.call");
     expect(JSON.parse(rows.rows[0]!.detail_json).argumentsDigest).toBe(
       "fnv1a:0001",

@@ -94,6 +94,12 @@ export function asTool<TArgs = { input: string }>(
           ...(ctx.telemetry !== undefined ? { telemetry: ctx.telemetry } : {}),
           ...(ctx.logger !== undefined ? { logger: ctx.logger } : {}),
           ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
+          ...(bridge?.maxSteps !== undefined
+            ? { maxSteps: bridge.maxSteps }
+            : {}),
+          ...(bridge?.maxHandoffs !== undefined
+            ? { maxHandoffs: bridge.maxHandoffs }
+            : {}),
           ...(bridge !== undefined
             ? {
                 onEvent: (event: RunEvent) =>

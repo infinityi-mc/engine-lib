@@ -7,6 +7,7 @@
 
 export {
   assistant,
+  image,
   normalizeContent,
   system,
   text,

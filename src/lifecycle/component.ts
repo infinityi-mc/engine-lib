@@ -133,11 +133,14 @@ export function agentRuntimeComponent(opts: AgentRuntimeOptions): Component {
   const name = opts.name ?? DEFAULT_NAME;
   const providers = opts.providers ?? [];
   const { probe, onStop } = opts;
+  let started = false;
+  let stopped = false;
 
   return {
     name,
 
     async start(ctx: LifecycleContext): Promise<void> {
+      if (started) return;
       validateProviders(providers);
       if (opts.probeOnStart === true && probe !== undefined) {
         const failures = await probeAll(providers, probe, ctx.signal);
@@ -152,10 +155,20 @@ export function agentRuntimeComponent(opts: AgentRuntimeOptions): Component {
         providers: providers.length,
         sessionStore: opts.sessionStore !== undefined,
       });
+      started = true;
+      stopped = false;
     },
 
     async stop(ctx: LifecycleContext): Promise<void> {
-      if (onStop !== undefined) await onStop(ctx.signal);
+      if (stopped) return;
+      stopped = true;
+      if (onStop !== undefined) {
+        try {
+          await onStop(ctx.signal);
+        } catch (error) {
+          ctx.logger.error("agent runtime onStop failed", { error });
+        }
+      }
       ctx.logger.info("agent runtime stopped");
     },
 

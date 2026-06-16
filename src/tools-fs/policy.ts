@@ -55,6 +55,19 @@ function realpathIfPossible(path: string): string {
   return existsSync(path) ? realpathSync.native(path) : resolve(path);
 }
 
+function assertNoNtfsAlternateDataStream(path: string): void {
+  if (process.platform !== "win32") return;
+  const normalized = path.replaceAll("/", "\\");
+  const withoutDrive = /^[a-zA-Z]:/.test(normalized)
+    ? normalized.slice(2)
+    : normalized;
+  if (withoutDrive.includes(":")) {
+    throw new FilesystemAccessError(
+      `path ${JSON.stringify(path)} contains an NTFS alternate data stream separator`,
+    );
+  }
+}
+
 function assertPositiveInt(
   name: string,
   value: number | undefined,
@@ -162,6 +175,7 @@ export async function resolvePath(
   } = {},
 ): Promise<ResolvedPath> {
   const raw = input === undefined || input === "" ? "." : input;
+  assertNoNtfsAlternateDataStream(raw);
   const base = options.base ?? policy.defaultRoot;
   const logicalPath = isAbsolute(raw) ? resolve(raw) : resolve(base, raw);
   const root = allowedRootFor(policy, logicalPath);
@@ -199,6 +213,24 @@ export async function resolvePath(
   }
 
   throw new FilesystemAccessError(`path ${JSON.stringify(raw)} does not exist`);
+}
+
+export function assertResolvedPathStillAllowed(
+  policy: FilesystemPolicy,
+  resolved: ResolvedPath,
+): void {
+  const root = policy.allowedRoots.find(
+    (item) => item.logical === resolved.root,
+  );
+  if (root === undefined) {
+    throw new FilesystemAccessError("resolved path root is no longer allowed");
+  }
+  const realPath = realpathSync.native(resolved.path);
+  if (!isInside(root.real, realPath)) {
+    throw new FilesystemAccessError(
+      "path now resolves outside the allowed roots",
+    );
+  }
 }
 
 export async function resolveRoot(

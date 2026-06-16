@@ -18,6 +18,7 @@ import type { FinishReason } from "./types";
  * an `http(s)` URL is passed through, raw base64 is wrapped as a `data:` URI.
  */
 export function imageDataUrl(part: ImagePart): string {
+  if (/^data:/i.test(part.data)) return part.data;
   return /^https?:\/\//.test(part.data)
     ? part.data
     : `data:${part.mimeType};base64,${part.data}`;
