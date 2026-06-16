@@ -18,6 +18,7 @@ import { defineTool } from "../tools/define";
 import type { ToolContext, ToolResult } from "../tools/types";
 import { s } from "../schema/builder";
 import type { PolicyDecision } from "../governance/policy";
+import { SandboxError } from "../errors";
 
 import {
   emitApproval,
@@ -52,7 +53,10 @@ const PARAMS = s.object({
     description: "Program to run (argv[0]). Not interpreted by a shell.",
   }),
   args: s.optional(
-    s.array(s.string(), { description: "Arguments passed to the program.", maxItems: 1024 }),
+    s.array(s.string(), {
+      description: "Arguments passed to the program.",
+      maxItems: 1024,
+    }),
   ),
   cwd: s.optional(
     s.string({
@@ -216,7 +220,10 @@ export function shellTools(config: ShellToolsConfig): ShellTools {
         const env = filterEnv(process.env, config.env);
         emitExecStart(ctx, req);
         const networkAccess = config.networkAccess ?? true;
-        if (networkAccess === false && config.sandbox?.networkDowngrade === true) {
+        if (
+          networkAccess === false &&
+          config.sandbox?.networkDowngrade === true
+        ) {
           emitSandboxDowngrade(ctx, req);
         }
         let result;
@@ -228,24 +235,34 @@ export function shellTools(config: ShellToolsConfig): ShellTools {
                 (path) => path !== req.cwd,
               ),
             ];
-            result = await config.sandbox.execute(req.command, req.args, {
-              cwd: req.cwd,
-              env,
+            const sandboxResult = await config.sandbox.execute(
+              req.command,
+              req.args,
+              {
+                cwd: req.cwd,
+                env,
+                timeoutMs,
+                networkAccess,
+                filesystemPaths: sandboxFilesystemPaths,
+                maxOutputBytes,
+                ...(config.memoryLimitMb !== undefined
+                  ? { memoryLimitMb: config.memoryLimitMb }
+                  : {}),
+                ...(config.cpuLimit !== undefined
+                  ? { cpuLimit: config.cpuLimit }
+                  : {}),
+                ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
+                ...(mode === "spawn"
+                  ? { onChunk: (c) => emitExecChunk(ctx, c.stream, c.text) }
+                  : {}),
+              },
+            );
+            result = {
+              ...sandboxResult,
               timeoutMs,
-              networkAccess,
-              filesystemPaths: sandboxFilesystemPaths,
-              maxOutputBytes,
-              ...(config.memoryLimitMb !== undefined
-                ? { memoryLimitMb: config.memoryLimitMb }
-                : {}),
-              ...(config.cpuLimit !== undefined
-                ? { cpuLimit: config.cpuLimit }
-                : {}),
-              ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
-              ...(mode === "spawn"
-                ? { onChunk: (c) => emitExecChunk(ctx, c.stream, c.text) }
-                : {}),
-            });
+              sandboxed: true,
+              policyDecision: "allow" as const,
+            };
           } else {
             result = await execCommand({
               command: req.command,
@@ -261,9 +278,13 @@ export function shellTools(config: ShellToolsConfig): ShellTools {
             });
           }
         } catch (err) {
-          // The process could not be spawned at all (e.g. unknown program).
-          const message = err instanceof Error ? err.message : String(err);
-          const error = `failed to run "${req.command}": ${message}`;
+          if (err instanceof SandboxError) {
+            const error = err.message;
+            emitExecError(ctx, req, error);
+            return { ok: false, error };
+          }
+          // Avoid surfacing spawn error messages; some runtimes include argv.
+          const error = `failed to spawn "${req.command}"`;
           // Close the lifecycle so start/end-pairing subscribers don't leak.
           emitExecError(ctx, req, error);
           return { ok: false, error };

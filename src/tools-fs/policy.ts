@@ -201,6 +201,24 @@ export async function resolvePath(
   throw new FilesystemAccessError(`path ${JSON.stringify(raw)} does not exist`);
 }
 
+export function assertResolvedPathStillAllowed(
+  policy: FilesystemPolicy,
+  resolved: ResolvedPath,
+): void {
+  const root = policy.allowedRoots.find(
+    (item) => item.logical === resolved.root,
+  );
+  if (root === undefined) {
+    throw new FilesystemAccessError("resolved path root is no longer allowed");
+  }
+  const realPath = realpathSync.native(resolved.path);
+  if (!isInside(root.real, realPath)) {
+    throw new FilesystemAccessError(
+      "path now resolves outside the allowed roots",
+    );
+  }
+}
+
 export async function resolveRoot(
   policy: FilesystemPolicy,
   input: string | undefined,

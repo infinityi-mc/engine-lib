@@ -78,6 +78,16 @@ function matchesPattern(
   return pattern.test(commandLine);
 }
 
+/** Test a command pattern against argv[0] only. */
+function matchesArgv0Pattern(
+  pattern: CommandPattern,
+  command: string,
+): boolean {
+  if (typeof pattern === "string") return pattern === command;
+  pattern.lastIndex = 0;
+  return pattern.test(command);
+}
+
 /**
  * Decide whether a command is permitted by the allow/deny policy. Deny wins:
  * a command matching any `deny` entry is rejected even if also allowed. When
@@ -97,10 +107,11 @@ export function classifyCommand(
       reason: `command "${command}" is denied by policy`,
     };
   }
-  if (policy.allow !== undefined) {
-    const ok = policy.allow.some((p) =>
-      matchesPattern(p, command, commandLine),
-    );
+  if (policy.allow !== undefined || policy.argv0 !== undefined) {
+    const ok =
+      policy.allow?.some((p) => matchesPattern(p, command, commandLine)) ===
+        true ||
+      policy.argv0?.some((p) => matchesArgv0Pattern(p, command)) === true;
     if (!ok) {
       return {
         allowed: false,

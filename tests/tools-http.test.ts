@@ -181,6 +181,15 @@ describe("http_get/http_post behavior", () => {
       "http.request.end",
     ]);
 
+    const eventUrls = events
+      .filter(
+        (event): event is Extract<RunBridgeEvent, { type: "custom" }> =>
+          event.type === "custom",
+      )
+      .flatMap((event) => [event.data.url, event.data.finalUrl])
+      .filter((url): url is string => typeof url === "string");
+    expect(eventUrls.every((url) => !url.includes("secret-token"))).toBe(true);
+
     const htmlTools = httpTools({
       allowedHosts: ["example.com"],
       fetch: asFetch(
@@ -194,6 +203,27 @@ describe("http_get/http_post behavior", () => {
     expect(html.ok).toBe(true);
     expect((html as { content: HttpRequestResult }).content.body).toContain(
       "Hello",
+    );
+  });
+
+  it("redacts sensitive query params in audit events", async () => {
+    const { httpGet } = httpTools({
+      allowedHosts: ["example.com"],
+      fetch: asFetch(async () => new Response("ok")),
+    });
+    const { ctx, events } = captureCtx();
+    const res = await run(
+      httpGet,
+      { url: "https://example.com/data?api_key=secret-token&keep=value" },
+      ctx,
+    );
+    expect(res.ok).toBe(true);
+    const custom = events.filter(
+      (event): event is Extract<RunBridgeEvent, { type: "custom" }> =>
+        event.type === "custom",
+    );
+    expect(custom.map((event) => event.data.url)).toContain(
+      "https://example.com/data?api_key=%5BREDACTED%5D&keep=value",
     );
   });
 

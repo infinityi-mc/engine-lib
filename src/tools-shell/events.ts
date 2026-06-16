@@ -89,6 +89,9 @@ export function emitExecChunk(
 export function emitExecEnd(ctx: ToolContext, result: CommandResult): void {
   emit(ctx, SHELL_EVENT.execEnd, {
     command: result.command,
+    sandboxed: result.sandboxed,
+    policyDecision: result.policyDecision,
+    timeoutMs: result.timeoutMs,
     exitCode: result.exitCode,
     signal: result.signal,
     timedOut: result.timedOut,
@@ -121,7 +124,10 @@ export function emitExecError(
 }
 
 /** Network isolation was requested but the configured sandbox cannot enforce it. */
-export function emitSandboxDowngrade(ctx: ToolContext, req: CommandRequest): void {
+export function emitSandboxDowngrade(
+  ctx: ToolContext,
+  req: CommandRequest,
+): void {
   emit(ctx, SHELL_EVENT.sandboxDowngrade, {
     command: req.command,
     args: req.args,

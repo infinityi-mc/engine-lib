@@ -22,6 +22,7 @@ import {
 } from "./files";
 import { diffStatus as gitDiffStatus } from "./git";
 import {
+  assertResolvedPathStillAllowed,
   FilesystemAccessError,
   displayPath,
   normalizeFilesystemPolicy,
@@ -557,6 +558,7 @@ export function filesystemTools(
           1,
           policy.maxWriteBytes,
         );
+        assertResolvedPathStillAllowed(policy, resolved);
         const file = await readTextFile(resolved.path, maxBytes);
         const lines = lineOffsets(file.text);
         let range = clampLineRange(
@@ -613,6 +615,7 @@ export function filesystemTools(
         const resolved = await resolvePath(policy, args.path, {
           mustExist: true,
         });
+        assertResolvedPathStillAllowed(policy, resolved);
         const file = await readTextFile(resolved.path, policy.maxReadBytes);
         const lines = lineOffsets(file.text);
         const windowLines = bounded(args.window_lines, 100, 20, 200);
